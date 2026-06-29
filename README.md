@@ -1,32 +1,32 @@
-# Enterprise Secure Knowledge Platform (ESKP)
+# Enterprise Retrieval-Augmented Generation (RAG) Platform
 
-> A production-inspired AI knowledge platform that enables organizations to securely upload, manage, version, and query enterprise documents using Retrieval-Augmented Generation (RAG). The platform focuses on security, scalability, low-latency retrieval, minimal hallucination, and measurable system improvements through configurable AI pipelines.
+> A production-inspired Retrieval-Augmented Generation (RAG) platform that enables organizations to securely ingest, version, retrieve, and query enterprise knowledge using configurable retrieval pipelines. The platform emphasizes secure document access, scalable indexing, low-latency retrieval, reduced hallucinations, and measurable performance improvements through modular RAG components.
 
 ---
 
 # Motivation
 
-Enterprise organizations generate thousands of confidential documents, including financial reports, legal contracts, HR policies, research papers, and internal documentation.
+Modern enterprises manage vast collections of documents, including financial reports, legal contracts, HR policies, technical documentation, research papers, and internal knowledge bases.
 
-Finding relevant information is often slow, while traditional AI assistants may:
+Traditional AI assistants struggle in enterprise environments because they often:
 
 * Hallucinate unsupported information
-* Ignore organization-level permissions
-* Expose confidential content
-* Return outdated responses after document updates
-* Lack transparency regarding information sources
+* Ignore organization-level access permissions
+* Expose confidential documents
+* Fail to reflect document updates
+* Provide answers without supporting evidence
 
-This project aims to solve these challenges by building a secure, configurable, and production-oriented RAG platform.
+This project addresses these challenges by building a secure, modular, and production-oriented RAG platform that retrieves trusted information before generating responses.
 
 ---
 
 # Core Objectives
 
-* Build an enterprise-grade document intelligence platform.
-* Implement a modular RAG pipeline without relying heavily on high-level frameworks.
-* Support secure multi-organization document management.
-* Reduce hallucinations through retrieval validation and answer verification.
-* Learn asynchronous backend development and scalable system design.
+* Build an enterprise-grade Retrieval-Augmented Generation platform.
+* Design a modular RAG pipeline without relying heavily on high-level frameworks.
+* Support secure multi-organization document retrieval.
+* Minimize hallucinations using retrieval validation and answer verification.
+* Learn scalable backend architecture for AI systems.
 * Benchmark every optimization using measurable evaluation metrics.
 
 ---
@@ -44,95 +44,48 @@ This project aims to solve these challenges by building a secure, configurable, 
 
 ---
 
-## Document Management
+## Document Lifecycle Management
 
-Unlike traditional RAG applications, documents are never overwritten.
+The platform maintains complete document history instead of overwriting files.
 
-The platform maintains a complete version history while supporting incremental updates.
+### Features
 
-### Capabilities
-
-* Upload documents
-* Update existing documents
-* Automatic version management
-* Document comparison
-* Rollback to previous versions
-* Soft delete & recovery
-* Metadata extraction
-* OCR support
-* Processing status tracking
-
----
-
-## Document Versioning
-
-Every uploaded document maintains its own version history.
-
-```
-Financial_Report.pdf
-
-Version 1
-
-↓
-
-Version 2
-
-↓
-
-Version 3
-```
-
-When a document is updated, only modified sections are reprocessed.
-
-This enables:
-
-* Faster indexing
-* Lower embedding cost
-* Reduced storage requirements
-* Faster document updates
+* Document Upload
+* Document Updates
+* Automatic Versioning
+* Metadata Extraction
+* OCR Support
+* Processing Status Tracking
+* Rollback Support
+* Soft Delete & Recovery
 
 ---
 
 ## Incremental Indexing
 
-Rather than regenerating embeddings for an entire document, the system compares document chunks using hashing.
+Instead of regenerating embeddings for an entire document after every update, the platform identifies modified chunks using content hashing.
 
-```
-Updated Document
+Benefits include:
 
-↓
-
-Compare Chunk Hashes
-
-↓
-
-Changed Chunks
-
-↓
-
-Generate New Embeddings
-
-↓
-
-Update Vector Database
-```
-
-Only modified chunks are re-indexed.
+* Faster indexing
+* Lower embedding cost
+* Reduced storage
+* Faster document synchronization
 
 ---
 
-## Intelligent Query Pipeline
+## Retrieval Pipeline
 
-Every user query follows a secure retrieval pipeline.
+Every user query passes through a secure Retrieval-Augmented Generation pipeline.
 
 ```
-User Question
+User Query
       │
 Authentication
       │
 Permission Validation
       │
-Generate Embedding
+Query Embedding
       │
 ┌───────────────┬────────────────┐
 │               │                │
@@ -144,7 +97,9 @@ Merge Results
         │
 Reranker
         │
-Hallucination Check
+Context Validation
+        │
+Answer Generation
         │
 Answer Verification
         │
@@ -155,94 +110,137 @@ Response
 
 ---
 
-## Hallucination Prevention
+## Hallucination Reduction
 
-The platform prioritizes correctness over generating uncertain responses.
+The platform prioritizes factual correctness over uncertain responses.
 
-Implemented techniques include:
+Techniques include:
 
 * Hybrid Retrieval
 * Context Validation
 * Confidence Thresholds
-* Answer Verification
+* Retrieval Verification
 * Citation Generation
 * Permission-aware Context Filtering
 
-If sufficient supporting evidence is unavailable, the assistant refuses to answer instead of generating unsupported information.
+If sufficient supporting evidence cannot be retrieved, the system refuses to generate an answer.
 
 ---
 
 ## Intelligent Query Caching
 
-Repeated questions are optimized through multiple cache layers.
+Frequently asked questions are optimized using multiple cache layers.
 
-### Cache Levels
+### Cache Layers
 
 * Exact Query Cache
-* Semantic Question Cache
+* Semantic Query Cache
 * Redis Response Cache
 
-Before returning a cached response, the system verifies:
+Before serving cached responses, the platform validates:
 
 * User permissions
-* Document version
-* Source chunk validity
-* Confidence threshold
-* Answer verification status
+* Document versions
+* Source chunk integrity
+* Confidence thresholds
+* Verification status
 
-Whenever a document is updated, only affected cached responses are invalidated.
+Only cache entries affected by updated documents are invalidated.
 
 ---
 
-## Configurable AI Pipeline
+## Configurable RAG Pipeline
 
-Every major component of the retrieval pipeline can be enabled, disabled, or replaced using configuration.
+Every stage of the RAG pipeline can be enabled, disabled, or replaced using configuration.
+# Environment-Driven Configuration
 
-Examples include:
+The platform is designed to be highly configurable using environment variables.
+Every major component of the RAG pipeline can be enabled, disabled, or replaced
+without modifying application code.
 
-* Search Strategy
+## Retrieval
 
-  * Semantic Search
-  * Keyword Search
-  * Hybrid Search
+RETRIEVAL_MODE=hybrid
 
-* Embedding Model
+## Caching
 
-  * BGE
-  * E5
-  * MiniLM
+REDIS_ENABLED=true
+QUERY_CACHE_ENABLED=true
+SEMANTIC_CACHE_ENABLED=true
 
-* Cache Strategy
+## AI Pipeline
 
-  * None
-  * Redis
-  * Semantic Cache
+RERANKER_ENABLED=true
+QUERY_EXPANSION_ENABLED=false
+HALLUCINATION_CHECK_ENABLED=true
+CITATION_GENERATION_ENABLED=true
 
-* Reranking
+## Document Processing
 
-  * Enabled
-  * Disabled
+INCREMENTAL_INDEXING_ENABLED=true
+OCR_ENABLED=false
+STREAMING_ENABLED=true
+
+## Monitoring
+
+AUDIT_LOGGING_ENABLED=true
+METRICS_ENABLED=true
+
+## Models
+
+EMBEDDING_MODEL=bge-small-en
+LLM_PROVIDER=llama
+
+### Retrieval
+
+* Semantic Search
+* Keyword Search
+* Hybrid Search
+
+### Embeddings
+
+* BGE
+* E5
+* MiniLM
+
+### Reranking
+
+* Enabled
+* Disabled
+
+### Query Processing
 
 * Query Expansion
+* Metadata Filtering
+* Context Compression
 
+### Generation
+
+* Multiple LLM Providers
 * Streaming Responses
+* Citation Generation
+
+### Reliability
 
 * Hallucination Detection
+* Answer Verification
 
+### Performance
+
+* Redis Cache
 * Incremental Indexing
-
-This modular architecture allows rapid experimentation without modifying application code.
+* Background Processing
 
 ---
 
-# Performance & Optimization
+# Performance Optimizations
 
-The project is designed to explore production optimization techniques including:
+The project explores production-scale RAG optimizations including:
 
 * Redis Caching
 * BullMQ Workers
 * Background Processing
-* Parallel Execution
+* Parallel Retrieval
 * Promise.all()
 * Promise.allSettled()
 * Event-Driven Architecture
@@ -253,84 +251,80 @@ The project is designed to explore production optimization techniques including:
 
 # Evaluation Framework
 
-Every optimization introduced into the system is benchmarked before and after implementation.
+Every optimization is benchmarked before and after implementation.
 
-### Retrieval Metrics
+## Retrieval Metrics
 
 * Recall@K
 * Precision@K
 * Mean Reciprocal Rank (MRR)
 * Hit Rate
+* Normalized Discounted Cumulative Gain (NDCG)
 
-### Generation Metrics
+## Generation Metrics
 
 * Faithfulness
 * Answer Relevancy
 * Hallucination Rate
 * Citation Accuracy
 
-### Performance Metrics
+## Performance Metrics
 
 * Average Response Time
 * Retrieval Latency
-* Embedding Time
+* Embedding Latency
 * LLM Latency
 * Cache Hit Rate
 * Throughput
 * Token Usage
 * Cost Reduction
 
-The objective is to quantify every engineering decision rather than relying on qualitative improvements.
-
 ---
 
 # Technology Stack
 
-### Frontend
+## Frontend
 
 * React
 * Tailwind CSS
 
-### Backend
+## Backend
 
 * Node.js
 * Express.js
 
-### Database
+## Database
 
 * PostgreSQL
 * Prisma ORM
 
-### AI Services
+## AI Services
 
 * FastAPI
 * Sentence Transformers
 * Lightweight LLMs
 
-### Infrastructure
+## Infrastructure
 
 * Redis
 * BullMQ
 * Qdrant
-* MinIO (Object Storage)
+* MinIO
 
 ---
 
 # Learning Outcomes
 
-This project is designed to provide hands-on experience with:
+This project provides practical experience with:
 
+* Retrieval-Augmented Generation (RAG)
 * Enterprise Backend Development
-* Distributed AI Systems
-* Retrieval-Augmented Generation
+* Secure AI Systems
 * Vector Databases
-* Secure API Design
-* Database Design
+* Distributed Processing
 * Asynchronous Programming
-* Parallel Processing
 * Event-Driven Architecture
 * Caching Strategies
-* Production System Design
 * Performance Optimization
 * AI Evaluation & Benchmarking
 
@@ -338,149 +332,10 @@ This project is designed to provide hands-on experience with:
 
 # Project Philosophy
 
-Every new feature introduced into the platform must answer three questions:
+Every engineering decision should answer three questions:
 
-1. Why is this feature required?
-2. How does it improve the system?
+1. Why is this optimization needed?
+2. How does it improve the RAG pipeline?
 3. Can the improvement be measured?
 
-The primary goal is not to build another chatbot, but to engineer a secure, scalable, explainable, and measurable enterprise AI platform.
-
-
-# Environment-Driven Configuration
-
-The platform is designed to be highly configurable using **environment variables**, allowing features to be enabled, disabled, or swapped without modifying application code.
-
-This approach enables rapid experimentation, simpler deployments, and reproducible performance benchmarks across different environments.
-
----
-
-## Configurable Components
-
-Every major subsystem can be controlled through the `.env` file.
-
-### Retrieval
-
-* Semantic Search
-* Keyword Search
-* Hybrid Search
-
-### Caching
-
-* Redis Cache
-* Exact Query Cache
-* Semantic Cache
-* Embedding Cache
-* LLM Response Cache
-
-### AI Pipeline
-
-* Embedding Model Selection
-* LLM Provider
-* Query Expansion
-* Reranking
-* Hallucination Detection
-* Answer Verification
-* Citation Generation
-
-### Document Processing
-
-* OCR Support
-* Incremental Indexing
-* Background Processing
-* Streaming Responses
-
-### Monitoring
-
-* Audit Logging
-* Metrics Collection
-* Performance Tracking
-
----
-
-## Example Configuration
-
-```env
-# Retrieval Strategy
-RETRIEVAL_MODE=hybrid
-
-# Redis
-REDIS_ENABLED=true
-
-# Caching
-QUERY_CACHE_ENABLED=true
-SEMANTIC_CACHE_ENABLED=true
-
-# Reranker
-RERANKER_ENABLED=true
-
-# Query Expansion
-QUERY_EXPANSION_ENABLED=false
-
-# Hallucination Detection
-HALLUCINATION_CHECK_ENABLED=true
-
-# Incremental Indexing
-INCREMENTAL_INDEXING_ENABLED=true
-
-# Streaming Responses
-STREAMING_ENABLED=true
-
-# OCR
-OCR_ENABLED=false
-
-# Metrics
-METRICS_ENABLED=true
-
-# Audit Logging
-AUDIT_LOGGING_ENABLED=true
-
-# Embedding Model
-EMBEDDING_MODEL=bge-small-en
-
-# LLM
-LLM_PROVIDER=llama
-```
-
----
-
-## Why Environment-Based Configuration?
-
-Using environment variables provides several advantages:
-
-* No code changes are required to enable or disable features.
-* Different environments (development, testing, and production) can use different configurations.
-* Engineering optimizations can be benchmarked independently.
-* New components can be introduced without affecting existing business logic.
-* Experimental features can be safely evaluated before production deployment.
-
----
-
-## Benchmarking Optimizations
-
-Because every optimization can be controlled independently, the platform can measure the impact of each engineering decision.
-
-Example experiments include:
-
-* Redis Enabled vs Disabled
-* Hybrid Search vs Semantic Search
-* Reranking Enabled vs Disabled
-* Incremental Indexing vs Full Re-indexing
-* Streaming vs Standard Responses
-* Different Embedding Models
-* Different LLM Providers
-
-For every experiment, the system records metrics such as:
-
-* Average Response Time
-* Retrieval Latency
-* Cache Hit Rate
-* Recall@K
-* Precision@K
-* Mean Reciprocal Rank (MRR)
-* Hallucination Rate
-* Citation Accuracy
-* Token Usage
-* Cost Reduction
-
-This environment-driven architecture makes the platform modular, production-friendly, and suitable for evaluating real-world engineering trade-offs through measurable results.
+The objective is not simply to build another chatbot, but to engineer a secure, scalable, explainable, and measurable Retrieval-Augmented Generation platform suitable for enterprise knowledge management.
