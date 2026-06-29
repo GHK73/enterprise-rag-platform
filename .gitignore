@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+
+# Logs
+logs/
+*.log
+
+# Build
+dist/
+build/
+
+# Uploads
+uploads/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+
+# Temporary
+temp/
