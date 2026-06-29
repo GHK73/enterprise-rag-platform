@@ -1,8 +1,17 @@
-# Dependencies
+# Node
 node_modules/
+
+# Python
+venv/
+__pycache__/
+*.pyc
 
 # Environment
 .env
+.env.*
+
+# Uploads
+uploads/
 
 # Logs
 logs/
@@ -12,16 +21,9 @@ logs/
 dist/
 build/
 
-# Uploads
-uploads/
-
-# Python
-venv/
-__pycache__/
-*.pyc
-
-# VS Code
+# IDE
 .vscode/
+.idea/
 
 # OS
 .DS_Store
@@ -30,5 +32,5 @@ Thumbs.db
 # Coverage
 coverage/
 
-# Temporary
-temp/
+# Vector DB
+qdrant_storage/
