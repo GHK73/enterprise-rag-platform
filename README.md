@@ -1,462 +1,486 @@
-# Enterprise Secure Knowledge Platform
+# Enterprise Secure Knowledge Platform (ESKP)
 
-> A production-inspired AI knowledge platform that enables organizations to securely upload, manage, version, and query enterprise documents using Retrieval-Augmented Generation (RAG) while enforcing access control, minimizing hallucinations, and providing measurable system improvements.
+> A production-inspired AI knowledge platform that enables organizations to securely upload, manage, version, and query enterprise documents using Retrieval-Augmented Generation (RAG). The platform focuses on security, scalability, low-latency retrieval, minimal hallucination, and measurable system improvements through configurable AI pipelines.
 
 ---
 
-## Document Lifecycle Management
+# Motivation
 
-The platform maintains complete document history instead of overwriting existing files.
+Enterprise organizations generate thousands of confidential documents, including financial reports, legal contracts, HR policies, research papers, and internal documentation.
 
-### Features
+Finding relevant information is often slow, while traditional AI assistants may:
 
-* Upload new documents
+* Hallucinate unsupported information
+* Ignore organization-level permissions
+* Expose confidential content
+* Return outdated responses after document updates
+* Lack transparency regarding information sources
+
+This project aims to solve these challenges by building a secure, configurable, and production-oriented RAG platform.
+
+---
+
+# Core Objectives
+
+* Build an enterprise-grade document intelligence platform.
+* Implement a modular RAG pipeline without relying heavily on high-level frameworks.
+* Support secure multi-organization document management.
+* Reduce hallucinations through retrieval validation and answer verification.
+* Learn asynchronous backend development and scalable system design.
+* Benchmark every optimization using measurable evaluation metrics.
+
+---
+
+# Key Features
+
+## Enterprise Security
+
+* JWT Authentication
+* Organization & Department Management
+* Role-Based Access Control (RBAC)
+* Permission-aware Retrieval
+* Sensitive Information Detection & Masking
+* Audit Logging
+
+---
+
+## Document Management
+
+Unlike traditional RAG applications, documents are never overwritten.
+
+The platform maintains a complete version history while supporting incremental updates.
+
+### Capabilities
+
+* Upload documents
 * Update existing documents
 * Automatic version management
-* Version history
+* Document comparison
 * Rollback to previous versions
-* Incremental indexing
-* Document status tracking
-* Soft delete and recovery
-
-### Document Workflow
-
-```
-Upload Document
-        │
-        ▼
-Create Version 1
-        │
-        ▼
-Extract Metadata
-        │
-        ▼
-Chunk Document
-        │
-        ▼
-Generate Embeddings
-        │
-        ▼
-Store in Vector Database
-```
+* Soft delete & recovery
+* Metadata extraction
+* OCR support
+* Processing status tracking
 
 ---
 
-## Document Updates
+## Document Versioning
 
-When a document is updated, the system does **not** recreate the entire index.
-
-Instead, it performs incremental processing.
-
-```
-Upload Updated Document
-        │
-        ▼
-Compare with Previous Version
-        │
-        ▼
-Detect Changed Chunks
-        │
- ┌──────┴────────┐
- │               │
-Unchanged    Modified
-Chunks        Chunks
- │               │
-Skip      Generate New Embeddings
- │               │
- └──────┬────────┘
-        │
-Update Vector Database
-```
-
-Benefits
-
-* Faster indexing
-* Lower embedding cost
-* Reduced storage usage
-* Better scalability
-
----
-
-## Version History
-
-Every uploaded document maintains its own history.
-
-Example
+Every uploaded document maintains its own version history.
 
 ```
 Financial_Report.pdf
 
 Version 1
-Uploaded: Jan 10
 
 ↓
 
 Version 2
-Uploaded: Feb 18
 
 ↓
 
 Version 3
-Uploaded: Mar 27
 ```
 
-Users can
+When a document is updated, only modified sections are reprocessed.
 
-* View previous versions
-* Compare versions
-* Restore older versions
-* Track changes
+This enables:
+
+* Faster indexing
+* Lower embedding cost
+* Reduced storage requirements
+* Faster document updates
 
 ---
 
 ## Incremental Indexing
 
-Each document is divided into chunks.
-
-Every chunk stores
-
-* Chunk ID
-* Document ID
-* Version Number
-* Hash
-* Embedding
-* Metadata
-
-When a document is updated
+Rather than regenerating embeddings for an entire document, the system compares document chunks using hashing.
 
 ```
-Old Version
-
-Chunk A
-
-Chunk B
-
-Chunk C
+Updated Document
 
 ↓
 
-New Version
-
-Chunk A
-
-Chunk B (Modified)
-
-Chunk C
-```
-
-Only **Chunk B** receives a new embedding.
-
-Unchanged chunks remain untouched.
-
----
-
-## Cache Invalidation
-
-Generated answers always store
-
-* Document Version
-* Chunk IDs
-* Source Documents
-
-When a document changes
-
-```
-Document Updated
+Compare Chunk Hashes
 
 ↓
 
-Changed Chunks Identified
+Changed Chunks
 
 ↓
 
-Affected Cached Answers Invalidated
+Generate New Embeddings
 
 ↓
 
-Next Query Generates Fresh Response
+Update Vector Database
 ```
 
-This guarantees users never receive stale answers.
+Only modified chunks are re-indexed.
 
 ---
 
-## Document Metadata
+## Intelligent Query Pipeline
 
-Each document stores
-
-* Organization
-* Department
-* Owner
-* Classification
-* Current Version
-* Previous Versions
-* Upload Timestamp
-* Last Modified
-* Status
-* Processing State
-
----
-
-## Planned Enterprise Features
-
-### Security
-
-* JWT Authentication
-* Role-Based Access Control
-* Department Isolation
-* Organization Isolation
-* Sensitive Data Detection
-* Audit Logging
-
-### Document Management
-
-* Upload Documents
-* Update Documents
-* Version History
-* Incremental Indexing
-* Soft Delete
-* Document Comparison
-* Metadata Extraction
-* OCR Support
-
-### AI Features
-
-* Semantic Search
-* Hybrid Retrieval
-* Cross-Encoder Reranking
-* Citation Generation
-* Confidence Scoring
-* Hallucination Reduction
-* Answer Verification
-
-### Performance
-
-* Redis Cache
-* BullMQ Workers
-* Parallel Processing
-* Streaming Responses
-* Background Jobs
-* Incremental Embedding Updates
-
-### Evaluation
-
-Every optimization is benchmarked using
-
-* Recall@K
-* Precision@K
-* MRR
-* Faithfulness
-* Answer Relevancy
-* Hallucination Rate
-* Retrieval Latency
-* LLM Latency
-* Cache Hit Rate
-* Throughput
-
----
-
-## Engineering Goals
-
-This project focuses on learning real-world backend and AI engineering concepts, including:
-
-* Enterprise System Design
-* MERN Stack Development
-* FastAPI Integration
-* Vector Databases
-* Retrieval-Augmented Generation (RAG)
-* Async/Await
-* Promise.all()
-* Promise.allSettled()
-* Worker Queues
-* Redis
-* Event-Driven Architecture
-* Incremental Processing
-* Version Control for Documents
-* Performance Optimization
-* Production-Grade API Design
-
-
-## Configuration & Feature Flags
-
-The platform is designed to be modular and configurable. Core features can be enabled, disabled, or switched through environment variables without modifying the source code.
-
-This allows easy experimentation, benchmarking, and performance comparison between different RAG pipeline configurations.
-
-### Configurable Features
-
-| Feature                 | Description                                           |
-| ----------------------- | ----------------------------------------------------- |
-| Redis Cache             | Enable or disable response caching                    |
-| Hybrid Search           | Switch between semantic, keyword, or hybrid retrieval |
-| Reranker                | Enable cross-encoder reranking                        |
-| Query Expansion         | Improve retrieval using rewritten queries             |
-| Semantic Q&A Cache      | Reuse answers for semantically similar questions      |
-| Streaming Responses     | Stream LLM responses to the client                    |
-| Citations               | Attach document and page references to answers        |
-| Hallucination Detection | Validate answers against retrieved context            |
-| Answer Verification     | Verify generated responses before returning them      |
-| Metadata Filtering      | Filter retrieved documents using metadata             |
-| Document Versioning     | Maintain multiple versions of uploaded documents      |
-| Incremental Indexing    | Re-embed only modified document chunks                |
-| Experiment Logging      | Automatically record benchmark results                |
-
-### Retrieval Strategies
-
-The retrieval pipeline is configurable and supports multiple search strategies.
-
-* Semantic Search
-* Keyword Search (BM25)
-* Hybrid Search (Semantic + Keyword)
-
-### Embedding Models
-
-Different embedding models can be evaluated without changing the application logic.
-
-Examples:
-
-* BGE Small
-* E5 Small
-* MiniLM
-
-### Cache Strategies
-
-The platform supports multiple caching mechanisms.
-
-* No Cache
-* Redis Cache
-* Semantic Question Cache
-
-### Experimentation
-
-Feature flags make it possible to benchmark different configurations and compare their impact on retrieval quality, latency, and hallucination rate.
-
-Example experiments include:
-
-* Semantic Search vs Hybrid Search
-* Reranker Enabled vs Disabled
-* Redis Cache Enabled vs Disabled
-* Different Embedding Models
-* Incremental Indexing vs Full Re-indexing
-
-Each experiment can be evaluated using metrics such as:
-
-* Recall@K
-* Precision@K
-* Mean Reciprocal Rank (MRR)
-* Faithfulness
-* Hallucination Rate
-* Average Response Time
-* Retrieval Latency
-* LLM Latency
-* Cache Hit Rate
-* Throughput
-
-This modular architecture enables rapid experimentation while keeping the core application unchanged, making it easier to analyze the effectiveness of each optimization independently.
-
-## Intelligent Query Caching
-
-The platform optimizes repeated queries using a multi-level caching strategy to reduce response time, minimize LLM usage, and lower operational costs.
-
-Instead of invoking the LLM for every request, the system first checks whether a suitable response already exists.
-
-### Query Processing Flow
+Every user query follows a secure retrieval pipeline.
 
 ```
 User Question
       │
-      ▼
-Exact Cache Lookup
+Authentication
       │
-      ▼
-Semantic Similarity Check
-      │
-      ▼
 Permission Validation
       │
-      ▼
-Document Version Validation
+Generate Embedding
       │
-      ▼
-Use Cached Response
-      │
-      ▼
-Otherwise Run Full RAG Pipeline
+┌───────────────┬────────────────┐
+│               │                │
+Semantic Search Keyword Search Metadata Filter
+│               │                │
+└───────────────┴────────────────┘
+        │
+Merge Results
+        │
+Reranker
+        │
+Hallucination Check
+        │
+Answer Verification
+        │
+Citation Generation
+        │
+Response
 ```
+
+---
+
+## Hallucination Prevention
+
+The platform prioritizes correctness over generating uncertain responses.
+
+Implemented techniques include:
+
+* Hybrid Retrieval
+* Context Validation
+* Confidence Thresholds
+* Answer Verification
+* Citation Generation
+* Permission-aware Context Filtering
+
+If sufficient supporting evidence is unavailable, the assistant refuses to answer instead of generating unsupported information.
+
+---
+
+## Intelligent Query Caching
+
+Repeated questions are optimized through multiple cache layers.
 
 ### Cache Levels
 
-#### Level 1 – Exact Query Cache
+* Exact Query Cache
+* Semantic Question Cache
+* Redis Response Cache
 
-Stores responses for identical questions.
+Before returning a cached response, the system verifies:
 
-Example:
+* User permissions
+* Document version
+* Source chunk validity
+* Confidence threshold
+* Answer verification status
 
-```
-Question:
-"What is the revenue for 2025?"
-
-↓
-
-Return cached response immediately.
-```
-
----
-
-#### Level 2 – Semantic Query Cache
-
-Detects semantically similar questions using embeddings.
-
-Examples:
-
-* What is EBITDA?
-* Explain EBITDA.
-* Define EBITDA.
-* Can you describe EBITDA?
-
-If a high-confidence cached response exists and all validation checks pass, the cached response is returned without invoking the LLM.
+Whenever a document is updated, only affected cached responses are invalidated.
 
 ---
 
-### Cache Validation
+## Configurable AI Pipeline
 
-A cached response is returned only if all of the following conditions are satisfied:
+Every major component of the retrieval pipeline can be enabled, disabled, or replaced using configuration.
 
-* User has permission to access the underlying documents.
-* Document version has not changed.
-* Cached answer passed answer verification.
-* Confidence score exceeds the configured threshold.
-* Source chunks remain valid.
+Examples include:
 
-Otherwise, the system executes the complete RAG pipeline and refreshes the cache.
+* Search Strategy
+
+  * Semantic Search
+  * Keyword Search
+  * Hybrid Search
+
+* Embedding Model
+
+  * BGE
+  * E5
+  * MiniLM
+
+* Cache Strategy
+
+  * None
+  * Redis
+  * Semantic Cache
+
+* Reranking
+
+  * Enabled
+  * Disabled
+
+* Query Expansion
+
+* Streaming Responses
+
+* Hallucination Detection
+
+* Incremental Indexing
+
+This modular architecture allows rapid experimentation without modifying application code.
 
 ---
 
-### Cache Invalidation
+# Performance & Optimization
 
-Cached responses are automatically invalidated when:
+The project is designed to explore production optimization techniques including:
 
-* A source document is updated.
-* A new document version is uploaded.
-* Referenced chunks are modified.
-* User permissions change.
-* Cached content expires.
-
-This ensures users always receive responses based on the latest authorized information.
+* Redis Caching
+* BullMQ Workers
+* Background Processing
+* Parallel Execution
+* Promise.all()
+* Promise.allSettled()
+* Event-Driven Architecture
+* Streaming Responses
+* Incremental Embedding Updates
 
 ---
+
+# Evaluation Framework
+
+Every optimization introduced into the system is benchmarked before and after implementation.
+
+### Retrieval Metrics
+
+* Recall@K
+* Precision@K
+* Mean Reciprocal Rank (MRR)
+* Hit Rate
+
+### Generation Metrics
+
+* Faithfulness
+* Answer Relevancy
+* Hallucination Rate
+* Citation Accuracy
 
 ### Performance Metrics
 
-The effectiveness of query caching is measured using:
-
-* Cache Hit Rate
-* Semantic Cache Hit Rate
 * Average Response Time
-* LLM Calls Avoided
-* Token Savings
+* Retrieval Latency
+* Embedding Time
+* LLM Latency
+* Cache Hit Rate
+* Throughput
+* Token Usage
 * Cost Reduction
-* Cache Invalidation Count
-* Average Cache Retrieval Time
 
-This optimization significantly reduces latency while maintaining answer freshness, security, and correctness.
+The objective is to quantify every engineering decision rather than relying on qualitative improvements.
+
+---
+
+# Technology Stack
+
+### Frontend
+
+* React
+* Tailwind CSS
+
+### Backend
+
+* Node.js
+* Express.js
+
+### Database
+
+* PostgreSQL
+* Prisma ORM
+
+### AI Services
+
+* FastAPI
+* Sentence Transformers
+* Lightweight LLMs
+
+### Infrastructure
+
+* Redis
+* BullMQ
+* Qdrant
+* MinIO (Object Storage)
+
+---
+
+# Learning Outcomes
+
+This project is designed to provide hands-on experience with:
+
+* Enterprise Backend Development
+* Distributed AI Systems
+* Retrieval-Augmented Generation
+* Vector Databases
+* Secure API Design
+* Database Design
+* Asynchronous Programming
+* Parallel Processing
+* Event-Driven Architecture
+* Caching Strategies
+* Production System Design
+* Performance Optimization
+* AI Evaluation & Benchmarking
+
+---
+
+# Project Philosophy
+
+Every new feature introduced into the platform must answer three questions:
+
+1. Why is this feature required?
+2. How does it improve the system?
+3. Can the improvement be measured?
+
+The primary goal is not to build another chatbot, but to engineer a secure, scalable, explainable, and measurable enterprise AI platform.
+
+
+# Environment-Driven Configuration
+
+The platform is designed to be highly configurable using **environment variables**, allowing features to be enabled, disabled, or swapped without modifying application code.
+
+This approach enables rapid experimentation, simpler deployments, and reproducible performance benchmarks across different environments.
+
+---
+
+## Configurable Components
+
+Every major subsystem can be controlled through the `.env` file.
+
+### Retrieval
+
+* Semantic Search
+* Keyword Search
+* Hybrid Search
+
+### Caching
+
+* Redis Cache
+* Exact Query Cache
+* Semantic Cache
+* Embedding Cache
+* LLM Response Cache
+
+### AI Pipeline
+
+* Embedding Model Selection
+* LLM Provider
+* Query Expansion
+* Reranking
+* Hallucination Detection
+* Answer Verification
+* Citation Generation
+
+### Document Processing
+
+* OCR Support
+* Incremental Indexing
+* Background Processing
+* Streaming Responses
+
+### Monitoring
+
+* Audit Logging
+* Metrics Collection
+* Performance Tracking
+
+---
+
+## Example Configuration
+
+```env
+# Retrieval Strategy
+RETRIEVAL_MODE=hybrid
+
+# Redis
+REDIS_ENABLED=true
+
+# Caching
+QUERY_CACHE_ENABLED=true
+SEMANTIC_CACHE_ENABLED=true
+
+# Reranker
+RERANKER_ENABLED=true
+
+# Query Expansion
+QUERY_EXPANSION_ENABLED=false
+
+# Hallucination Detection
+HALLUCINATION_CHECK_ENABLED=true
+
+# Incremental Indexing
+INCREMENTAL_INDEXING_ENABLED=true
+
+# Streaming Responses
+STREAMING_ENABLED=true
+
+# OCR
+OCR_ENABLED=false
+
+# Metrics
+METRICS_ENABLED=true
+
+# Audit Logging
+AUDIT_LOGGING_ENABLED=true
+
+# Embedding Model
+EMBEDDING_MODEL=bge-small-en
+
+# LLM
+LLM_PROVIDER=llama
+```
+
+---
+
+## Why Environment-Based Configuration?
+
+Using environment variables provides several advantages:
+
+* No code changes are required to enable or disable features.
+* Different environments (development, testing, and production) can use different configurations.
+* Engineering optimizations can be benchmarked independently.
+* New components can be introduced without affecting existing business logic.
+* Experimental features can be safely evaluated before production deployment.
+
+---
+
+## Benchmarking Optimizations
+
+Because every optimization can be controlled independently, the platform can measure the impact of each engineering decision.
+
+Example experiments include:
+
+* Redis Enabled vs Disabled
+* Hybrid Search vs Semantic Search
+* Reranking Enabled vs Disabled
+* Incremental Indexing vs Full Re-indexing
+* Streaming vs Standard Responses
+* Different Embedding Models
+* Different LLM Providers
+
+For every experiment, the system records metrics such as:
+
+* Average Response Time
+* Retrieval Latency
+* Cache Hit Rate
+* Recall@K
+* Precision@K
+* Mean Reciprocal Rank (MRR)
+* Hallucination Rate
+* Citation Accuracy
+* Token Usage
+* Cost Reduction
+
+This environment-driven architecture makes the platform modular, production-friendly, and suitable for evaluating real-world engineering trade-offs through measurable results.
