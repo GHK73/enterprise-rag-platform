@@ -3,11 +3,78 @@
 
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
-generator client{
+generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  MANAGER
+}
+
+enum OrganizationUnitType {
+  COMPANY
+  DEPARTMENT
+  TEAM
+  GROUP
+}
+
+model Organization {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  units OrganizationUnit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrganizationUnit {
+  id             String               @id @default(cuid())
+  name           String
+  type           OrganizationUnitType
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  parentId String?
+  parent   OrganizationUnit?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children OrganizationUnit[] @relation("OrganizationHierarchy")
+
+  users User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([parentId])
+}
+
+model User {
+  id String @id @default(cuid())
+
+  fullName     String
+  email        String @unique
+  passwordHash String
+
+  role Role?
+
+  isActive   Boolean @default(true)
+  isVerified Boolean @default(false)
+
+  unitId String?
+  unit   OrganizationUnit? @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([unitId])
 }

@@ -1,196 +1,141 @@
 # RAG Development Log
 
-This document tracks the implementation progress of the Enterprise Retrieval-Augmented Generation (RAG) Platform.
+Implementation progress for the Enterprise RAG Platform. Database details: [`docs/DATABASE.md`](DATABASE.md).
 
 ---
 
-# Phase 1 — Backend Foundation
+# Phase 1 — Backend Foundation ✅
 
-## ✅ Project Structure
-
-Created the initial backend structure.
+## Structure
 
 ```text
 backend/
-│
 ├── prisma/
-│
-├── src/
-│   ├── config/
-│   ├── controllers/
-│   ├── middleware/
-│   ├── routes/
-│   ├── services/
-│   ├── utils/
-│   ├── app.js
-│   └── server.js
-│
-└── .env
+├── server.js
+├── .env
+└── src/
+    ├── config/          config.js, prisma.js
+    ├── controllers/     health.controller.js
+    ├── middleware/      error.middleware.js, notFound.middleware.js
+    ├── routes/          index.js, health.routes.js
+    ├── services/
+    ├── utils/           ApiResponse.js, ApiError.js, asyncHandler.js
+    └── app.js
 ```
 
-**Status:** Completed
+## Completed
+
+| Area | Details |
+| ---- | ------- |
+| Environment | `.env`, `src/config/config.js` — port, env, Neon `DATABASE_URL`, JWT config |
+| Prisma | Installed, `prisma/schema.prisma`, `src/config/prisma.js`, client generated |
+| Express | `src/app.js`, `server.js` — JSON + CORS, Prisma connect before listen |
+| API | Versioned `/api/v1`, centralized routes, health check, global error + 404 handlers |
+| Utilities | `ApiResponse`, `ApiError`, `asyncHandler` (wrapper ready, not yet wired) |
+
+**Health:** `GET /api/v1/health` → `{ "success": true, "statusCode": 200, "message": "RAG Backend is running", "data": null }`
 
 ---
 
-## ✅ Environment Configuration
+# Phase 2 — Authentication & Identity ⏳ In Progress
 
-Created:
+## Completed
 
-* `.env`
-* `src/config/config.js`
+| Area                   | Files / Artifacts                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| Database schema        | `prisma/schema.prisma` — `Organization`, `OrganizationUnit`, `User`; enums `Role`, `OrganizationUnitType` |
+| Schema documentation   | `docs/DATABASE.md` — models, relationships, authentication workflow, organization workflow                |
+| Password utilities     | `src/utils/password.js` — password hashing and verification using bcrypt                                  |
+| JWT utilities          | `src/utils/jwt.js` — JWT generation and verification                                                      |
+| Authentication service | `src/services/auth.services.js` — service scaffold created                                                |
 
-Configured:
+### JWT Configuration (`accessSecret` / `accessExpiry`)
 
-* Application Port
-* Environment
-* Cloud PostgreSQL (Neon)
-* JWT Configuration
+Access tokens use a dedicated secret and expiry, separate from any future refresh tokens.
 
-**Status:** Completed
+| Config key (`config.js`) | Env variable | Used by | Purpose |
+| ------------------------ | ------------ | ------- | ------- |
+| `jwt.accessSecret` | `JWT_ACCESS_SECRET` | `generateToken` | Signs access tokens |
+| `jwt.accessExpiry` | `JWT_ACCESS_EXPIRES_IN` | `generateToken` | Access token lifetime (e.g. `15m`, `1h`) |
+| `jwt.secret` | `JWT_SECRET` | `verifyToken` | Verifies incoming access tokens |
 
----
+**Token payload** (`src/utils/jwt.js`): `userId`, `role`, `unitId`.
 
-## ✅ Prisma Setup
+**Status:** `jwt.js` expects `accessSecret` and `accessExpiry`; `config.js` still maps only `JWT_SECRET` / `JWT_EXPIRES_IN`. Align `config.js` and `.env` before login endpoints ship. After alignment, `verifyToken` should use `accessSecret` (same key as signing).
 
-Completed:
+**Planned (not implemented):** `jwt.refreshSecret` / `jwt.refreshExpiry` from `JWT_REFRESH_SECRET` / `JWT_REFRESH_EXPIRES_IN` for refresh tokens.
 
-* Installed Prisma
-* Connected to Neon PostgreSQL
-* Created `prisma/schema.prisma`
-* Created `src/config/prisma.js`
-* Generated Prisma Client
+### Authentication Architecture
 
-**Status:** Completed
+The platform separates **authentication**, **organization management**, and **member management**.
 
----
+```
+Authentication
+├── Register
+├── Login
+└── JWT Authentication
 
-## ✅ Express Server
+Organization
+├── Create Organization
+├── Organization Hierarchy
+└── Organization Settings
 
-Created:
-
-* `src/app.js`
-* `src/server.js`
-
-Implemented:
-
-* Express initialization
-* JSON middleware
-* CORS middleware
-* Prisma database connection before server startup
-
-**Status:** Completed
-
----
-
-## ✅ API Foundation
-
-Created:
-
-### Controllers
-
-* `src/controllers/health.controller.js`
-
-### Routes
-
-* `src/routes/health.routes.js`
-* `src/routes/index.js`
-
-### Utilities
-
-* `src/utils/ApiResponse.js`
-* `src/utils/ApiError.js`
-* `src/utils/asyncHandler.js`
-
-### Middleware
-
-* `src/middleware/notFound.middleware.js`
-* `src/middleware/error.middleware.js`
-
-Implemented:
-
-* Versioned API (`/api/v1`)
-* Health Check Endpoint
-* Standard API Response Format
-* Centralized Route Management
-* Global Error Handling
-* 404 Route Handling
-* Async Controller Wrapper
-
-Health Endpoint:
-
-```http
-GET /api/v1/health
+Member Management
+├── Invite Members
+├── Assign Roles
+├── Assign Organization Units
+└── Permission Management
 ```
 
-Response:
+### Current Design Decisions
 
-```json
-{
-    "success": true,
-    "statusCode": 200,
-    "message": "RAG Backend is running",
-    "data": null
-}
-```
+* Users can register without belonging to an organization.
+* `role` is optional until a user becomes part of an organization.
+* `unitId` is optional until a user is assigned to an organization unit.
+* Creating an organization is **not** part of user registration.
+* Organization membership will be handled by a dedicated member management module.
+* Users will join organizations through invitations in a future phase.
 
-**Status:** Completed
+## Remaining
 
----
+### Authentication
 
-# Current Progress
+* Register endpoint
+* Login endpoint
+* JWT authentication middleware
+* Protected route middleware
 
-### Current Phase
+### Organization
 
-**Phase 1 — Backend Foundation** ✅
+* Create organization
+* Create root organization unit
+* Assign organization owner
 
-### Completed
+### Member Management
 
-* Backend initialization
-* Environment configuration
-* Neon PostgreSQL integration
-* Prisma ORM setup
-* Express server configuration
-* API versioning
-* Route organization
-* Health endpoint
-* Global error middleware
-* 404 middleware
-* Standard API response utilities
-* Async handler utility
+* Invite members
+* Accept invitations
+* Assign organization units
+* Role assignment
+* Permission management
+
 
 ---
 
-# Next Phase
+# Progress Summary
 
-## Phase 2 — Authentication & RBAC
+**Current phase:** Phase 2 — Authentication & RBAC ⏳
 
-Upcoming implementation:
-
-* User model
-* Organization model
-* Role-Based Access Control (RBAC)
-* User registration
-* User login
-* Password hashing (bcrypt)
-* JWT Access Token
-* JWT Refresh Token
-* Authentication middleware
-* Protected routes
-
----
-
-# Overall Progress
-
-| Phase                        | Status      |
-| ---------------------------- | ----------- |
-| Backend Foundation           | ✅ Completed |
-| Authentication & RBAC        | ⏳ Next      |
-| Document Management          | ⏳ Planned   |
-| Document Processing Pipeline | ⏳ Planned   |
-| Vector Database Integration  | ⏳ Planned   |
-| Retrieval Pipeline           | ⏳ Planned   |
-| LLM Integration              | ⏳ Planned   |
-| Query Caching                | ⏳ Planned   |
-| Evaluation Framework         | ⏳ Planned   |
-| Monitoring & Logging         | ⏳ Planned   |
-| Deployment                   | ⏳ Planned   |
+| Phase | Status |
+| ----- | ------ |
+| Backend Foundation | ✅ Completed |
+| Authentication & RBAC | ⏳ In Progress |
+| Document Management | ⏳ Planned |
+| Document Processing Pipeline | ⏳ Planned |
+| Vector Database Integration | ⏳ Planned |
+| Retrieval Pipeline | ⏳ Planned |
+| LLM Integration | ⏳ Planned |
+| Query Caching | ⏳ Planned |
+| Evaluation Framework | ⏳ Planned |
+| Monitoring & Logging | ⏳ Planned |
+| Deployment | ⏳ Planned |
