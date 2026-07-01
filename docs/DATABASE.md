@@ -1,19 +1,41 @@
 # RAG Database Schema
 
-This document describes the PostgreSQL database structure for the Enterprise Retrieval-Augmented Generation (RAG) Platform, as defined in `backend/prisma/schema.prisma`.
+This document describes the PostgreSQL database schema for the Enterprise Retrieval-Augmented Generation (RAG) Platform, defined in `backend/prisma/schema.prisma`.
+
+> **Status:** Reflects the current database schema. Planned features may not yet be implemented. See [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) for implementation progress.
 
 ---
 
 # Overview
 
-| Item | Value |
-| ---- | ----- |
-| Database | PostgreSQL |
-| ORM | Prisma |
-| Connection | `DATABASE_URL` (Neon) |
-| Schema file | `backend/prisma/schema.prisma` |
+| Item       | Value                          |
+| ---------- | ------------------------------ |
+| Database   | PostgreSQL                     |
+| ORM        | Prisma                         |
+| Connection | `DATABASE_URL` (Neon)          |
+| Schema     | `backend/prisma/schema.prisma` |
 
-The platform separates **authentication** from **organization management**. A user account can exist before belonging to any organization.
+## Current Scope
+
+The schema currently provides the foundation for:
+
+* User authentication
+* Organizations
+* Organization hierarchy
+* Role-Based Access Control (RBAC)
+
+Authentication is independent of organization membership. Users may register and authenticate before joining or creating an organization.
+
+## Future Scope
+
+Future phases will extend the schema with:
+
+* Invitations
+* Document management & versioning
+* Embeddings & vector metadata
+* Audit logs
+* Query cache
+* Retrieval analytics
 
 ---
 
@@ -21,29 +43,32 @@ The platform separates **authentication** from **organization management**. A us
 
 ## Role
 
-User roles for Role-Based Access Control (RBAC).
+Organization-level roles used for RBAC.
 
-| Value | Description |
-| ----- | ----------- |
-| `OWNER` | Organization creator and highest authority |
-| `ADMIN` | Organization administrator |
-| `MANAGER` | Department or team manager |
-| `MEMBER` | Standard organization member |
+| Value     | Description                  |
+| --------- | ---------------------------- |
+| `OWNER`   | Organization owner           |
+| `ADMIN`   | Organization administrator   |
+| `MANAGER` | Department or team manager   |
+| `MEMBER`  | Standard organization member |
 
-**On `User`:** Optional (`Role?`) — no database default. A role is assigned only after a user creates or joins an organization. Newly registered users have `role = null` until provisioned.
+**Current behavior**
+
+* `User.role` is optional.
+* New users have no role until they join or create an organization.
 
 ---
 
 ## OrganizationUnitType
 
-Classification of nodes in the organization hierarchy.
+Defines the organization hierarchy.
 
-| Value | Description |
-| ----- | ----------- |
-| `COMPANY` | Root or top-level organizational entity |
-| `DEPARTMENT` | Department within an organization |
-| `TEAM` | Team within a department |
-| `GROUP` | Smaller group or sub-team |
+| Value        | Description       |
+| ------------ | ----------------- |
+| `COMPANY`    | Root organization |
+| `DEPARTMENT` | Department        |
+| `TEAM`       | Team              |
+| `GROUP`      | Sub-team or group |
 
 ---
 
@@ -51,17 +76,20 @@ Classification of nodes in the organization hierarchy.
 
 ```text
 Organization
-    │
-    └── OrganizationUnit (tree: parent ↔ children)
-            │
-            └── User (optional — unitId may be null)
+        │
+        └── OrganizationUnit
+                │
+        ┌───────┴────────┐
+        │                │
+    Parent/Child      Users (optional)
 ```
 
 ```mermaid
 erDiagram
-    Organization ||--o{ OrganizationUnit : "has units"
-    OrganizationUnit ||--o{ OrganizationUnit : "parent / children"
-    OrganizationUnit ||--o{ User : "has users (optional)"
+
+    Organization ||--o{ OrganizationUnit : contains
+    OrganizationUnit ||--o{ OrganizationUnit : parent
+    OrganizationUnit ||--o{ User : assigns
 
     Organization {
         string id PK
@@ -76,7 +104,7 @@ erDiagram
         string name
         OrganizationUnitType type
         string organizationId FK
-        string parentId FK "optional"
+        string parentId FK
         datetime createdAt
         datetime updatedAt
     }
@@ -86,10 +114,10 @@ erDiagram
         string fullName
         string email UK
         string passwordHash
-        Role role "optional"
+        Role role
         boolean isActive
         boolean isVerified
-        string unitId FK "optional"
+        string unitId FK
         datetime createdAt
         datetime updatedAt
     }
@@ -101,165 +129,124 @@ erDiagram
 
 ## Organization
 
-Top-level tenant entity. Each organization owns a tree of units and, indirectly, all users assigned to those units.
+Top-level tenant that owns an organization hierarchy.
 
-| Field | Type | Constraints | Description |
-| ----- | ---- | ----------- | ----------- |
-| `id` | `String` | PK, `@default(cuid())` | Unique organization identifier |
-| `name` | `String` | Required | Organization display name |
-| `description` | `String?` | Optional | Short description |
-| `createdAt` | `DateTime` | `@default(now())` | Record creation timestamp |
-| `updatedAt` | `DateTime` | `@updatedAt` | Last update timestamp |
+### Fields
+
+| Field         | Type       | Description            |
+| ------------- | ---------- | ---------------------- |
+| `id`          | `String`   | Primary key            |
+| `name`        | `String`   | Organization name      |
+| `description` | `String?`  | Optional description   |
+| `createdAt`   | `DateTime` | Creation timestamp     |
+| `updatedAt`   | `DateTime` | Last updated timestamp |
 
 **Relations**
 
-* `units` → one-to-many `OrganizationUnit`
+* One Organization → Many OrganizationUnits
 
-**Cascade behavior**
+**Delete Behavior**
 
-* Deleting an organization cascades to all its `OrganizationUnit` records.
+* Cascade → OrganizationUnits
 
 ---
 
 ## OrganizationUnit
 
-Hierarchical unit within an organization (company → department → team → group). Supports nested structure via self-referencing `parent` / `children`.
+Hierarchical node supporting recursive parent-child relationships.
 
-| Field | Type | Constraints | Description |
-| ----- | ---- | ----------- | ----------- |
-| `id` | `String` | PK, `@default(cuid())` | Unique unit identifier |
-| `name` | `String` | Required | Unit display name |
-| `type` | `OrganizationUnitType` | Required | Unit classification |
-| `organizationId` | `String` | FK → `Organization.id` | Owning organization |
-| `parentId` | `String?` | FK → `OrganizationUnit.id` | Parent unit (null = root) |
-| `createdAt` | `DateTime` | `@default(now())` | Record creation timestamp |
-| `updatedAt` | `DateTime` | `@updatedAt` | Last update timestamp |
+### Fields
+
+| Field            | Type                   | Description            |
+| ---------------- | ---------------------- | ---------------------- |
+| `id`             | `String`               | Primary key            |
+| `name`           | `String`               | Unit name              |
+| `type`           | `OrganizationUnitType` | Unit type              |
+| `organizationId` | `String`               | Parent organization    |
+| `parentId`       | `String?`              | Parent unit            |
+| `createdAt`      | `DateTime`             | Creation timestamp     |
+| `updatedAt`      | `DateTime`             | Last updated timestamp |
 
 **Relations**
 
-* `organization` → many-to-one `Organization`
-* `parent` / `children` → self-referencing hierarchy (`OrganizationHierarchy`)
-* `users` → one-to-many `User`
+* Belongs to Organization
+* Parent / Child OrganizationUnit
+* One-to-Many Users
 
 **Indexes**
 
 * `organizationId`
 * `parentId`
 
-**Cascade behavior**
+**Delete Behavior**
 
-* Deleting an organization cascades to its units.
-* Deleting a parent unit cascades to child units.
+* Cascade → Child units
 
 ---
 
 ## User
 
-Application user account. Represents an authenticated identity and may exist independently of any organization until provisioned.
+Authenticated application user. Organization membership is optional.
 
-| Field | Type | Constraints | Description |
-| ----- | ---- | ----------- | ----------- |
-| `id` | `String` | PK, `@default(cuid())` | Unique user identifier |
-| `fullName` | `String` | Required | User's full name |
-| `email` | `String` | Unique | Login email |
-| `passwordHash` | `String` | Required | Bcrypt (or similar) hashed password |
-| `role` | `Role?` | Optional | RBAC role (assigned when user joins an organization) |
-| `isActive` | `Boolean` | Default: `true` | Account enabled flag |
-| `isVerified` | `Boolean` | Default: `false` | Email verification flag |
-| `unitId` | `String?` | FK → `OrganizationUnit.id`, optional | Assigned organizational unit |
-| `createdAt` | `DateTime` | `@default(now())` | Record creation timestamp |
-| `updatedAt` | `DateTime` | `@updatedAt` | Last update timestamp |
+### Fields
+
+| Field          | Type       | Description            |
+| -------------- | ---------- | ---------------------- |
+| `id`           | `String`   | Primary key            |
+| `fullName`     | `String`   | Full name              |
+| `email`        | `String`   | Unique email           |
+| `passwordHash` | `String`   | Hashed password        |
+| `role`         | `Role?`    | Organization role      |
+| `isActive`     | `Boolean`  | Account status         |
+| `isVerified`   | `Boolean`  | Email verification     |
+| `unitId`       | `String?`  | Organization unit      |
+| `createdAt`    | `DateTime` | Creation timestamp     |
+| `updatedAt`    | `DateTime` | Last updated timestamp |
 
 **Relations**
 
-* `unit` → optional many-to-one `OrganizationUnit`
+* Optional OrganizationUnit
 
 **Indexes**
 
 * `email`
 * `unitId`
 
-**Restrict behavior**
+**Delete Behavior**
 
-* A unit cannot be deleted while users are still assigned to it (`onDelete: Restrict`).
+* Restrict → Assigned OrganizationUnit
 
-**Nullable fields**
+**Nullable Fields**
 
-| Field | Reason |
-| ----- | ------ |
-| `role` | Assigned when user creates or joins an organization |
-| `unitId` | Assigned when user is linked to an organization unit |
-
----
-
-# Hierarchy Example
-
-```text
-Organization: "Acme Corp"
-│
-├── OrganizationUnit (COMPANY)     "Acme Corp"
-│   │
-│   ├── OrganizationUnit (DEPARTMENT)   "Engineering"
-│   │   │
-│   │   └── OrganizationUnit (TEAM)     "Platform Team"
-│   │           │
-│   │           └── User (MEMBER)       alice@acme.com
-│   │
-│   └── OrganizationUnit (DEPARTMENT)   "Legal"
-│           │
-│           └── User (ADMIN)            bob@acme.com
-
-User (no org yet)                     carol@example.com
-(role = null, unitId = null)
-```
+| Field    | Reason                                 |
+| -------- | -------------------------------------- |
+| `role`   | Assigned after organization membership |
+| `unitId` | Assigned after organization membership |
 
 ---
 
-# Referential Integrity Summary
+# Design & Workflow
 
-| Relation | On Delete |
-| -------- | --------- |
-| `OrganizationUnit` → `Organization` | Cascade |
-| `OrganizationUnit` → `OrganizationUnit` (parent) | Cascade |
-| `User` → `OrganizationUnit` | Restrict (optional FK) |
+## Authentication
 
----
-
-# Schema Changelog
-
-| Change | Before | After |
-| ------ | ------ | ----- |
-| `User.role` | `Role` with `@default(MEMBER)` | `Role?` (optional, no default) |
-| `User.unitId` | Required `String` | Optional `String?` |
-| `User.unit` | Required relation | Optional relation (`OrganizationUnit?`) |
-
----
-
-# Authentication & Organization Workflow
-
-Planned application behavior built on the current schema. Not all steps are implemented yet.
-
-## User Lifecycle
+Users register and authenticate independently of organization membership.
 
 ```text
 Register
     │
     ▼
-User Created (role = null, unitId = null)
+User Created
+(role = null, unitId = null)
     │
     ▼
 Login
-    │
-    ▼
-Choose One
-├── Create Organization
-└── Join Organization (invitation — future phase)
-    │
-    ▼
-Assign Organization Unit + Role
 ```
 
-## Create Organization
+---
+
+## Organization Creation
+
+After authentication, users may create an organization.
 
 ```text
 Authenticated User
@@ -268,15 +255,15 @@ Authenticated User
 Create Organization
         │
         ▼
-Create Root Organization Unit
+Create Root OrganizationUnit (COMPANY)
         │
         ▼
-Assign Current User as OWNER
+Assign OWNER Role
 ```
 
-## Join Organization
+---
 
-Future phase.
+## Organization Membership (Planned)
 
 ```text
 Owner/Admin
@@ -284,42 +271,70 @@ Owner/Admin
 Generate Invitation
         │
         ▼
-Invited User Accepts
+User Accepts
         │
         ▼
-Assign Organization Unit + Role
+Assign OrganizationUnit
+        │
+        ▼
+Assign Role
 ```
 
-Users never choose their own role or organizational unit. These are assigned by authorized organization administrators.
+Users never assign their own role or organization unit.
 
 ---
 
-# Current Schema Status
+## Organization Hierarchy
 
-| Component | Status |
-| --------- | ------ |
-| PostgreSQL datasource | ✅ Configured |
-| Prisma Client generator | ✅ Configured |
-| `Role` enum | ✅ Defined |
-| `OrganizationUnitType` enum | ✅ Defined |
-| `Organization` model | ✅ Defined |
-| `OrganizationUnit` model | ✅ Defined |
-| `User` model | ✅ Defined |
+Example:
+
+```text
+Company
+│
+├── Engineering
+│   ├── Backend
+│   └── Frontend
+│
+├── HR
+│
+└── Finance
+```
+
+---
+
+# Referential Integrity
+
+| Relationship                               | On Delete |
+| ------------------------------------------ | --------- |
+| OrganizationUnit → Organization            | Cascade   |
+| OrganizationUnit → Parent OrganizationUnit | Cascade   |
+| User → OrganizationUnit                    | Restrict  |
+
+---
+
+# Current Status
+
+| Component                   | Status        |
+| --------------------------- | ------------- |
+| PostgreSQL datasource       | ✅ Implemented |
+| Prisma schema               | ✅ Implemented |
+| Prisma Client               | ✅ Generated   |
+| `Role` enum                 | ✅ Implemented |
+| `OrganizationUnitType` enum | ✅ Implemented |
+| `Organization` model        | ✅ Implemented |
+| `OrganizationUnit` model    | ✅ Implemented |
+| `User` model                | ✅ Implemented |
 
 ---
 
 # Planned Extensions
 
-Future phases may add:
+| Area                | Planned Features                                             |
+| ------------------- | ------------------------------------------------------------ |
+| Authentication      | Refresh tokens, session management                           |
+| Organization        | Invitations, membership management, fine-grained permissions |
+| Document Management | Documents, metadata, versioning, processing status           |
+| AI & Retrieval      | Embeddings, vector references, retrieval history             |
+| Monitoring          | Audit logs, query cache, evaluation metrics                  |
 
-* Invitation system
-* Organization membership management
-* Department and team management APIs
-* Role and permission management
-* Refresh tokens / sessions
-* Document metadata and versioning
-* Embeddings and vector references
-* Audit logs
-* Query cache entries
-
-See `docs/DEVELOPMENT.md` for implementation progress.
+For implementation progress, see [`docs/DEVELOPMENT.md`](DEVELOPMENT.md).

@@ -1,4 +1,4 @@
-// backend/src/controllers/auth.contoller.js
+// backend/src/controllers/auth.controller.js
 
 import {registerUser,loginUser} from "../services/auth.services.js";
 import ApiResponse from "../utils/ApiResponse.js";

@@ -1,3 +1,5 @@
+// backend/src/config/config.js
+
 import dotenv from 'dotenv';
 
 dotenv.config();

@@ -10,13 +10,13 @@ export const generateToken = (user)=>{
             role:user.role,
             unitId:user.unitId,
         },
-        config.jwt.accessSecret,
+        config.jwt.secret,
         {
-            expiresIn: config.jwt.accessExpiry,
+            expiresIn: config.jwt.expiresIn,
         }
     );
 };
 
 export const verifyToken = (token)=>{
-    return jwt.verify(token, config.jwt.accessSecret);
+    return jwt.verify(token, config.jwt.secret);
 };

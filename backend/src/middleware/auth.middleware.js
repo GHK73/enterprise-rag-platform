@@ -1,4 +1,4 @@
-// backend/src/middleware/authmiddleware.js
+// backend/src/middleware/auth.middleware.js
 
 import ApiError from "../utils/ApiError.js";
 import asyncHandler from "../utils/asyncHandler.js";
@@ -13,7 +13,14 @@ const auth = asyncHandler(async(req,res, next)=>{
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = verifyToken(token);
+
+    let decoded;
+
+    try {
+        decoded = verifyToken(token);
+    } catch {
+        throw new ApiError(401, "Invalid or expired token");
+    }
     const user = await prisma.user.findUnique({
         where:{
             id:decoded.userId,
@@ -27,7 +34,9 @@ const auth = asyncHandler(async(req,res, next)=>{
         throw new ApiError(403,"Account is inactive");
     }
 
-    req.user = user;
+    const { passwordHash, ...safeUser } = user;
+
+    req.user = safeUser;
     next();
 });
 

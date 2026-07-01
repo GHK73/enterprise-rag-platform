@@ -1,12 +1,12 @@
 # RAG Development Log
 
-Implementation progress for the Enterprise RAG Platform. Database details: [`docs/DATABASE.md`](DATABASE.md).
+Implementation progress for the Enterprise RAG Platform. Database schema: [`docs/DATABASE.md`](DATABASE.md).
 
 ---
 
 # Phase 1 — Backend Foundation ✅
 
-## Structure
+## Project Structure
 
 ```text
 backend/
@@ -25,85 +25,86 @@ backend/
 
 ## Completed
 
-| Area | Details |
-| ---- | ------- |
-| Environment | `.env`, `src/config/config.js` — port, env, Neon `DATABASE_URL`, JWT config |
-| Prisma | Installed, `prisma/schema.prisma`, `src/config/prisma.js`, client generated |
-| Express | `src/app.js`, `server.js` — JSON + CORS, Prisma connect before listen |
-| API | Versioned `/api/v1`, centralized routes, health check, global error + 404 handlers |
-| Utilities | `ApiResponse`, `ApiError`, `asyncHandler` (wrapper ready, not yet wired) |
+| Area        | Details                                                                  |
+| ----------- | ------------------------------------------------------------------------ |
+| Environment | `.env`, `config.js`, Neon `DATABASE_URL`, JWT configuration              |
+| Database    | Prisma installed, schema created, client generated                       |
+| Express     | Express app, CORS, JSON parsing, Prisma connection before server startup |
+| Routing     | Versioned `/api/v1`, centralized routing, health endpoint                |
+| Middleware  | Global error handler, 404 handler                                        |
+| Utilities   | `ApiResponse`, `ApiError`, `asyncHandler`                                |
 
-**Health:** `GET /api/v1/health` → `{ "success": true, "statusCode": 200, "message": "RAG Backend is running", "data": null }`
+**Health Endpoint**
+
+```http
+GET /api/v1/health
+```
+
+Returns:
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "RAG Backend is running",
+  "data": null
+}
+```
 
 ---
 
-# Phase 2 — Authentication & Identity ⏳ In Progress
+# Phase 2 — Authentication & Identity ⏳
 
 ## Completed
 
-| Area                   | Files / Artifacts                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| Database schema        | `prisma/schema.prisma` — `Organization`, `OrganizationUnit`, `User`; enums `Role`, `OrganizationUnitType` |
-| Schema documentation   | `docs/DATABASE.md` — models, relationships, authentication workflow, organization workflow                |
-| Password utilities     | `src/utils/password.js` — password hashing and verification using bcrypt                                  |
-| JWT utilities          | `src/utils/jwt.js` — JWT generation and verification                                                      |
-| Authentication service | `src/services/auth.services.js` — service scaffold created                                                |
+| Area                      | Files                                                                      |
+| ------------------------- | -------------------------------------------------------------------------- |
+| Database Schema           | `Organization`, `OrganizationUnit`, `User`, `Role`, `OrganizationUnitType` |
+| Documentation             | `docs/DATABASE.md`                                                         |
+| Password Utilities        | `src/utils/password.js`                                                    |
+| JWT Utilities             | `src/utils/jwt.js`                                                         |
+| Authentication Service    | `src/services/auth.services.js`                                            |
+| Authentication Controller | `src/controllers/auth.controller.js`                                       |
+| Authentication Routes     | `src/routes/auth.routes.js`                                                |
+| Authentication Middleware | `src/middleware/auth.middleware.js`                                        |
 
-### JWT Configuration (`accessSecret` / `accessExpiry`)
+### JWT
 
-Access tokens use a dedicated secret and expiry, separate from any future refresh tokens.
+**Configuration**
 
-| Config key (`config.js`) | Env variable | Used by | Purpose |
-| ------------------------ | ------------ | ------- | ------- |
-| `jwt.accessSecret` | `JWT_ACCESS_SECRET` | `generateToken` | Signs access tokens |
-| `jwt.accessExpiry` | `JWT_ACCESS_EXPIRES_IN` | `generateToken` | Access token lifetime (e.g. `15m`, `1h`) |
-| `jwt.secret` | `JWT_SECRET` | `verifyToken` | Verifies incoming access tokens |
+* `JWT_SECRET`
+* `JWT_EXPIRES_IN`
 
-**Token payload** (`src/utils/jwt.js`): `userId`, `role`, `unitId`.
+**Token Payload**
 
-**Status:** `jwt.js` expects `accessSecret` and `accessExpiry`; `config.js` still maps only `JWT_SECRET` / `JWT_EXPIRES_IN`. Align `config.js` and `.env` before login endpoints ship. After alignment, `verifyToken` should use `accessSecret` (same key as signing).
+* `userId`
+* `role`
+* `unitId`
 
-**Planned (not implemented):** `jwt.refreshSecret` / `jwt.refreshExpiry` from `JWT_REFRESH_SECRET` / `JWT_REFRESH_EXPIRES_IN` for refresh tokens.
+### Current Authentication Flow
 
-### Authentication Architecture
-
-The platform separates **authentication**, **organization management**, and **member management**.
-
-```
-Authentication
-├── Register
-├── Login
-└── JWT Authentication
-
-Organization
-├── Create Organization
-├── Organization Hierarchy
-└── Organization Settings
-
-Member Management
-├── Invite Members
-├── Assign Roles
-├── Assign Organization Units
-└── Permission Management
+```text
+Register
+    │
+Login
+    │
+Generate JWT
+    │
+Protected Routes
+    │
+Verify JWT
+    │
+Load Authenticated User
 ```
 
-### Current Design Decisions
+### Current Design
 
-* Users can register without belonging to an organization.
-* `role` is optional until a user becomes part of an organization.
-* `unitId` is optional until a user is assigned to an organization unit.
-* Creating an organization is **not** part of user registration.
-* Organization membership will be handled by a dedicated member management module.
-* Users will join organizations through invitations in a future phase.
+* Users can register without an organization.
+* `role` and `unitId` remain `null` until organization membership.
+* Organization creation is independent of registration.
+* Organization membership will be invitation-based.
 
 ## Remaining
-
-### Authentication
-
-* Register endpoint
-* Login endpoint
-* JWT authentication middleware
-* Protected route middleware
 
 ### Organization
 
@@ -116,26 +117,25 @@ Member Management
 * Invite members
 * Accept invitations
 * Assign organization units
-* Role assignment
+* Assign roles
 * Permission management
-
 
 ---
 
 # Progress Summary
 
-**Current phase:** Phase 2 — Authentication & RBAC ⏳
+**Current Phase:** Phase 2 — Authentication & Identity ⏳
 
-| Phase | Status |
-| ----- | ------ |
-| Backend Foundation | ✅ Completed |
-| Authentication & RBAC | ⏳ In Progress |
-| Document Management | ⏳ Planned |
-| Document Processing Pipeline | ⏳ Planned |
-| Vector Database Integration | ⏳ Planned |
-| Retrieval Pipeline | ⏳ Planned |
-| LLM Integration | ⏳ Planned |
-| Query Caching | ⏳ Planned |
-| Evaluation Framework | ⏳ Planned |
-| Monitoring & Logging | ⏳ Planned |
-| Deployment | ⏳ Planned |
+| Phase                        | Status        |
+| ---------------------------- | ------------- |
+| Backend Foundation           | ✅ Completed   |
+| Authentication & Identity    | ⏳ In Progress |
+| Document Management          | ⏳ Planned     |
+| Document Processing Pipeline | ⏳ Planned     |
+| Vector Database Integration  | ⏳ Planned     |
+| Retrieval Pipeline           | ⏳ Planned     |
+| LLM Integration              | ⏳ Planned     |
+| Query Caching                | ⏳ Planned     |
+| Evaluation Framework         | ⏳ Planned     |
+| Monitoring & Logging         | ⏳ Planned     |
+| Deployment                   | ⏳ Planned     |
