@@ -1,0 +1,86 @@
+.home {
+    width: 100%;
+    min-height: calc(100vh - 4.5rem);
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    padding: clamp(2rem, 5vw, 5rem);
+}
+
+.home-content {
+    width: min(100%, 60rem);
+    text-align: center;
+}
+
+.home-tag {
+    display: inline-block;
+
+    color: var(--primary);
+    background-color: rgba(37, 99, 235, 0.08);
+
+    padding: 0.5rem 1rem;
+    border-radius: 999rem;
+
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.home-title {
+    margin-top: 1.5rem;
+
+    font-size: clamp(2.5rem, 5vw, 4.5rem);
+    line-height: 1.15;
+
+    color: var(--text-primary);
+}
+
+.home-description {
+    margin: 2rem auto;
+
+    width: min(100%, 45rem);
+
+    font-size: 1.1rem;
+    line-height: 1.8;
+
+    color: var(--text-secondary);
+}
+
+.home-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+
+    flex-wrap: wrap;
+}
+
+.primary-btn,
+.secondary-btn {
+    padding: 0.9rem 1.6rem;
+    border-radius: 0.6rem;
+
+    font-weight: 600;
+
+    transition: all 0.2s ease;
+}
+
+.primary-btn {
+    background-color: var(--primary);
+    color: var(--card);
+}
+
+.primary-btn:hover {
+    opacity: 0.9;
+}
+
+.secondary-btn {
+    border: 1px solid var(--border);
+    background-color: var(--card);
+    color: var(--text-primary);
+}
+
+.secondary-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}

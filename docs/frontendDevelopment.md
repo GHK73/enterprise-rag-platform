@@ -1,34 +1,34 @@
-# Frontend Development Guide
+# Frontend Architecture & Development Guide
 
-This document defines the frontend architecture, development standards, folder structure, UI guidelines, and implementation roadmap for the Enterprise Retrieval-Augmented Generation (RAG) Platform.
+Defines the frontend architecture, coding standards, UI guidelines, and development workflow for the Enterprise Retrieval-Augmented Generation (RAG) Platform.
 
 ---
 
 # Goals
 
-The frontend should provide a professional enterprise user experience while remaining modular, maintainable, and scalable.
+The frontend should provide a professional, scalable, and maintainable enterprise user experience.
 
-Development follows these principles:
+Development principles:
 
-* Build reusable components.
-* Keep pages independent.
-* Maintain consistent UI throughout the application.
-* Avoid unnecessary files or abstractions.
-* Implement features incrementally.
-* Test each feature before moving to the next.
+- Build reusable components.
+- Keep pages independent.
+- Maintain consistent UI.
+- Avoid unnecessary files and abstractions.
+- Develop incrementally.
+- Test every feature before proceeding.
 
 ---
 
 # Technology Stack
 
-| Layer            | Technology                                    |
-| ---------------- | --------------------------------------------- |
-| Framework        | React                                         |
-| Routing          | React Router                                  |
-| Styling          | CSS Modules (One CSS file per page/component) |
-| HTTP Client      | Axios                                         |
-| State Management | React Context API                             |
-| Build Tool       | Vite                                          |
+| Layer | Technology |
+| ------ | ---------- |
+| Framework | React |
+| Routing | React Router DOM |
+| Styling | Component-based CSS |
+| HTTP Client | Axios |
+| State Management | React Context API |
+| Build Tool | Vite |
 
 ---
 
@@ -40,9 +40,7 @@ frontend/
 ├── public/
 │
 ├── src/
-│   │
 │   ├── assets/
-│   │
 │   ├── components/
 │   │   ├── Navbar/
 │   │   ├── Sidebar/
@@ -70,13 +68,9 @@ frontend/
 │   │   └── Settings/
 │   │
 │   ├── services/
-│   │
 │   ├── context/
-│   │
 │   ├── hooks/
-│   │
 │   ├── routes/
-│   │
 │   ├── App.jsx
 │   ├── main.jsx
 │   └── index.css
@@ -86,9 +80,9 @@ frontend/
 
 ---
 
-# CSS Guidelines
+# Styling Guidelines
 
-Every page must have its own stylesheet.
+Every page and reusable component must have its own CSS file.
 
 Example:
 
@@ -96,46 +90,43 @@ Example:
 Login/
     Login.jsx
     Login.css
+
+Navbar/
+    Navbar.jsx
+    Navbar.css
 ```
 
-Every reusable component must also have its own stylesheet.
+`index.css` should contain only:
 
-Example:
+- CSS reset
+- Font imports
+- CSS variables
+- Global typography
+- Scrollbar styling
 
-```text
-Button/
-    Button.jsx
-    Button.css
-```
+Use:
 
-The global stylesheet (`index.css`) should only contain:
-
-* CSS reset
-* Font imports
-* Color variables
-* Global typography
-* Scrollbar styling
-
-Page-specific styling must never be placed in `index.css`.
+- `rem` for fonts, spacing, and border radius.
+- `%`, `vw`, `vh`, `min()`, `max()`, and `clamp()` for responsive sizing.
+- Flexbox and CSS Grid for layouts.
+- `1px` only where fixed borders are required.
 
 ---
 
 # Layout Strategy
 
-The application uses two layouts.
-
 ## Public Layout
 
 Used for:
 
-* Home
-* Login
-* Register
+- Home
+- Login
+- Register
 
 Contains:
 
-* Navigation Bar
-* Main Content
+- Navbar
+- Main Content
 
 ---
 
@@ -145,86 +136,83 @@ Used after authentication.
 
 Contains:
 
-* Sidebar
-* Topbar
-* Main Content Area
+- Sidebar
+- Topbar
+- Main Content
 
 The public navigation bar is not displayed inside the dashboard.
 
 ---
 
-# Navigation Structure
+# Navigation
 
 ## Public Navigation
 
-* Home
-* Features
-* Documentation
-* GitHub
-* Login
-* Register
+- Home
+- Features
+- Documentation
+- GitHub
+- Login
+- Register
 
 ---
 
 ## Dashboard Sidebar
 
-* Dashboard
-* Organization
-* Documents
-* Upload
-* Search
-* Analytics
-* Settings
-* Logout
+- Dashboard
+- Organization
+- Documents
+- Upload
+- Search
+- Analytics
+- Settings
+- Logout
 
 ---
 
 # Design System
 
-## Primary Colors
+## Colors
 
-| Purpose        | Color   |
-| -------------- | ------- |
-| Primary        | #2563EB |
-| Secondary      | #1E293B |
-| Background     | #F8FAFC |
-| Card           | #FFFFFF |
-| Border         | #E2E8F0 |
-| Success        | #22C55E |
-| Warning        | #F59E0B |
-| Error          | #EF4444 |
-| Primary Text   | #0F172A |
+| Purpose | Color |
+| -------- | ----- |
+| Primary | #2563EB |
+| Secondary | #1E293B |
+| Background | #F8FAFC |
+| Card | #FFFFFF |
+| Border | #E2E8F0 |
+| Success | #22C55E |
+| Warning | #F59E0B |
+| Error | #EF4444 |
+| Primary Text | #0F172A |
 | Secondary Text | #64748B |
 
----
+### Typography
 
-# Typography
-
-Primary Font:
-
-Inter
-
-Fallback:
-
-sans-serif
+- Primary Font: Inter
+- Fallback: sans-serif
 
 ---
 
 # Component Guidelines
 
-Reusable components should remain generic.
+Reusable components should:
+
+- Accept data through props.
+- Contain no business logic.
+- Contain no API calls.
+- Be reusable across multiple pages.
+- Keep styling within their own CSS file.
 
 Examples:
 
-* Button
-* Input
-* Card
-* Modal
-* Loader
-* Badge
-* Empty State
-
-Business logic must not be placed inside reusable UI components.
+- Button
+- Input
+- Card
+- Modal
+- Loader
+- Badge
+- EmptyState
 
 ---
 
@@ -232,9 +220,8 @@ Business logic must not be placed inside reusable UI components.
 
 Frontend communicates only with the backend REST API.
 
-No component should directly construct API URLs.
-
-All HTTP requests should go through the `services` layer.
+- Components must never construct API URLs.
+- All requests should go through the `services` layer.
 
 ---
 
@@ -242,14 +229,14 @@ All HTTP requests should go through the `services` layer.
 
 ```text
 Login
-    │
+   │
 Receive JWT
-    │
+   │
 Store Token
-    │
+   │
 Protected Routes
-    │
-Authenticated Dashboard
+   │
+Dashboard
 ```
 
 Unauthenticated users should only access public pages.
@@ -262,117 +249,118 @@ The dashboard should prioritize clarity over decoration.
 
 Guidelines:
 
-* Clean spacing
-* Minimal animations
-* Consistent cards
-* Predictable navigation
-* Responsive layout
-* Fast loading
+- Clean spacing
+- Consistent layout
+- Minimal animations
+- Responsive design
+- Predictable navigation
+- Fast loading
 
 ---
 
 # Development Workflow
 
-Features are implemented incrementally.
+Each implementation step should modify only:
 
-Each step should include only 2–3 related files.
+- 2–3 related files, or
+- 2–3 related functions.
 
-For every step:
+Workflow:
 
-1. Implement the feature.
-2. Test it.
-3. Fix issues.
-4. Commit changes.
-5. Move to the next feature.
+1. Implement
+2. Test
+3. Fix issues
+4. Commit
+5. Continue
 
 Do not introduce unnecessary files or abstractions.
 
 ---
 
-# Initial Development Roadmap
+# Development Roadmap
 
 ## Phase 1
 
-* Project setup
-* Routing
-* Public layout
-* Home page
+- Project Setup
+- Routing
+- Public Layout
+- Home Page
 
 ---
 
 ## Phase 2
 
-* Login page
-* Register page
-* Authentication integration
+- Login
+- Register
+- Authentication Integration
 
 ---
 
 ## Phase 3
 
-* Dashboard layout
-* Sidebar
-* Topbar
-* Protected routes
+- Dashboard Layout
+- Sidebar
+- Topbar
+- Protected Routes
 
 ---
 
 ## Phase 4
 
-* Organization management
+- Organization Management
 
 ---
 
 ## Phase 5
 
-* Document management
+- Document Management
 
 ---
 
 ## Phase 6
 
-* Document upload
+- Document Upload
 
 ---
 
 ## Phase 7
 
-* Retrieval interface
+- Retrieval Interface
 
 ---
 
 ## Phase 8
 
-* Search results
-* Citations
-* Streaming responses
+- Search Results
+- Citations
+- Streaming Responses
 
 ---
 
 ## Phase 9
 
-* Analytics dashboard
+- Analytics Dashboard
 
 ---
 
 ## Phase 10
 
-* Settings
-* User profile
-* Final UI polish
+- Settings
+- User Profile
+- Final UI Polish
 
 ---
 
 # Coding Standards
 
-* Keep components small and focused.
-* Reuse existing components whenever possible.
-* Avoid duplicate code.
-* Follow consistent naming conventions.
-* Keep styling isolated to the corresponding component or page.
-* Test every feature before proceeding.
-* Do not rename existing variables or files unless necessary.
-* Do not create files unless they are required for the current feature.
+- Keep components small and focused.
+- Reuse existing components whenever possible.
+- Avoid duplicate code.
+- Follow consistent naming conventions.
+- Keep styles isolated to their corresponding component or page.
+- Do not rename existing variables or files unless necessary.
+- Do not change the folder structure unnecessarily.
+- Test every feature before moving forward.
 
 ---
 
