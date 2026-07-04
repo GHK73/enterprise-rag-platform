@@ -6,6 +6,6 @@ import auth from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-router.get("/",auth,healthCheck);
+router.get("/",healthCheck);
 
 export default router;
