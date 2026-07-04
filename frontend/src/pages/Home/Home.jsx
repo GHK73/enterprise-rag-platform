@@ -1,8 +1,40 @@
 // frontend/src/pages/Home/Home.jsx
 
+import { useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../../context/AuthContext";
 import "./Home.css";
 
 function Home() {
+    const { token, user } = useContext(AuthContext);
+    const navigate = useNavigate();
+
+    function handlePrimaryAction() {
+        if (!token) {
+            navigate("/login");
+            return;
+        }
+
+        if (!user?.unitId) {
+            navigate("/create-organization");
+            return;
+        }
+
+        navigate("/dashboard");
+    }
+
+    function getPrimaryActionText() {
+        if (!token) {
+            return "Get Started";
+        }
+
+        if (!user?.unitId) {
+            return "Create Organization";
+        }
+
+        return "Open Dashboard";
+    }
+
     return (
         <main className="home">
 
@@ -28,8 +60,11 @@ function Home() {
                     </p>
 
                     <div className="home-actions">
-                        <button className="primary-btn">
-                            Get Started
+                        <button
+                            className="primary-btn"
+                            onClick={handlePrimaryAction}
+                        >
+                            {getPrimaryActionText()}
                         </button>
 
                         <button className="secondary-btn">

@@ -4,8 +4,11 @@ import PublicLayout from "./layouts/PublicLayout";
 import Home from "./pages/Home/Home";
 import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
+import Dashboard from "./pages/Dashboard/Dashboard.jsx";
 import PublicRoute from "./components/PublicRoute/PublicRoute";
+import CreateOrganization from "./pages/CreateOrganization/CreateOrganization.jsx";
 import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
+import Organization from "./pages/Organization/Organization.jsx";
 
 function App() {
     return (
@@ -44,7 +47,23 @@ function App() {
                 path="/dashboard"
                 element={
                     <ProtectedRoute>
-                        <h1>Dashboard</h1>
+                        <Dashboard />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/organization"
+                element={
+                    <ProtectedRoute>
+                        <Organization />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/create-organization"
+                element={
+                    <ProtectedRoute>
+                        <CreateOrganization />
                     </ProtectedRoute>
                 }
             />
