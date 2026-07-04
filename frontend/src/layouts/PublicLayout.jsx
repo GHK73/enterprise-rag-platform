@@ -1,13 +1,15 @@
+// frontend/src/layouts/PublicLayout.jsx
+
 import Navbar from "../components/Navbar/Navbar";
 
-function PublicLayout({children}){
-    return(
+function PublicLayout({ children }) {
+    return (
         <>
-        <Navbar>
+            <Navbar />
+
             <main>
                 {children}
             </main>
-        </Navbar>
         </>
     );
 }

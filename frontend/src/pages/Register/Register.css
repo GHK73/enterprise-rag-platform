@@ -1,0 +1,125 @@
+/* frontend/src/pages/Register/Register.css */
+
+.register-page {
+    min-height: calc(100vh - 4.5rem);
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    padding: 2rem;
+}
+
+.register-container {
+    width: min(100%, 28rem);
+
+    padding: 2.5rem;
+
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0.8rem;
+}
+
+.register-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.register-header h1 {
+    color: var(--text-primary);
+    font-size: 2rem;
+}
+
+.register-header p {
+    margin-top: 0.75rem;
+
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.register-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.register-submit-btn {
+    width: 100%;
+
+    padding: 0.9rem;
+
+    background-color: var(--primary);
+    color: var(--card);
+
+    border-radius: 0.5rem;
+
+    font-weight: 600;
+
+    transition: opacity 0.2s ease;
+}
+
+.register-submit-btn:hover {
+    opacity: 0.9;
+}
+
+.register-footer {
+    margin-top: 1.5rem;
+
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.register-footer a {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+@media (max-width: 480px) {
+
+    .register-page {
+        padding: 1rem;
+    }
+
+    .register-container {
+        padding: 2rem 1.5rem;
+    }
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.form-group label {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.form-group input {
+    width: 100%;
+
+    padding: 0.85rem 1rem;
+
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+
+    color: var(--text-primary);
+}
+
+.form-group input:focus {
+    border-color: var(--primary);
+    outline: none;
+}
+.register-error {
+    margin-bottom: 1.5rem;
+
+    padding: 0.75rem 1rem;
+
+    background-color: rgba(220, 38, 38, 0.08);
+    color: #dc2626;
+
+    border-radius: 0.5rem;
+
+    font-size: 0.9rem;
+}

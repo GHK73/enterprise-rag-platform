@@ -1,5 +1,10 @@
+/* frontend/src/pages/Home/Home.css */
+
 .home {
     width: 100%;
+}
+
+.hero-section {
     min-height: calc(100vh - 4.5rem);
 
     display: flex;
@@ -14,7 +19,8 @@
     text-align: center;
 }
 
-.home-tag {
+.home-tag,
+.section-tag {
     display: inline-block;
 
     color: var(--primary);
@@ -83,4 +89,96 @@
 .secondary-btn:hover {
     border-color: var(--primary);
     color: var(--primary);
+}
+
+.features-section,
+.architecture-section {
+    padding: clamp(4rem, 8vw, 7rem) clamp(2rem, 5vw, 5rem);
+}
+
+.section-heading {
+    width: min(100%, 45rem);
+    margin: 0 auto 3rem;
+
+    text-align: center;
+}
+
+.section-heading h2,
+.architecture-content h2 {
+    margin-top: 1rem;
+
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.2;
+
+    color: var(--text-primary);
+}
+
+.section-heading p,
+.architecture-content p {
+    margin-top: 1rem;
+
+    line-height: 1.8;
+
+    color: var(--text-secondary);
+}
+
+.features-grid {
+    width: min(100%, 75rem);
+    margin: 0 auto;
+
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.feature-card {
+    padding: 2rem;
+
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0.8rem;
+}
+
+.feature-card h3 {
+    margin-bottom: 1rem;
+
+    color: var(--text-primary);
+}
+
+.feature-card p {
+    line-height: 1.7;
+
+    color: var(--text-secondary);
+}
+
+.architecture-section {
+    background-color: var(--card);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+
+.architecture-content {
+    width: min(100%, 75rem);
+    margin: 0 auto;
+
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+}
+
+@media (max-width: 768px) {
+
+    .features-grid,
+    .architecture-content {
+        grid-template-columns: 1fr;
+    }
+
+    .architecture-content {
+        gap: 1.5rem;
+    }
+
+    .feature-card {
+        padding: 1.5rem;
+    }
 }

@@ -15,8 +15,8 @@ export const register = asyncHandler(async(req,res)=>{
     return res.status(201).json(
         new ApiResponse(
             201,
-            result,
-            "User registered Succesfully"
+            "User registered successfully",
+            result
         )
     );
 });
@@ -31,8 +31,8 @@ export const login = asyncHandler(async(req,res)=>{
     return res.status(200).json(
         new ApiResponse(
             200,
-            result,
-            "Login successsful"
+            "Login successful",
+            result
         )
     );
 });

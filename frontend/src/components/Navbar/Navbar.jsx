@@ -1,7 +1,30 @@
-import { Link } from "react-router-dom";
+// frontend/src/components/Navbar/Navbar.jsx
+
+import { useContext, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { AuthContext } from "../../context/AuthContext";
 import "./Navbar.css";
 
 function Navbar() {
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    const { token, logout } = useContext(AuthContext);
+    const navigate = useNavigate();
+
+    function toggleMenu() {
+        setMenuOpen(!menuOpen);
+    }
+
+    function closeMenu() {
+        setMenuOpen(false);
+    }
+
+    function handleLogout() {
+        logout();
+        closeMenu();
+        navigate("/");
+    }
+
     return (
         <header className="navbar">
             <div className="navbar-container">
@@ -12,27 +35,86 @@ function Navbar() {
                     </Link>
                 </div>
 
-                <div className="navbar-center">
+                <div className={`navbar-center ${menuOpen ? "active" : ""}`}>
                     <nav className="navbar-links">
-                        <Link to="/">Home</Link>
-                        <Link to="/">Features</Link>
-                        <Link to="/">Documentation</Link>
-                        <Link to="/">GitHub</Link>
+                        <Link to="/" onClick={closeMenu}>
+                            Home
+                        </Link>
+
+                        <Link to="/" onClick={closeMenu}>
+                            Features
+                        </Link>
+
+                        <Link to="/" onClick={closeMenu}>
+                            Documentation
+                        </Link>
+
+                        <Link to="/" onClick={closeMenu}>
+                            GitHub
+                        </Link>
                     </nav>
+
+                    <div className="mobile-actions">
+                        {token ? (
+                            <button
+                                className="login-btn"
+                                onClick={handleLogout}
+                            >
+                                Logout
+                            </button>
+                        ) : (
+                            <>
+                                <Link
+                                    to="/login"
+                                    className="login-btn"
+                                    onClick={closeMenu}
+                                >
+                                    Login
+                                </Link>
+
+                                <Link
+                                    to="/register"
+                                    className="register-btn"
+                                    onClick={closeMenu}
+                                >
+                                    Register
+                                </Link>
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 <div className="navbar-actions">
-                    <Link to="/login" className="login-btn">
-                        Login
-                    </Link>
+                    {token ? (
+                        <button
+                            className="login-btn"
+                            onClick={handleLogout}
+                        >
+                            Logout
+                        </button>
+                    ) : (
+                        <>
+                            <Link to="/login" className="login-btn">
+                                Login
+                            </Link>
 
-                    <Link to="/register" className="register-btn">
-                        Register
-                    </Link>
+                            <Link to="/register" className="register-btn">
+                                Register
+                            </Link>
+                        </>
+                    )}
                 </div>
 
+                <button
+                    className="menu-btn"
+                    onClick={toggleMenu}
+                    aria-label="Toggle navigation menu"
+                >
+                    {menuOpen ? "✕" : "☰"}
+                </button>
+
             </div>
-        </header>   
+        </header>
     );
 }
 

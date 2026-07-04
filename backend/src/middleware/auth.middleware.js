@@ -5,7 +5,7 @@ import asyncHandler from "../utils/asyncHandler.js";
 import prisma from "../config/prisma.js";
 import {verifyToken} from "../utils/jwt.js";
 
-const auth = asyncHandler(async(req,res, next)=>{
+const authenticate = asyncHandler(async(req,res, next)=>{
     const authHeader = req.headers.authorization;
 
     if(!authHeader|| !authHeader.startsWith("Bearer ")){
@@ -40,4 +40,4 @@ const auth = asyncHandler(async(req,res, next)=>{
     next();
 });
 
-export default auth;
+export default authenticate;

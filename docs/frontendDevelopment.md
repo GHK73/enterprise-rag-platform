@@ -1,28 +1,30 @@
 # Frontend Architecture & Development Guide
 
-Defines the frontend architecture, coding standards, UI guidelines, and development workflow for the Enterprise Retrieval-Augmented Generation (RAG) Platform.
+Defines the architecture, development standards, UI guidelines, and implementation workflow for the Enterprise Retrieval-Augmented Generation (RAG) Platform frontend.
 
 ---
 
 # Goals
 
-The frontend should provide a professional, scalable, and maintainable enterprise user experience.
+Build a professional, scalable, and maintainable enterprise frontend.
 
 Development principles:
 
-- Build reusable components.
-- Keep pages independent.
-- Maintain consistent UI.
+- Build reusable components when reuse is required.
+- Keep pages independent and focused.
+- Maintain consistent UI and styling.
 - Avoid unnecessary files and abstractions.
 - Develop incrementally.
-- Test every feature before proceeding.
+- Modify only 2–3 related files or functions at a time.
+- Test every feature before continuing.
+- Do not rename existing variables or restructure working code unnecessarily.
 
 ---
 
 # Technology Stack
 
 | Layer | Technology |
-| ------ | ---------- |
+|-------|------------|
 | Framework | React |
 | Routing | React Router DOM |
 | Styling | Component-based CSS |
@@ -34,6 +36,8 @@ Development principles:
 
 # Project Structure
 
+Create folders and files only when required by the current implementation phase.
+
 ```text
 frontend/
 │
@@ -41,16 +45,19 @@ frontend/
 │
 ├── src/
 │   ├── assets/
+│   │
+│   ├── api/
+│   │   └── axios.js
+│   │
 │   ├── components/
 │   │   ├── Navbar/
+│   │   ├── ProtectedRoute/
+│   │   ├── PublicRoute/
 │   │   ├── Sidebar/
-│   │   ├── Topbar/
-│   │   ├── Button/
-│   │   ├── Card/
-│   │   ├── Input/
-│   │   ├── Loader/
-│   │   ├── Modal/
-│   │   └── EmptyState/
+│   │   └── Topbar/
+│   │
+│   ├── context/
+│   │   └── AuthContext.jsx
 │   │
 │   ├── layouts/
 │   │   ├── PublicLayout.jsx
@@ -63,14 +70,11 @@ frontend/
 │   │   ├── Dashboard/
 │   │   ├── Organization/
 │   │   ├── Documents/
+│   │   ├── Upload/
 │   │   ├── Query/
 │   │   ├── Analytics/
 │   │   └── Settings/
 │   │
-│   ├── services/
-│   ├── context/
-│   ├── hooks/
-│   ├── routes/
 │   ├── App.jsx
 │   ├── main.jsx
 │   └── index.css
@@ -78,30 +82,33 @@ frontend/
 └── package.json
 ```
 
+Do not create empty folders or placeholder components before they are needed.
+
 ---
 
 # Styling Guidelines
 
-Every page and reusable component must have its own CSS file.
+Every page and reusable component should have its own CSS file.
 
 Example:
 
 ```text
 Login/
-    Login.jsx
-    Login.css
+├── Login.jsx
+└── Login.css
 
 Navbar/
-    Navbar.jsx
-    Navbar.css
+├── Navbar.jsx
+└── Navbar.css
 ```
 
-`index.css` should contain only:
+`index.css` should contain only global styles:
 
 - CSS reset
 - Font imports
 - CSS variables
 - Global typography
+- Global element defaults
 - Scrollbar styling
 
 Use:
@@ -110,6 +117,14 @@ Use:
 - `%`, `vw`, `vh`, `min()`, `max()`, and `clamp()` for responsive sizing.
 - Flexbox and CSS Grid for layouts.
 - `1px` only where fixed borders are required.
+- Existing CSS variables instead of repeating color values.
+
+Avoid:
+
+- Inline styles.
+- Unnecessary fixed widths and heights.
+- Duplicate global styles.
+- Page-specific styles inside `index.css`.
 
 ---
 
@@ -125,22 +140,43 @@ Used for:
 
 Contains:
 
-- Navbar
-- Main Content
+```text
+Navbar
+Main Content
+```
+
+The public Navbar should respond to authentication state:
+
+```text
+Logged Out → Login + Register
+Logged In  → Logout
+```
 
 ---
 
 ## Dashboard Layout
 
-Used after authentication.
+Used for authenticated application pages.
 
 Contains:
 
-- Sidebar
-- Topbar
-- Main Content
+```text
+Sidebar
+Topbar
+Main Content
+```
 
-The public navigation bar is not displayed inside the dashboard.
+The public Navbar must not appear inside the dashboard.
+
+Dashboard pages include:
+
+- Dashboard
+- Organization
+- Documents
+- Upload
+- Query
+- Analytics
+- Settings
 
 ---
 
@@ -154,8 +190,7 @@ The public navigation bar is not displayed inside the dashboard.
 - GitHub
 - Login
 - Register
-
----
+- Logout when authenticated
 
 ## Dashboard Sidebar
 
@@ -168,6 +203,8 @@ The public navigation bar is not displayed inside the dashboard.
 - Settings
 - Logout
 
+Navigation should remain consistent across all dashboard pages.
+
 ---
 
 # Design System
@@ -175,36 +212,48 @@ The public navigation bar is not displayed inside the dashboard.
 ## Colors
 
 | Purpose | Color |
-| -------- | ----- |
-| Primary | #2563EB |
-| Secondary | #1E293B |
-| Background | #F8FAFC |
-| Card | #FFFFFF |
-| Border | #E2E8F0 |
-| Success | #22C55E |
-| Warning | #F59E0B |
-| Error | #EF4444 |
-| Primary Text | #0F172A |
-| Secondary Text | #64748B |
+|---------|-------|
+| Primary | `#2563EB` |
+| Secondary | `#1E293B` |
+| Background | `#F8FAFC` |
+| Card | `#FFFFFF` |
+| Border | `#E2E8F0` |
+| Success | `#22C55E` |
+| Warning | `#F59E0B` |
+| Error | `#EF4444` |
+| Primary Text | `#0F172A` |
+| Secondary Text | `#64748B` |
 
-### Typography
+These values should be defined as CSS variables and reused throughout the application.
 
-- Primary Font: Inter
-- Fallback: sans-serif
+## Typography
+
+```text
+Primary Font: Inter
+Fallback: sans-serif
+```
+
+Typography should remain consistent across pages and components.
 
 ---
 
 # Component Guidelines
 
+Create a reusable component only when:
+
+- The same UI pattern is used in multiple places.
+- The component has a clear independent responsibility.
+- Reuse reduces meaningful duplication.
+
 Reusable components should:
 
 - Accept data through props.
-- Contain no business logic.
-- Contain no API calls.
-- Be reusable across multiple pages.
-- Keep styling within their own CSS file.
+- Avoid page-specific business logic.
+- Avoid direct API calls.
+- Keep styling in their own CSS file.
+- Remain focused and predictable.
 
-Examples:
+Possible reusable components:
 
 - Button
 - Input
@@ -214,47 +263,123 @@ Examples:
 - Badge
 - EmptyState
 
+Do not create these components before they are actually needed.
+
 ---
 
 # API Integration
 
-Frontend communicates only with the backend REST API.
+The frontend communicates only with the backend REST API.
 
-- Components must never construct API URLs.
-- All requests should go through the `services` layer.
+All requests should use the shared Axios instance:
+
+```text
+src/api/axios.js
+```
+
+Rules:
+
+- Pages and components must not construct backend base URLs.
+- Protected requests must include the JWT access token.
+- API errors should be handled consistently.
+- Invalid or expired authentication should clear the session.
+- Backend error messages should be shown when appropriate.
 
 ---
 
 # Authentication Flow
 
 ```text
-Login
-   │
-Receive JWT
-   │
-Store Token
-   │
-Protected Routes
-   │
-Dashboard
+Register / Login
+        │
+        ▼
+   Receive JWT
+        │
+        ▼
+Authentication Context
+        │
+        ▼
+   Store Token
+        │
+        ▼
+Update Authentication State
+        │
+        ▼
+  Protected Routes
+        │
+        ▼
+     Dashboard
 ```
 
-Unauthenticated users should only access public pages.
+Authentication requirements:
+
+- Unauthenticated users can access public pages.
+- Authenticated users cannot access Login or Register.
+- Unauthenticated users cannot access protected pages.
+- Login and registration update global authentication state.
+- Logout removes the token and resets authentication state.
+- Navbar content updates immediately when authentication state changes.
+
+---
+
+# Route Strategy
+
+## Public Routes
+
+Examples:
+
+```text
+/
+```
+
+Accessible to all users.
+
+## Authentication Routes
+
+Examples:
+
+```text
+/login
+/register
+```
+
+Authenticated users should be redirected away from these routes.
+
+## Protected Routes
+
+Examples:
+
+```text
+/dashboard
+/organization
+/documents
+/upload
+/query
+/analytics
+/settings
+```
+
+Unauthenticated users should be redirected to Login.
 
 ---
 
 # Dashboard Philosophy
 
-The dashboard should prioritize clarity over decoration.
+The dashboard should prioritize clarity and usability over decoration.
 
 Guidelines:
 
-- Clean spacing
-- Consistent layout
-- Minimal animations
-- Responsive design
-- Predictable navigation
-- Fast loading
+- Clean spacing.
+- Consistent layout.
+- Minimal animations.
+- Responsive design.
+- Predictable navigation.
+- Clear loading states.
+- Clear empty states.
+- Clear error states.
+- Fast interaction.
+
+The dashboard should resemble a modern enterprise SaaS application.
 
 ---
 
@@ -267,100 +392,139 @@ Each implementation step should modify only:
 
 Workflow:
 
-1. Implement
-2. Test
-3. Fix issues
-4. Commit
-5. Continue
+```text
+Implement
+   │
+   ▼
+Test
+   │
+   ▼
+Fix Issues
+   │
+   ▼
+Update Development Log
+   │
+   ▼
+Continue
+```
 
-Do not introduce unnecessary files or abstractions.
+Rules:
+
+- Do not skip testing.
+- Do not combine unrelated features in one step.
+- Do not add unnecessary files.
+- Do not rename working variables without a reason.
+- Do not restructure working code unnecessarily.
+- Complete the current feature before starting the next one.
 
 ---
 
 # Development Roadmap
 
-## Phase 1
+## Phase 1 — Frontend Foundation
 
-- Project Setup
+- Project setup
+- Dependencies
+- Global styling
 - Routing
-- Public Layout
-- Home Page
+- Public layout
+- Responsive Navbar
+- Home page
+- Landing page sections
 
----
+## Phase 2 — Authentication
 
-## Phase 2
+- Login page
+- Register page
+- Axios configuration
+- Login API integration
+- Register API integration
+- JWT storage
+- Authentication Context
+- Public route protection
+- Protected routes
+- Authentication redirects
+- Authentication-aware Navbar
+- Logout
+- Protected API authorization
+- Session verification
+- Expired token handling
 
-- Login
-- Register
-- Authentication Integration
+## Phase 3 — Dashboard Layout
 
----
-
-## Phase 3
-
-- Dashboard Layout
+- DashboardLayout
 - Sidebar
 - Topbar
-- Protected Routes
+- Responsive dashboard navigation
+- Dashboard page structure
 
----
+## Phase 4 — Organization Management
 
-## Phase 4
+- Organization creation
+- Organization details
+- Organization membership
+- Role-based UI access
 
-- Organization Management
+## Phase 5 — Document Management
 
----
+- Document listing
+- Document details
+- Document status
+- Document actions
 
-## Phase 5
+## Phase 6 — Document Upload
 
-- Document Management
+- Upload interface
+- File validation
+- Upload progress
+- Processing status
+- Upload error handling
 
----
+## Phase 7 — Retrieval Interface
 
-## Phase 6
+- Query input
+- Retrieval configuration
+- Query submission
+- Response display
 
-- Document Upload
+## Phase 8 — Search and Citations
 
----
+- Search results
+- Source citations
+- Retrieved context
+- Streaming responses
 
-## Phase 7
+## Phase 9 — Analytics
 
-- Retrieval Interface
+- Usage metrics
+- Document statistics
+- Query statistics
+- Retrieval performance
 
----
+## Phase 10 — Settings and Final Polish
 
-## Phase 8
-
-- Search Results
-- Citations
-- Streaming Responses
-
----
-
-## Phase 9
-
-- Analytics Dashboard
-
----
-
-## Phase 10
-
-- Settings
-- User Profile
-- Final UI Polish
+- User profile
+- Organization settings
+- Application settings
+- Responsive improvements
+- Accessibility review
+- Loading and error states
+- Final UI consistency review
 
 ---
 
 # Coding Standards
 
 - Keep components small and focused.
-- Reuse existing components whenever possible.
+- Reuse existing components when meaningful.
 - Avoid duplicate code.
 - Follow consistent naming conventions.
-- Keep styles isolated to their corresponding component or page.
+- Keep styles isolated to the corresponding page or component.
 - Do not rename existing variables or files unless necessary.
 - Do not change the folder structure unnecessarily.
+- Keep API logic separate from reusable UI components.
 - Test every feature before moving forward.
+- Add abstractions only when the existing code requires them.
 
 ---
 
