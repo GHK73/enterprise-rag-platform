@@ -1,11 +1,12 @@
 // backend/src/controllers/auth.controller.js
 
-import {registerUser,loginUser} from "../services/auth.services.js";
+import { registerUser, loginUser } from "../services/auth.services.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asyncHandler.js";
 
-export const register = asyncHandler(async(req,res)=>{
-    const {fullName, email, password} = req.body;
+export const register = asyncHandler(async (req, res) => {
+    const { fullName, email, password } = req.body;
+
     const result = await registerUser({
         fullName,
         email,
@@ -21,18 +22,29 @@ export const register = asyncHandler(async(req,res)=>{
     );
 });
 
-export const login = asyncHandler(async(req,res)=>{
-    const {email,password} = req.body;
+export const login = asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
 
     const result = await loginUser({
         email,
         password,
     });
+
     return res.status(200).json(
         new ApiResponse(
             200,
             "Login successful",
             result
+        )
+    );
+});
+
+export const getCurrentUser = asyncHandler(async (req, res) => {
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Current user fetched successfully",
+            req.user
         )
     );
 });
