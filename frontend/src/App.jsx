@@ -1,5 +1,5 @@
-import './App.css';
-import { Routes, Route } from "react-router-dom";
+import "./App.css";
+import {Routes, Route} from "react-router-dom";
 import PublicLayout from "./layouts/PublicLayout";
 import Home from "./pages/Home/Home";
 import Login from "./pages/Login/Login";
@@ -9,8 +9,10 @@ import PublicRoute from "./components/PublicRoute/PublicRoute";
 import CreateOrganization from "./pages/CreateOrganization/CreateOrganization.jsx";
 import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
 import Organization from "./pages/Organization/Organization.jsx";
+import Permissions from "./pages/Permissions/Permissions.jsx";
+import Invitations from "./pages/Invitations/Invitations.jsx";
 
-function App() {
+function App(){
     return (
         <Routes>
             <Route
@@ -43,27 +45,56 @@ function App() {
                     </PublicRoute>
                 }
             />
+
             <Route
                 path="/dashboard"
                 element={
                     <ProtectedRoute>
-                        <Dashboard />
+                        <PublicLayout>
+                            <Dashboard />
+                        </PublicLayout>
                     </ProtectedRoute>
                 }
             />
+
             <Route
                 path="/organization"
                 element={
                     <ProtectedRoute>
-                        <Organization />
+                        <PublicLayout>
+                            <Organization />
+                        </PublicLayout>
                     </ProtectedRoute>
                 }
             />
+
             <Route
                 path="/create-organization"
                 element={
                     <ProtectedRoute>
-                        <CreateOrganization />
+                        <PublicLayout>
+                            <CreateOrganization />
+                        </PublicLayout>
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/permissions"
+                element={
+                    <ProtectedRoute>
+                        <PublicLayout>
+                            <Permissions />
+                        </PublicLayout>
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/invitations"
+                element={
+                    <ProtectedRoute>
+                        <PublicLayout>
+                            <Invitations />
+                        </PublicLayout>
                     </ProtectedRoute>
                 }
             />

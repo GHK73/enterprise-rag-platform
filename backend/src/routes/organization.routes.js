@@ -8,7 +8,8 @@ import {
     createOrganizationUnit,
     getOrganizationUnits,
     updateOrganizationUnit,
-    deleteOrganizationUnit
+    deleteOrganizationUnit,
+    getOrganizationMembers
 } from "../controllers/organization.controller.js";
 import authenticate from "../middleware/auth.middleware.js";
 
@@ -39,6 +40,11 @@ router.delete(
     "/units/:unitId",
     authenticate,
     deleteOrganizationUnit
+);
+router.get(
+    "/members",
+    authenticate,
+    getOrganizationMembers
 );
 
 export default router;

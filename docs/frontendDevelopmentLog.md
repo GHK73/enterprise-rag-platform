@@ -8,59 +8,53 @@ Implementation progress for the Enterprise RAG Platform frontend.
 
 **Active Phase:** Phase 4 — Access & Member Management ⏳
 
-```text
-Frontend Foundation       ✅
-Authentication            ✅
-Organization Management   ✅
-Organization Hierarchy    ✅
-Access Management UI      ⏳
-Invitation UI             ⏳
-Member Management UI      ⏳
-```
+| Area | Status |
+| --- | --- |
+| Frontend Foundation | ✅ |
+| Authentication | ✅ |
+| Organization Management | ✅ |
+| Organization Hierarchy | ✅ |
+| Permission Management UI | ✅ |
+| Invitation UI | ✅ |
+| Member Access | ✅ |
+| Member Management UI | ⏳ |
+| Capacity Management UI | ⏳ |
+| Unit Reorganization UI | ⏳ |
 
 ---
 
 # Phase 1 — Frontend Foundation ✅
 
-| Area       | Implementation                                                   |
-| ---------- | ---------------------------------------------------------------- |
-| Setup      | React + Vite, React Router DOM, Axios                            |
-| Styling    | Global reset, Inter font, theme variables, typography, scrollbar |
-| Routing    | Application routes configured                                    |
-| Layout     | `PublicLayout` created                                           |
-| Navigation | Responsive Navbar with mobile menu                               |
-| Home       | Hero, capabilities, and architecture sections                    |
+| Area | Implementation |
+| --- | --- |
+| Setup | React + Vite, React Router DOM, Axios |
+| Styling | Global reset, Inter font, theme variables, typography, scrollbar |
+| Routing | Application routes configured |
+| Layout | `PublicLayout` |
+| Navigation | Responsive Navbar with authentication state and mobile menu |
+| Home | Hero, capabilities, and architecture sections |
 
 ---
 
 # Phase 2 — Authentication ✅
 
-| Area             | Implementation                                              |
-| ---------------- | ----------------------------------------------------------- |
-| Pages            | Login and Register                                          |
-| API              | Reusable Axios instance                                     |
-| Authentication   | Register and Login APIs integrated                          |
-| JWT              | Stored in `localStorage` and attached to protected requests |
-| Auth Context     | Token, user, loading, login, logout, refresh                |
-| Session          | Verified using `GET /auth/me`                               |
-| Invalid Tokens   | Automatically removed                                       |
-| Route Protection | Public and protected route guards                           |
-| Navigation       | Navbar responds to authentication state                     |
-| Logout           | Token and authentication state cleared                      |
+## Completed
+
+* Login and Register pages
+* Reusable Axios instance
+* Register and Login API integration
+* JWT storage and protected request attachment
+* Authentication Context with token, user, loading, login, logout, and refresh
+* Session verification using `GET /auth/me`
+* Invalid token removal
+* Public and protected route guards
+* Authentication-aware Navbar and logout
 
 ## Flow
 
-```text
-Login
-   ↓
-Store JWT
-   ↓
-Verify Session
-   ↓
-Load User
-   ↓
-Protected Routes
-```
+~~~text
+Login → Store JWT → Verify Session → Load User → Protected Routes
+~~~
 
 ---
 
@@ -68,184 +62,213 @@ Protected Routes
 
 ## Completed
 
-| Area                  | Implementation                                            |
-| --------------------- | --------------------------------------------------------- |
-| Organization Creation | Dedicated page connected to `POST /organization`          |
-| Session Refresh       | User state refreshed after creation                       |
-| Navigation            | Redirect to Dashboard after creation                      |
-| Organization Page     | Dedicated `/organization` management page                 |
-| Organization Details  | Retrieve and display organization information             |
-| Unit Retrieval        | Fetch complete organization hierarchy                     |
-| Unit Creation         | Create departments, teams, and groups                     |
-| Dynamic Creation      | Determine child type from selected parent                 |
-| Parent Selection      | Display only valid parent units                           |
-| Nested Hierarchy      | Recursive `COMPANY → DEPARTMENT → TEAM → GROUP` rendering |
-| Live Updates          | Create, rename, and delete without page refresh           |
-| Inline Editing        | Edit unit names inside the hierarchy                      |
-| Unit Deletion         | Delete valid leaf units                                   |
-| Error Handling        | Loading, API, success, and constraint states              |
-| Company Protection    | No edit or delete actions for root `COMPANY`              |
-| Styling               | Responsive organization management UI                     |
+* Organization creation and update
+* Session refresh after creation
+* Redirect to Dashboard
+* Dedicated `/organization` page
+* Organization details and hierarchy retrieval
+* Department, team, and group creation
+* Dynamic child type and valid parent selection
+* Recursive `COMPANY → DEPARTMENT → TEAM → GROUP` rendering
+* Inline rename and leaf deletion
+* Live updates without page refresh
+* Loading, success, error, and constraint states
+* Root `COMPANY` edit/delete protection
+* Responsive management UI
 
 ## Endpoints Integrated
 
-```http
+~~~http
 POST   /api/v1/organization
 GET    /api/v1/organization
 PATCH  /api/v1/organization
-
 GET    /api/v1/organization/units
 POST   /api/v1/organization/units
 PATCH  /api/v1/organization/units/:unitId
 DELETE /api/v1/organization/units/:unitId
-```
+GET    /api/v1/organization/members
+~~~
 
-## Current Flow
+## User Flow
 
-```text
-Logged Out
-    ↓
-Login
+~~~text
+Logged Out → Login
 
 Logged In
-    ├── No Organization
-    │       ↓
-    │   Create Organization
-    │       ↓
-    │   Refresh User
-    │       ↓
-    │   Dashboard
-    │
-    └── Has Organization
-            ↓
-        Dashboard / Organization
-```
+├── No Organization → Create Organization → Refresh User → Dashboard
+└── Has Organization → Dashboard / Organization
+~~~
 
-## Organization UI
+## Hierarchy
 
-```text
-Organization Details
-        ↓
-Organization Structure
-        ↓
+~~~text
 COMPANY
-   ├── DEPARTMENT
-   │      ├── TEAM
-   │      │     └── GROUP
-   │      └── TEAM
-   └── DEPARTMENT
-```
+├── DEPARTMENT
+│   ├── TEAM
+│   │   └── GROUP
+│   └── TEAM
+└── DEPARTMENT
+~~~
 
-Each non-`COMPANY` unit currently supports:
+Non-`COMPANY` units support edit and delete.
 
-```text
-Edit
-Delete
-```
+## Deletion Rules
 
-## Deletion & Replacement Behavior
-
-```text
-COMPANY         → No Delete Action
+~~~text
+COMPANY         → Cannot Delete
 Valid Leaf Unit → Delete Directly
-Has Children    → Reassign children first, then delete
-Has Members     → Move/remove members first, then delete
-```
+Has Children    → Reassign children first
+Has Members     → Move/remove members first
+~~~
 
-Direct deletion remains blocked for units containing children or members. Future reorganization UI will allow valid replacement operations before deletion.
+Protected units remain blocked until future reorganization operations move their children or members.
 
 ---
 
 # Phase 4 — Access & Member Management ⏳
 
-The next frontend phase will expose the backend's hybrid permission, invitation, capacity, and membership systems.
+The frontend exposes the backend permission, invitation, membership, capacity, and reorganization systems.
 
-## Authorization-Aware UI
+## Authorization Model
 
-The frontend will use backend authorization data to determine available actions.
+~~~text
+Permission → Which actions are allowed?
+Scope      → Where are they allowed?
+Delegation → Which permissions can be granted?
+Capacity   → How much can the hierarchy contain?
+~~~
 
-```text
-Permission  → Which actions are visible?
-Scope       → Which units can be managed?
-Delegation  → Which permissions can be granted?
-Capacity    → How many members can the tree contain?
-```
-
-The frontend will hide or disable actions the current user cannot perform, while the backend remains the final authorization authority.
+The frontend reflects authorization state, while the backend remains the final authority.
 
 ---
 
-# Phase 4 Implementation Roadmap
+## 4.1 Permission Management UI ✅
 
-## 4.1 Permission Management
+### Completed
 
-* Display current user permissions
-* Show permission scope
-* Grant permissions
-* Configure delegation
-* Revoke permissions
-* Display permission history
-* Restrict actions by backend authorization
+* Dedicated `/permissions` page
+* Current user permission retrieval
+* Permission scope and unit type display
+* Grant permission form
+* Member, permission, and scope selection
+* Delegation configuration
+* Organization member retrieval
+* Member permission history
+* Active and revoked permission states
+* Permission revocation
+* Immediate UI updates after grant/revoke
+* Scoped authorization testing
 
-Planned UI:
+### Permission View
 
-```text
+~~~text
 Member
 ├── Role
 ├── Organization Unit
 └── Permissions
-      ├── Permission
-      ├── Scope
-      ├── Granted By
-      ├── Can Delegate
-      └── Status
-```
+    ├── Permission
+    ├── Scope
+    ├── Granted By
+    ├── Can Delegate
+    └── Status
+~~~
+
+### Grant Flow
+
+~~~text
+Select Member
+→ Select Permission
+→ Select Scope
+→ Configure Delegation
+→ Grant Permission
+→ Access Becomes Active
+~~~
+
+### Management Flow
+
+~~~text
+Select Member
+→ View Permission History
+→ Grant / Revoke Permission
+→ UI Updates Immediately
+→ Backend Authorization Changes
+~~~
+
+The complete lifecycle was tested with `CREATE_UNIT`:
+
+~~~text
+Grant CREATE_UNIT
+→ Member Creates Unit Inside Scope
+→ Revoke CREATE_UNIT
+→ Further Creation Is Denied
+~~~
 
 ---
 
-## 4.2 Invitation Management
+## 4.2 Invitation Management UI ✅
 
-* Invite members by email
-* Select target organization unit
-* Use default `MEMBER` role when role assignment is unavailable
-* Select role only with `ASSIGN_ROLE`
-* Display pending invitations
-* Revoke invitations
-* Show expired and accepted states
-* Accept invitations through secure tokens
+### Completed
 
-Planned flow:
+* Invitation creation UI
+* Email input
+* Target unit selection
+* Role selection
+* Invitation creation through backend API
+* Received invitation retrieval
+* Invitation acceptance
+* User session refresh after acceptance
+* Organization structure available after joining
 
-```text
+### Flow
+
+~~~text
 Invite Member
-      ↓
-Select Target Unit
-      ↓
-Role Selection Available?
-   ├── No  → MEMBER
-   └── Yes → Select Role
-      ↓
-Send Invitation
-      ↓
-Display Invitation Status
-```
+→ Select Unit + Role
+→ Create Invitation
+→ Invited User Logs In
+→ View Invitation
+→ Accept
+→ Refresh User
+→ Organization Access
+~~~
+
+Invitation creation is implemented through secure backend tokens. External email delivery is not implemented yet.
 
 ---
 
-## 4.3 Member Management
+## 4.3 Member Access ✅
 
-* List organization members
+### Completed
+
+* Organization member retrieval
+* Member name, role, and unit display in management controls
+* Member selection for permission management
+* Member permission history
+* Active and revoked grant display
+* Scoped access behavior tested
+
+~~~text
+Organization Member
+→ View Assigned Unit
+→ View Permissions
+→ Grant / Revoke Access
+~~~
+
+---
+
+## 4.4 Member Management UI ⏳
+
+### Planned
+
+* Dedicated member list
 * Filter members by hierarchy
 * View member details
 * Update roles
 * Move members between units
 * Remove members
-* Display permissions and scope
-* Validate actions against available access
+* Validate actions against permission scope
 
-Planned member view:
-
-```text
+~~~text
 Organization
 ├── Department
 │   ├── Team
@@ -253,59 +276,52 @@ Organization
 │   │   └── Member
 │   └── Team
 └── Department
-```
+~~~
 
 ---
 
-## 4.4 Capacity Management
+## 4.5 Capacity Management UI ⏳
+
+### Planned
 
 * Display allocated capacity
 * Display direct member usage
 * Display child allocations
 * Display remaining capacity
 * Allocate capacity to child units
-* Prevent invalid over-allocation
-* Show capacity errors during invitation acceptance
+* Prevent over-allocation
+* Show invitation acceptance capacity errors
 
-Planned display:
-
-```text
-Backend Capacity: 100
-
-Direct Members      10
-Child Allocations   70
-Remaining           20
-```
+~~~text
+Allocated Capacity   100
+Direct Members        10
+Child Allocations     70
+Remaining             20
+~~~
 
 ---
 
-## 4.5 Unit Reorganization
+## 4.6 Unit Reorganization UI ⏳
+
+### Planned
 
 * Move entire subtrees
+* Change parent units
 * Select valid replacement parents
 * Reassign child units
 * Move members to replacement units
-* Display hierarchy validation errors
-* Display capacity conflicts
+* Display hierarchy and capacity conflicts
 * Delete units after successful reorganization
 
-Planned flow:
-
-```text
-Delete Protected Unit
-        ↓
-Has Children or Members
-        ↓
-Open Reorganization UI
-        ↓
-Select Valid Replacement Units
-        ↓
-Validate Hierarchy + Capacity
-        ↓
-Move Children / Members
-        ↓
-Delete Empty Unit
-```
+~~~text
+Protected Unit
+→ Has Children or Members
+→ Open Reorganization UI
+→ Select Valid Replacements
+→ Validate Hierarchy + Capacity
+→ Move Children / Members
+→ Delete Empty Unit
+~~~
 
 ---
 
@@ -313,38 +329,32 @@ Delete Empty Unit
 
 ## Phase 5 — Dashboard
 
-* Permanent dashboard layout
-* Sidebar navigation
+* Permanent dashboard layout and sidebar
 * Organization overview
-* Member statistics
-* Capacity summary
+* Member and capacity statistics
 * Document statistics
 * Recent activity
 
 ## Phase 6 — Document Management
 
-* Document library
-* Upload interface
-* Metadata display
+* Document library and upload
+* Metadata and processing status
 * Version history
-* Processing status
-* Update and rollback actions
+* Update and rollback
 * Soft delete and recovery
 
 ## Phase 7 — Retrieval Interface
 
 * Query interface
 * Streaming responses
-* Retrieved context display
+* Retrieved context
 * Source citations
-* Confidence indicators
-* Refusal states
+* Confidence and refusal states
 
 ## Phase 8 — Search & Analytics
 
 * Search history
-* Retrieval metrics
-* Query latency
+* Retrieval metrics and latency
 * Cache performance
 * Citation accuracy
 * Usage analytics
@@ -352,27 +362,24 @@ Delete Empty Unit
 ## Phase 9 — Settings & Administration
 
 * Organization settings
-* Company-specific role display names
+* Role display names
 * Permission configuration
-* Model configuration
-* Retrieval settings
-* Cache settings
+* Model, retrieval, and cache settings
 
 ## Phase 10 — Final UI Polish
 
-* Custom confirmation modals
-* Improved unit-level feedback
-* Consistent success notifications
+* Confirmation modals
+* Consistent notifications
 * Loading skeletons
 * Empty states
-* Accessibility improvements
+* Accessibility
 * Responsive refinement
 
 ---
 
 # Current Structure
 
-```text
+~~~text
 frontend/
 └── src/
     ├── api/
@@ -389,33 +396,35 @@ frontend/
     │   ├── CreateOrganization/
     │   ├── Dashboard/
     │   ├── Home/
+    │   ├── Invitations/
     │   ├── Login/
     │   ├── Organization/
+    │   ├── Permissions/
     │   └── Register/
     ├── App.jsx
     ├── main.jsx
     └── index.css
-```
+~~~
 
 ---
 
 # Progress Summary
 
-| Phase                              | Status      |
-| ---------------------------------- | ----------- |
-| Frontend Foundation                | ✅ Completed |
-| Authentication                     | ✅ Completed |
-| Organization Creation & Management | ✅ Completed |
-| Organization Hierarchy             | ✅ Completed |
-| Unit Creation, Update & Deletion   | ✅ Completed |
-| Permission Management UI           | ⏳ Next      |
-| Invitation Management UI           | ⏳ Planned   |
-| Member Management UI               | ⏳ Planned   |
-| Capacity Management UI             | ⏳ Planned   |
-| Unit Reorganization UI             | ⏳ Planned   |
-| Dashboard                          | ⏳ Planned   |
-| Document Management                | ⏳ Planned   |
-| Retrieval Interface                | ⏳ Planned   |
-| Search & Analytics                 | ⏳ Planned   |
-| Settings & Administration          | ⏳ Planned   |
-| Final UI Polish                    | ⏳ Planned   |
+| Phase | Status |
+| --- | --- |
+| Frontend Foundation | ✅ Completed |
+| Authentication | ✅ Completed |
+| Organization Management | ✅ Completed |
+| Organization Hierarchy | ✅ Completed |
+| Permission Management UI | ✅ Completed |
+| Invitation Management UI | ✅ Completed |
+| Member Access | ✅ Completed |
+| Member Management UI | ⏳ Next |
+| Capacity Management UI | ⏳ Planned |
+| Unit Reorganization UI | ⏳ Planned |
+| Dashboard | ⏳ Planned |
+| Document Management | ⏳ Planned |
+| Retrieval Interface | ⏳ Planned |
+| Search & Analytics | ⏳ Planned |
+| Settings & Administration | ⏳ Planned |
+| Final UI Polish | ⏳ Planned |

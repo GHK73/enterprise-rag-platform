@@ -1,6 +1,6 @@
 # RAG Backend Development Log
 
-Implementation progress for the Enterprise RAG Platform backend. Database design: [`docs/DATABASE.md`](DATABASE.md).
+Implementation progress for the Enterprise RAG Platform. Database design: [`docs/DATABASE.md`](DATABASE.md).
 
 ---
 
@@ -8,18 +8,18 @@ Implementation progress for the Enterprise RAG Platform backend. Database design
 
 **Active Phase:** Phase 4 — Access & Member Management ⏳
 
-```text
-Backend Foundation          ✅
-Authentication              ✅
-Organization Management     ✅
-Organization Hierarchy      ✅
-Permission Schema           ✅
-Capacity Schema             ✅
-Invitation Schema           ✅
-Permission Services         ⏳
-Invitation Services         ⏳
-Member Management           ⏳
-```
+| Area | Status |
+| --- | --- |
+| Backend Foundation | ✅ |
+| Authentication | ✅ |
+| Organization Management | ✅ |
+| Organization Hierarchy | ✅ |
+| Permission Engine | ✅ |
+| Invitation Management | ✅ |
+| Member Access | ✅ |
+| Capacity Management | ⏳ |
+| Member Management | ⏳ |
+| Unit Reorganization | ⏳ |
 
 ---
 
@@ -27,18 +27,18 @@ Member Management           ⏳
 
 ## Completed
 
-| Area        | Implementation                                           |
-| ----------- | -------------------------------------------------------- |
-| Environment | `.env`, configuration, Neon `DATABASE_URL`, JWT settings |
-| Database    | Prisma setup, schema, generated client                   |
-| Express     | App setup, CORS, JSON parsing, database connection       |
-| Routing     | Versioned `/api/v1`, centralized router                  |
-| Middleware  | Global error and 404 handlers                            |
-| Utilities   | `ApiResponse`, `ApiError`, `asyncHandler`                |
+| Area | Implementation |
+| --- | --- |
+| Environment | `.env`, configuration, Neon `DATABASE_URL`, JWT |
+| Database | PostgreSQL, Prisma schema and client |
+| Express | App, CORS, JSON parsing, database connection |
+| Routing | Versioned `/api/v1`, centralized router |
+| Middleware | Authentication, global error and 404 handlers |
+| Utilities | `ApiResponse`, `ApiError`, `asyncHandler` |
 
-```http
+~~~http
 GET /api/v1/health
-```
+~~~
 
 ---
 
@@ -46,48 +46,29 @@ GET /api/v1/health
 
 ## Completed
 
-| Area              | Implementation                                        |
-| ----------------- | ----------------------------------------------------- |
-| Registration      | User account creation                                 |
-| Login             | Authentication and JWT generation                     |
-| Current User      | Authenticated user retrieval                          |
-| Password Security | Hashing and verification                              |
-| Authentication    | JWT validation and current user loading               |
-| User Validation   | Missing and inactive users rejected                   |
-| Membership Design | Authentication independent of organization membership |
+* Registration and login
+* JWT generation and validation
+* Current user retrieval
+* Password hashing and verification
+* Missing and inactive user rejection
+* Authentication independent of organization membership
 
 ## Endpoints
 
-```http
+~~~http
 POST /api/v1/auth/register
 POST /api/v1/auth/login
 GET  /api/v1/auth/me
-```
-
-## Flow
-
-```text
-Register
-   ↓
-User Created
-   ↓
-Login
-   ↓
-Generate JWT
-   ↓
-Verify Protected Request
-   ↓
-Load User
-```
+~~~
 
 New users initially have:
 
-```text
+~~~text
 role   = null
 unitId = null
-```
+~~~
 
-Users cannot assign their own organization unit, role, or permissions.
+Users cannot assign their own organization, role, unit, or permissions.
 
 ---
 
@@ -95,27 +76,18 @@ Users cannot assign their own organization unit, role, or permissions.
 
 ## Completed
 
-| Area                   | Implementation                               |
-| ---------------------- | -------------------------------------------- |
-| Architecture           | Organization service, controller, and routes |
-| Security               | JWT and organization membership validation   |
-| Organization Creation  | Transaction-based creation                   |
-| Root Unit              | Automatic `COMPANY` creation                 |
-| Owner Assignment       | Creator assigned `OWNER` and root unit       |
-| Organization Details   | Retrieve organization information            |
-| Organization Update    | Update name and description                  |
-| Unit Retrieval         | Retrieve complete organization structure     |
-| Unit Creation          | Create departments, teams, and groups        |
-| Hierarchy Validation   | Enforce valid parent-child relationships     |
-| Organization Isolation | Prevent cross-organization operations        |
-| Unit Update            | Rename non-`COMPANY` units                   |
-| Unit Deletion          | Delete valid leaf units                      |
-| Company Protection     | Prevent root `COMPANY` deletion              |
-| Deletion Protection    | Prevent unsafe hierarchy deletion            |
+* Organization creation and update
+* Automatic `COMPANY` root creation
+* Creator assignment as `OWNER`
+* Organization structure retrieval
+* Department, team, and group creation
+* Hierarchy and organization isolation validation
+* Unit rename and safe deletion
+* Root company and non-leaf deletion protection
 
 ## Endpoints
 
-```http
+~~~http
 POST   /api/v1/organization
 GET    /api/v1/organization
 PATCH  /api/v1/organization
@@ -124,96 +96,46 @@ GET    /api/v1/organization/units
 POST   /api/v1/organization/units
 PATCH  /api/v1/organization/units/:unitId
 DELETE /api/v1/organization/units/:unitId
-```
 
-## Organization Creation
+GET    /api/v1/organization/members
+~~~
 
-```text
-Authenticated User
-        ↓
-Validate Existing Membership
-        ↓
-Prisma Transaction
-   ├── Create Organization
-   ├── Create COMPANY Unit
-   └── Assign Creator as OWNER
-        ↓
-Commit / Rollback
-```
+## Hierarchy
 
-## Organization Hierarchy
-
-```text
+~~~text
 COMPANY → DEPARTMENT → TEAM → GROUP
-```
-
-Valid relationships:
-
-```text
-COMPANY    → DEPARTMENT
-DEPARTMENT → TEAM
-TEAM       → GROUP
-```
+~~~
 
 All other parent-child relationships are rejected.
 
-## Unit Management
+## Unit Operation Flow
 
-```text
-Authenticated User
-        ↓
-Validate Membership
-        ↓
-Validate Access
-        ↓
-Validate Target Unit
-        ↓
-Validate Organization + Hierarchy
-        ↓
-Create / Update / Delete
-```
+~~~text
+Authenticate
+→ Validate Membership
+→ Validate Permission + Scope
+→ Validate Organization + Hierarchy
+→ Create / Update / Delete
+~~~
 
-## Deletion & Replacement Rules
+## Deletion Rules
 
-```text
+~~~text
 COMPANY         → Cannot Delete
-Has Children    → Reassign children first, then delete
-Has Members     → Move/remove members first, then delete
+Has Children    → Move children first
+Has Members     → Move/remove members first
 Valid Leaf Unit → Can Delete
-```
+~~~
 
-Direct deletion remains blocked when a unit has children or members. Future reorganization operations will allow them to be moved to valid replacement units before deletion.
-
-Replacement must validate:
-
-* Organization ownership
-* Hierarchy relationships
-* Circular references
-* Required permissions
-* Capacity constraints
+Future reorganization will validate organization ownership, hierarchy, circular references, permissions, and capacity.
 
 ---
 
 # Phase 4 — Access & Member Management ⏳
 
-The database foundation is prepared for hybrid authorization, tree capacity, and invitation-based membership.
-
-## Schema Foundation
-
-| Area                  | Status        |
-| --------------------- | ------------- |
-| Internal Roles        | ✅ Implemented |
-| Atomic Permissions    | ✅ Implemented |
-| Permission Grants     | ✅ Implemented |
-| Hierarchy Scope       | ✅ Implemented |
-| Permission Delegation | ✅ Implemented |
-| Grant Revocation      | ✅ Implemented |
-| Tree Capacity         | ✅ Implemented |
-| Invitations           | ✅ Implemented |
-
 ## Authorization Model
 
-```text
+~~~text
 Effective Access
 =
 Permission
@@ -221,223 +143,249 @@ AND
 Hierarchy Scope
 AND
 Valid Delegation
-```
+~~~
 
-The system separates:
-
-```text
-Role        → Internal organizational classification
-Permission  → What the user may do
-Scope       → Where the action is allowed
-Delegation  → Who granted the authority
-Capacity    → How much the tree may contain
-```
+| Concept | Purpose |
+| --- | --- |
+| Role | Internal organizational classification |
+| Permission | What the user may do |
+| Scope | Where the action is allowed |
+| Delegation | Who may grant authority |
+| Capacity | How much the tree may contain |
 
 Roles do not directly grant access.
 
-## Permission Flow
+---
 
-```text
+## 4.1 Permission Engine ✅
+
+### Completed
+
+* Atomic permission schema
+* Scoped permission grants
+* Active permission validation
+* Hierarchy scope validation
+* Delegation authority
+* Permission revocation
+* Permission history
+* Member permission retrieval
+* Scoped `CREATE_UNIT` enforcement
+
+### Permissions
+
+~~~text
+INVITE_MEMBER
+REMOVE_MEMBER
+UPDATE_MEMBER
+ASSIGN_ROLE
+MOVE_MEMBER
+CREATE_UNIT
+UPDATE_UNIT
+DELETE_UNIT
+~~~
+
+### Permission Flow
+
+~~~text
 Authenticated User
-        ↓
-Find Active Permission Grant
-        ↓
-Validate Organization
-        ↓
-Validate Hierarchy Scope
-        ↓
-Validate Target Resource
-        ↓
-ALLOW / DENY
-```
+→ Find Active Grant
+→ Validate Organization
+→ Validate Hierarchy Scope
+→ Validate Target
+→ ALLOW / DENY
+~~~
 
-## Delegation Flow
+### Delegation Flow
 
-```text
+~~~text
 Has Permission?
-        ↓
-Can Delegate?
-        ↓
-Recipient Inside Scope?
-        ↓
-New Scope Inside Current Scope?
-        ↓
-Create Permission Grant
-```
+→ Can Delegate?
+→ Recipient Inside Scope?
+→ New Scope Inside Current Scope?
+→ Create Grant
+~~~
 
-Historical grants are never rewritten. Replacing an authority requires revoking the old grant and creating a new grant.
+Historical grants are never rewritten. Authority changes use revoke + new grant.
 
-## Invitation Flow
+### Grant Lifecycle
 
-```text
+~~~text
+Grant Permission
+→ Active Scoped Access
+→ Use Permission
+→ Revoke Grant
+→ Access Denied
+~~~
+
+The complete lifecycle has been tested with `CREATE_UNIT`.
+
+---
+
+## 4.2 Invitation Management ✅
+
+### Completed
+
+* Create invitations
+* Validate invitation permissions and scope
+* Optional role assignment
+* Secure token generation
+* Received invitation retrieval by email
+* Invitation acceptance
+* Expiration validation
+* User assignment to unit and role
+* Invitation status tracking
+
+### Flow
+
+~~~text
 Check INVITE_MEMBER
-        ↓
-Validate Scope + Target Unit
-        ↓
-Role Selected?
-   ├── No  → MEMBER
-   └── Yes → Check ASSIGN_ROLE
-        ↓
-Create PENDING Invitation
-        ↓
-User Accepts
-        ↓
-Validate Token + Email + Expiry
-        ↓
-Validate Tree Capacity
-        ↓
-Assign Unit + Role
-        ↓
-Mark ACCEPTED
-```
+→ Validate Scope + Unit
+→ Validate ASSIGN_ROLE if needed
+→ Create PENDING Invitation
+→ Invited User Logs In
+→ Fetch Invitation by Email
+→ Accept
+→ Validate Token + Email + Expiry
+→ Assign Unit + Role
+→ Mark ACCEPTED
+~~~
 
-Permissions are granted separately through `PermissionGrant`.
+Permissions remain separate from membership and are granted through `PermissionGrant`.
 
-## Capacity Model
+---
 
-```text
+## 4.3 Member Access ✅
+
+### Completed
+
+* List organization members
+* Retrieve member role and assigned unit
+* View member permission history
+* Grant scoped permissions
+* Revoke active permissions
+* View active and revoked grants
+
+~~~text
+Select Member
+→ View Permission History
+→ Grant / Revoke Permission
+→ Authorization Changes Immediately
+~~~
+
+---
+
+## 4.4 Capacity Management ⏳
+
+~~~text
 Remaining Capacity
 =
 Allocated Capacity
 − Direct Members
 − Capacity Allocated to Children
-```
+~~~
 
-Capacity belongs to the unit tree, not individual users.
+Example:
 
-```text
-Parent Capacity = 100
-
+~~~text
+Parent = 100
 ├── Child A = 40
 ├── Child B = 30
-└── Parent Remaining = 30
-```
+└── Remaining = 30
+~~~
+
+### Planned
+
+* Set root capacity
+* Allocate child capacity
+* Calculate remaining capacity
+* Prevent over-allocation
+* Validate invitation acceptance
+* Recalculate during reorganization
 
 ---
 
-# Phase 4 Implementation Roadmap
+## 4.5 Member Management ⏳
 
-## 4.1 Permission Engine
+### Planned
 
-* Check active permission grants
-* Validate hierarchy scope
-* Validate delegation authority
-* Revoke permission grants
-* Replace authorities through new grants
-
-## 4.2 Capacity Management
-
-* Set root company capacity
-* Allocate capacity to child units
-* Calculate remaining capacity
-* Prevent over-allocation
-* Validate capacity during member acceptance
-* Recalculate constraints during reorganization
-
-## 4.3 Invitation Management
-
-* Create invitations
-* Validate `INVITE_MEMBER`
-* Validate `ASSIGN_ROLE`
-* Generate secure tokens
-* Accept invitations
-* Revoke invitations
-* Handle expiration
-
-## 4.4 Member Management
-
-* List organization members
 * Update member roles
 * Move members between units
 * Remove members
 * Validate permission scope
 * Validate capacity
 
-## 4.5 Unit Reorganization
+---
 
-* Move entire subtrees
+## 4.6 Unit Reorganization ⏳
+
+### Planned
+
+* Move subtrees
+* Change parent units
 * Reassign child units
 * Move members to replacement units
 * Replace removable parent units
 * Prevent circular hierarchy
-* Validate hierarchy and capacity
+* Validate hierarchy, permissions, and capacity
 
 ---
 
-# Future Backend Phases
+# Future Phases
 
 ## Phase 5 — Document Management
 
-* Document upload
-* Metadata storage
-* Document versioning
-* Processing status
+* Upload, metadata, versioning, and processing status
 * Soft delete and recovery
 * Permission-aware document access
 
 ## Phase 6 — Document Processing
 
-* Text extraction
-* OCR
-* Chunking
-* Content hashing
-* Incremental indexing
-* Background processing with BullMQ
+* Extraction, OCR, and chunking
+* Content hashing and incremental indexing
+* BullMQ background processing
 
-## Phase 7 — Vector & Retrieval Infrastructure
+## Phase 7 — Retrieval Infrastructure
 
-* Qdrant integration
-* Embedding generation
-* Semantic search
-* Keyword search
+* Qdrant and embeddings
+* Semantic and keyword search
 * Metadata filtering
-* Hybrid retrieval
-* Permission-aware retrieval
+* Hybrid and permission-aware retrieval
 
 ## Phase 8 — RAG Pipeline
 
 * Query processing
-* Parallel retrieval
-* Result merging
-* Reranking
-* Context validation
-* Answer generation
-* Citation generation
+* Parallel retrieval and merging
+* Reranking and context validation
+* Answer and citation generation
 * Streaming responses
 
 ## Phase 9 — Reliability & Caching
 
 * Hallucination detection
 * Answer verification
-* Exact query cache
-* Semantic cache
-* Redis response cache
+* Exact, semantic, and Redis caching
 * Version-aware invalidation
 
 ## Phase 10 — Evaluation & Monitoring
 
-* Retrieval metrics
-* Generation metrics
-* Latency tracking
+* Retrieval and generation metrics
+* Latency and throughput
 * Cache hit rate
-* Token usage
-* Cost analysis
+* Token and cost analysis
 * Audit logging
 
 ## Phase 11 — Deployment
 
-* Containerization
-* Environment configuration
+* Containerization and environment configuration
 * Worker deployment
-* Production database
-* Redis and Qdrant deployment
+* Production PostgreSQL, Redis, and Qdrant
 * Monitoring and observability
 
 ---
 
 # Current Backend Structure
 
-```text
+~~~text
 backend/
 ├── prisma/
 │   └── schema.prisma
@@ -445,56 +393,48 @@ backend/
 ├── .env
 └── src/
     ├── config/
-    │   ├── config.js
-    │   └── prisma.js
     ├── controllers/
     │   ├── auth.controller.js
     │   ├── health.controller.js
-    │   └── organization.controller.js
+    │   ├── invitation.controller.js
+    │   ├── organization.controller.js
+    │   └── permission.controller.js
     ├── middleware/
-    │   ├── auth.middleware.js
-    │   ├── error.middleware.js
-    │   └── notFound.middleware.js
     ├── routes/
-    │   ├── index.js
     │   ├── auth.routes.js
     │   ├── health.routes.js
-    │   └── organization.routes.js
+    │   ├── invitation.routes.js
+    │   ├── organization.routes.js
+    │   └── permission.routes.js
     ├── services/
     │   ├── auth.services.js
-    │   └── organization.service.js
+    │   ├── invitation.service.js
+    │   ├── organization.service.js
+    │   └── permission.service.js
     ├── utils/
-    │   ├── ApiError.js
-    │   ├── ApiResponse.js
-    │   ├── asyncHandler.js
-    │   ├── jwt.js
-    │   └── password.js
     └── app.js
-```
+~~~
 
 ---
 
 # Progress Summary
 
-| Phase                             | Status      |
-| --------------------------------- | ----------- |
-| Backend Foundation                | ✅ Completed |
-| Authentication & Identity         | ✅ Completed |
-| Organization Management           | ✅ Completed |
-| Organization Hierarchy            | ✅ Completed |
-| Unit Management                   | ✅ Completed |
-| Permission Schema Foundation      | ✅ Completed |
-| Capacity Schema Foundation        | ✅ Completed |
-| Invitation Schema Foundation      | ✅ Completed |
-| Permission Engine                 | ⏳ Next      |
-| Capacity Management               | ⏳ Planned   |
-| Invitation Management             | ⏳ Planned   |
-| Member Management                 | ⏳ Planned   |
-| Unit Reorganization               | ⏳ Planned   |
-| Document Management               | ⏳ Planned   |
-| Document Processing               | ⏳ Planned   |
-| Vector & Retrieval Infrastructure | ⏳ Planned   |
-| RAG Pipeline                      | ⏳ Planned   |
-| Reliability & Caching             | ⏳ Planned   |
-| Evaluation & Monitoring           | ⏳ Planned   |
-| Deployment                        | ⏳ Planned   |
+| Phase | Status |
+| --- | --- |
+| Backend Foundation | ✅ Completed |
+| Authentication | ✅ Completed |
+| Organization Management | ✅ Completed |
+| Organization Hierarchy | ✅ Completed |
+| Permission Engine | ✅ Completed |
+| Invitation Management | ✅ Completed |
+| Member Access & Permission Management | ✅ Completed |
+| Capacity Management | ⏳ Next |
+| Member Management | ⏳ Planned |
+| Unit Reorganization | ⏳ Planned |
+| Document Management | ⏳ Planned |
+| Document Processing | ⏳ Planned |
+| Retrieval Infrastructure | ⏳ Planned |
+| RAG Pipeline | ⏳ Planned |
+| Reliability & Caching | ⏳ Planned |
+| Evaluation & Monitoring | ⏳ Planned |
+| Deployment | ⏳ Planned |

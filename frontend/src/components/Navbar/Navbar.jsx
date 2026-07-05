@@ -1,25 +1,25 @@
 // frontend/src/components/Navbar/Navbar.jsx
 
-import { useContext, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { AuthContext } from "../../context/AuthContext";
+import {useContext, useState} from "react";
+import {Link, useNavigate} from "react-router-dom";
+import {AuthContext} from "../../context/AuthContext";
 import "./Navbar.css";
 
-function Navbar() {
-    const [menuOpen, setMenuOpen] = useState(false);
+function Navbar(){
+    const [menuOpen,setMenuOpen] = useState(false);
 
-    const { token, logout } = useContext(AuthContext);
+    const {token,logout} = useContext(AuthContext);
     const navigate = useNavigate();
 
-    function toggleMenu() {
+    function toggleMenu(){
         setMenuOpen(!menuOpen);
     }
 
-    function closeMenu() {
+    function closeMenu(){
         setMenuOpen(false);
     }
 
-    function handleLogout() {
+    function handleLogout(){
         logout();
         closeMenu();
         navigate("/");
@@ -28,30 +28,65 @@ function Navbar() {
     return (
         <header className="navbar">
             <div className="navbar-container">
-
                 <div className="navbar-left">
-                    <Link to="/" className="navbar-logo">
+                    <Link
+                        to={token ? "/dashboard" : "/"}
+                        className="navbar-logo"
+                        onClick={closeMenu}
+                    >
                         Enterprise RAG
                     </Link>
                 </div>
 
                 <div className={`navbar-center ${menuOpen ? "active" : ""}`}>
                     <nav className="navbar-links">
-                        <Link to="/" onClick={closeMenu}>
-                            Home
-                        </Link>
+                        {token ? (
+                            <>
+                                <Link
+                                    to="/dashboard"
+                                    onClick={closeMenu}
+                                >
+                                    Dashboard
+                                </Link>
 
-                        <Link to="/" onClick={closeMenu}>
-                            Features
-                        </Link>
+                                <Link
+                                    to="/organization"
+                                    onClick={closeMenu}
+                                >
+                                    Organization
+                                </Link>
+                                <Link
+                                    to="/permissions"
+                                    onClick={closeMenu}
+                                >
+                                    Permissions
+                                </Link>
+                                <Link
+                                    to="/invitations"
+                                    onClick={closeMenu}
+                                >
+                                    Invitations
+                                </Link>
+                            </>
+                        ) : (
+                            <>
+                                <Link to="/" onClick={closeMenu}>
+                                    Home
+                                </Link>
 
-                        <Link to="/" onClick={closeMenu}>
-                            Documentation
-                        </Link>
+                                <Link to="/" onClick={closeMenu}>
+                                    Features
+                                </Link>
 
-                        <Link to="/" onClick={closeMenu}>
-                            GitHub
-                        </Link>
+                                <Link to="/" onClick={closeMenu}>
+                                    Documentation
+                                </Link>
+
+                                <Link to="/" onClick={closeMenu}>
+                                    GitHub
+                                </Link>
+                            </>
+                        )}
                     </nav>
 
                     <div className="mobile-actions">
@@ -112,7 +147,6 @@ function Navbar() {
                 >
                     {menuOpen ? "✕" : "☰"}
                 </button>
-
             </div>
         </header>
     );

@@ -2,6 +2,7 @@
 
 import prisma from "../config/prisma.js";
 import ApiError from "../utils/ApiError.js";
+import {hasPermission} from "./permission.service.js";
 
 export const createOrganization = async(userId, organizationData)=>{
     const {name,description} = organizationData;
@@ -47,6 +48,29 @@ export const createOrganization = async(userId, organizationData)=>{
                 role: "OWNER",
                 unitId: rootUnit.id
             }
+        });
+
+        const permissions = [
+            "INVITE_MEMBER",
+            "REMOVE_MEMBER",
+            "UPDATE_MEMBER",
+            "ASSIGN_ROLE",
+            "MOVE_MEMBER",
+            "CREATE_UNIT",
+            "UPDATE_UNIT",
+            "DELETE_UNIT",
+            "MOVE_UNIT"
+        ];
+
+        await tx.permissionGrant.createMany({
+            data: permissions.map((permission)=>({
+                permission,
+                organizationId: organization.id,
+                userId,
+                scopeUnitId: rootUnit.id,
+                grantedById: userId,
+                canDelegate: true
+            }))
         });
 
         return organization;
@@ -119,29 +143,27 @@ export const updateOrganization = async(userId, organizationData)=>{
 
 export const createOrganizationUnit = async(userId, unitData)=>{
     const {name, type, parentId} = unitData;
+
     const user = await prisma.user.findUnique({
         where:{
-            id:userId 
+            id: userId
         },
         include:{
-            unit:true 
+            unit: true
         }
     });
+
     if(!user){
-        throw new ApiError(404, "User not Found");
+        throw new ApiError(404,"User not Found");
     }
+
     if(!user.unitId || !user.unit){
         throw new ApiError(
             404,
             "User does not belong to an organization"
         );
     }
-    if(user.role !== "OWNER" && user.role !== "ADMIN"){
-        throw new ApiError(
-            403,
-            "You do not have permission to create organization units"
-        );
-    }
+
     if(type === "COMPANY"){
         throw new ApiError(
             400,
@@ -151,11 +173,15 @@ export const createOrganizationUnit = async(userId, unitData)=>{
 
     const parentUnit = await prisma.organizationUnit.findUnique({
         where:{
-            id: parentId 
+            id: parentId
         }
     });
+
     if(!parentUnit){
-        throw new ApiError(404,"Parent organization unit not Found");
+        throw new ApiError(
+            404,
+            "Parent organization unit not Found"
+        );
     }
 
     if(parentUnit.organizationId !== user.unit.organizationId){
@@ -164,25 +190,42 @@ export const createOrganizationUnit = async(userId, unitData)=>{
             "Parent unit does not belong to your organization"
         );
     }
+
+    const canCreateUnit = await hasPermission(
+        userId,
+        "CREATE_UNIT",
+        parentId
+    );
+
+    if(!canCreateUnit){
+        throw new ApiError(
+            403,
+            "You do not have permission to create organization units in this scope"
+        );
+    }
+
     const validHierarchy = {
         COMPANY: "DEPARTMENT",
         DEPARTMENT: "TEAM",
         TEAM: "GROUP"
     };
+
     if(validHierarchy[parentUnit.type] !== type){
         throw new ApiError(
             400,
             `${type} cannot be created under ${parentUnit.type}`
         );
     }
+
     const organizationUnit = await prisma.organizationUnit.create({
         data:{
             name,
             type,
             organizationId: user.unit.organizationId,
-            parentId 
+            parentId
         }
     });
+
     return organizationUnit;
 };
 
@@ -337,3 +380,52 @@ export const deleteOrganizationUnit = async(userId,unitId)=>{
     });
     return organizationUnit;
 }
+
+export const getOrganizationMembers = async(userId)=>{
+    const user = await prisma.user.findUnique({
+        where:{
+            id: userId
+        },
+        include:{
+            unit: true
+        }
+    });
+
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            404,
+            "User does not belong to an organization"
+        );
+    }
+
+    const organizationMembers = await prisma.user.findMany({
+        where:{
+            unit:{
+                organizationId: user.unit.organizationId
+            }
+        },
+        select:{
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            unitId: true,
+            unit:{
+                select:{
+                    id: true,
+                    name: true,
+                    type: true
+                }
+            }
+        },
+        orderBy:{
+            fullName: "asc"
+        }
+    });
+
+    return organizationMembers;
+};

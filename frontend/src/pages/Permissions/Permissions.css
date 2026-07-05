@@ -1,0 +1,330 @@
+/* frontend/src/pages/Permissions/Permissions.css */
+
+.permissions-page {
+    width: min(1180px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 48px 0 80px;
+}
+
+.permissions-header {
+    margin-bottom: 32px;
+}
+
+.permissions-eyebrow {
+    margin-bottom: 8px;
+    color: var(--primary);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.permissions-header h1 {
+    margin-bottom: 10px;
+    font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.permissions-header > div > p:last-child {
+    max-width: 680px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+/* ===========================
+   Grant Permission
+=========================== */
+
+.permission-grant-section {
+    margin-bottom: 40px;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--card);
+}
+
+.permission-grant-section h2 {
+    margin-bottom: 24px;
+    font-size: 1.35rem;
+}
+
+.permission-grant-form {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1.4fr auto auto;
+    align-items: end;
+    gap: 16px;
+}
+
+.permission-field {
+    display: grid;
+    gap: 8px;
+}
+
+.permission-field label {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.permission-field select {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text-primary);
+    outline: none;
+}
+
+.permission-field select:focus {
+    border-color: var(--primary);
+}
+
+.permission-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.permission-checkbox input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary);
+}
+
+.permission-submit {
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 8px;
+    background: var(--primary);
+    color: white;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.permission-submit:hover {
+    opacity: 0.9;
+}
+
+.permission-submit:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.permissions-success,
+.permissions-error {
+    margin-top: 16px;
+}
+
+.permissions-success {
+    color: var(--success);
+}
+
+.permissions-error {
+    color: var(--error);
+}
+
+/* ===========================
+   My Permissions
+=========================== */
+
+.my-permissions-section > h2 {
+    margin-bottom: 20px;
+    font-size: 1.35rem;
+}
+
+.permissions-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(300px, 1fr)
+    );
+    gap: 20px;
+}
+
+.permission-card {
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--card);
+}
+
+.permission-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.permission-card-header h2,
+.permission-card-header h3 {
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.permission-status {
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.12);
+    color: var(--success);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.permission-details {
+    display: grid;
+    gap: 16px;
+}
+
+.permission-details div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.permission-details span {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.permission-details strong {
+    font-size: 0.875rem;
+    text-align: right;
+}
+
+.permissions-state,
+.permissions-empty {
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--card);
+}
+
+.permissions-empty p {
+    color: var(--text-secondary);
+}
+/* ===========================
+   Member Permissions
+=========================== */
+
+.member-permissions-section {
+    margin-bottom: 40px;
+}
+
+.member-permissions-header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 20px;
+}
+
+.member-permissions-header h2 {
+    margin-bottom: 6px;
+    font-size: 1.35rem;
+}
+
+.member-permissions-header p {
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.member-permissions-header select {
+    width: min(360px, 100%);
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text-primary);
+    outline: none;
+}
+
+.member-permissions-header select:focus {
+    border-color: var(--primary);
+}
+
+.member-permissions-state {
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--card);
+    color: var(--text-secondary);
+}
+
+.permission-status-revoked {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--error);
+}
+
+.permission-revoke {
+    width: 100%;
+    min-height: 42px;
+    margin-top: 20px;
+    border: 1px solid var(--error);
+    border-radius: 8px;
+    color: var(--error);
+    font-weight: 600;
+}
+
+.permission-revoke:hover {
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.permission-revoke:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+/* ===========================
+   Responsive
+=========================== */
+
+@media (max-width: 1100px) {
+    .permission-grant-form {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .permission-submit {
+        width: 100%;
+    }
+}
+
+@media (max-width: 640px) {
+    .permissions-page {
+        width: min(100% - 24px, 1180px);
+        padding-top: 32px;
+    }
+
+    .permission-grant-form {
+        grid-template-columns: 1fr;
+    }
+
+    .permissions-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .permission-details div {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .permission-details strong {
+        text-align: left;
+    }
+    .member-permissions-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    
+    .member-permissions-header select {
+        width: 100%;
+    }
+}
