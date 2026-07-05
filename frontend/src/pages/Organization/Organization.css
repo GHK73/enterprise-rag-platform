@@ -51,10 +51,6 @@
 }
 
 .organization-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
     padding-bottom: 24px;
     margin-bottom: 24px;
     border-bottom: 1px solid var(--border);
@@ -72,18 +68,141 @@
     font-size: 14px;
 }
 
+.organization-create-form {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.organization-form-field {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.organization-form-field label {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.organization-form-field input,
+.organization-form-field select {
+    width: 100%;
+    height: 44px;
+    padding: 0 14px;
+    color: var(--text-primary);
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+    font-family: inherit;
+    font-size: 14px;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.organization-form-field select {
+    cursor: pointer;
+}
+
+.organization-form-field input::placeholder {
+    color: var(--text-secondary);
+}
+
+.organization-form-field input:focus,
+.organization-form-field select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.organization-create-button {
+    height: 44px;
+    padding: 0 20px;
+    flex-shrink: 0;
+    color: #FFFFFF;
+    background-color: var(--primary);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    transition:
+        opacity 0.2s ease,
+        transform 0.2s ease;
+}
+
+.organization-create-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.organization-create-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.organization-success {
+    margin-bottom: 20px;
+    color: var(--success);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.organization-form-error {
+    margin-bottom: 20px;
+    color: var(--error);
+    font-size: 14px;
+    font-weight: 500;
+}
+
 .organization-units {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
+    padding: 20px;
+    overflow-x: auto;
+    background-color: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.organization-unit-tree {
+    position: relative;
+}
+
+.organization-unit-children {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 12px;
+    padding-left: 40px;
+    margin-left: 21px;
+    border-left: 1px solid var(--border);
+}
+
+.organization-unit-children > .organization-unit-tree {
+    position: relative;
+}
+
+.organization-unit-children > .organization-unit-tree::before {
+    content: "";
+    position: absolute;
+    top: 27px;
+    left: -40px;
+    width: 40px;
+    border-top: 1px solid var(--border);
 }
 
 .organization-unit-card {
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 18px;
-    background-color: var(--background);
+    width: 100%;
+    min-width: 260px;
+    padding: 16px 18px;
+    background-color: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
     transition:
@@ -91,9 +210,112 @@
         transform 0.2s ease;
 }
 
+.organization-unit-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.organization-unit-edit-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.organization-unit-edit-form input {
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    padding: 0 12px;
+    color: var(--text-primary);
+    background-color: var(--card);
+    border: 1px solid var(--primary);
+    border-radius: 7px;
+    outline: none;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.organization-unit-edit-form input:focus {
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.organization-unit-edit-form button {
+    height: 38px;
+    padding: 0 14px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.organization-unit-edit-form button[type="submit"] {
+    color: #FFFFFF;
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.organization-unit-edit-form button[type="button"] {
+    color: var(--text-secondary);
+    background-color: var(--card);
+}
+
+.organization-unit-edit-form button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.organization-unit-edit-form button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.organization-unit-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.organization-unit-delete-button {
+    padding: 7px 12px;
+    color: var(--error);
+    background-color: transparent;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.organization-unit-delete-button:hover:not(:disabled) {
+    border-color: var(--error);
+}
+
+.organization-unit-delete-button:disabled,
+.organization-unit-edit-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+.organization-unit-edit-button {
+    padding: 7px 12px;
+    margin-left: auto;
+    flex-shrink: 0;
+    color: var(--primary);
+    background-color: transparent;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.organization-unit-edit-button:hover {
+    border-color: var(--primary);
+    background-color: #EFF6FF;
+}
 .organization-unit-card:hover {
     border-color: var(--primary);
-    transform: translateY(-2px);
+    transform: translateX(2px);
 }
 
 .organization-unit-icon {
@@ -137,97 +359,7 @@
     color: var(--error);
 }
 
-.organization-create-form {
-    display: flex;
-    align-items: flex-end;
-    gap: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    background-color: var(--background);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-}
-
-.organization-form-field {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.organization-form-field label {
-    color: var(--text-primary);
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.organization-form-field input {
-    width: 100%;
-    height: 44px;
-    padding: 0 14px;
-    color: var(--text-primary);
-    background-color: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    outline: none;
-    transition:
-        border-color 0.2s ease,
-        box-shadow 0.2s ease;
-}
-
-.organization-form-field input::placeholder {
-    color: var(--text-secondary);
-}
-
-.organization-form-field input:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.organization-create-button {
-    height: 44px;
-    padding: 0 20px;
-    flex-shrink: 0;
-    color: #FFFFFF;
-    background-color: var(--primary);
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    transition:
-        opacity 0.2s ease,
-        transform 0.2s ease;
-}
-
-.organization-create-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-}
-
-.organization-create-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.organization-success {
-    margin-bottom: 20px;
-    color: var(--success);
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.organization-form-error {
-    margin-bottom: 20px;
-    color: var(--error);
-    font-size: 14px;
-    font-weight: 500;
-}
-
-@media (max-width: 900px) {
-    .organization-units {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 600px) {
+@media (max-width: 700px) {
     .organization-page {
         padding: 24px 16px;
     }
@@ -241,15 +373,27 @@
         font-size: 26px;
     }
 
-    .organization-units {
-        grid-template-columns: 1fr;
-    }
     .organization-create-form {
         align-items: stretch;
         flex-direction: column;
     }
-    
+
     .organization-create-button {
         width: 100%;
     }
+
+    .organization-units {
+        padding: 16px;
+    }
+
+    .organization-unit-children {
+        padding-left: 24px;
+        margin-left: 16px;
+    }
+
+    .organization-unit-children > .organization-unit-tree::before {
+        left: -24px;
+        width: 24px;
+    }
 }
+

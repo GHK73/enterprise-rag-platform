@@ -6,7 +6,9 @@ import {
     getOrganization,
     updateOrganization,
     createOrganizationUnit,
-    getOrganizationUnits
+    getOrganizationUnits,
+    updateOrganizationUnit,
+    deleteOrganizationUnit
 } from "../controllers/organization.controller.js";
 import authenticate from "../middleware/auth.middleware.js";
 
@@ -26,6 +28,17 @@ router.post(
     "/units",
     authenticate,
     createOrganizationUnit
+);
+
+router.patch(
+    "/units/:unitId",
+    authenticate,
+    updateOrganizationUnit
+);
+router.delete(
+    "/units/:unitId",
+    authenticate,
+    deleteOrganizationUnit
 );
 
 export default router;

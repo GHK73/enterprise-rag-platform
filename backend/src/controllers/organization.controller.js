@@ -5,7 +5,9 @@ import {
     getOrganization as getOrganizationService,
     updateOrganization as updateOrganizationService,
     createOrganizationUnit as createOrganizationUnitService,
-    getOrganizationUnits as getOrganizationUnitsService
+    getOrganizationUnits as getOrganizationUnitsService,
+    updateOrganizationUnit as updateOrganizationUnitService,
+    deleteOrganizationUnit as deleteOrganizationUnitService
 } from "../services/organization.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
@@ -87,6 +89,40 @@ export const getOrganizationUnits = asyncHandler(async(req,res)=>{
             200,
             "Organization units fetched successfully",
             organizationUnits 
+        )
+    );
+});
+
+export const updateOrganizationUnit = asyncHandler(async(req,res)=>{
+    const {unitId} = req.params;
+    const {name} = req.body;
+    const organizatioinUnit = await updateOrganizationUnitService(
+        req.user.id,
+        unitId,
+        {
+            name 
+        }
+    );
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Organization unit updated successfully",
+            organizatioinUnit 
+        )
+    );
+});
+
+export const deleteOrganizationUnit = asyncHandler(async(req,res)=>{
+    const {unitId} = req.params;
+    const organizationUnit = await deleteOrganizationUnitService(
+        req.user.id,
+        unitId 
+    );
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Organization unit deleted successfully",
+            organizationUnit 
         )
     );
 });

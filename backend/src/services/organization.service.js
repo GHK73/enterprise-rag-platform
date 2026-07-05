@@ -133,13 +133,13 @@ export const createOrganizationUnit = async(userId, unitData)=>{
     if(!user.unitId || !user.unit){
         throw new ApiError(
             404,
-            "User does nto belong to an organization"
+            "User does not belong to an organization"
         );
     }
-    if(user.role != "OWNER" && user.role !== "ADMIN"){
+    if(user.role !== "OWNER" && user.role !== "ADMIN"){
         throw new ApiError(
             403,
-            "You don not have permission to create organization units"
+            "You do not have permission to create organization units"
         );
     }
     if(type === "COMPANY"){
@@ -213,4 +213,127 @@ export const getOrganizationUnits = async(userId) =>{
         }
     });
     return organizationUnits;
+}
+
+export const updateOrganizationUnit = async(
+    userId,
+    unitId,
+    unitData 
+)=>{
+    const {name} = unitData;
+    const user = await prisma.user.findUnique({
+        where:{
+            id:userId 
+        },
+        include:{
+            unit: true 
+        }
+    });
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            404,
+            "User does not belong to an organization"
+        );
+    }
+    if(user.role !== "OWNER" && user.role !== "ADMIN"){
+        throw new ApiError(
+            403,
+            "You do not have permission to update organization units"
+        );
+    }
+    const organizationUnit = await prisma.organizationUnit.findUnique({
+        where:{
+            id:unitId 
+        }
+    });
+    if(!organizationUnit){
+        throw new ApiError(
+            404,
+            "Organization unit not Found"
+        );
+    }
+    if(organizationUnit.organizationId !== user.unit.organizationId){
+        throw new ApiError(
+            403,
+            "Organization unit does not belong to your organization"
+        );
+    }
+    const updatedOrganizationUnit = await prisma.organizationUnit.update({
+        where:{
+            id:unitId 
+        },
+        data:{
+            name 
+        }
+    });
+    return updatedOrganizationUnit;
+}
+
+export const deleteOrganizationUnit = async(userId,unitId)=>{
+    const user = await prisma.user.findUnique({
+        where:{
+            id:userId 
+        },
+        include:{
+            unit: true 
+        }
+    });
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            404,
+            "User does not belong to an organization"
+        );
+    }
+    if(user.role !== "OWNER" && user.role !== "ADMIN"){
+        throw new ApiError(
+            403,
+            "You do not have permission to delete organization units"
+        );
+    }
+    const organizationUnit = await prisma.organizationUnit.findUnique({
+        where:{
+            id:unitId 
+        },
+        include:{
+            children: true,
+            users: true 
+        }
+    });
+    if(!organizationUnit){
+        throw new ApiError(
+            404,
+            "Organization unit not Found"
+        );
+    }
+    if(organizationUnit.organizationId !== user.unit.organizationId){
+        throw new ApiError(
+            403,
+            "Organization unit does not belong to your organization"
+        );
+    }
+    if(organizationUnit.type === "COMPANY"){
+        throw new ApiError(
+            400,
+            "COMPANY organization unit cannot be deleted"
+        );
+    }
+    if(organizationUnit.children.length > 0){
+        throw new ApiError(
+            400,
+            "Organization unit with child units cannot be deleted"
+        );
+    }
+    await prisma.organizationUnit.delete({
+        where:{
+            id:unitId 
+        }
+    });
+    return organizationUnit;
 }

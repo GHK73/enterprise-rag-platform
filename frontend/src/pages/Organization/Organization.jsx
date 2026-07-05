@@ -10,8 +10,13 @@ function Organization(){
     const [loading,setLoading] = useState(true);
     const [error,setError] = useState("");
     const [name,setName] = useState("");
+    const [parentId,setParentId] = useState("");
     const [creating,setCreating] = useState(false);
     const [message,setMessage] = useState("");
+    const [editingUnitId,setEditingUnitId] = useState(null);
+    const [editingName,setEditingName] = useState("");
+    const [updating,setUpdating] = useState(false);
+    const [deletingUnitId,setDeletingUnitId] = useState(null);
 
     useEffect(()=>{
         const fetchOrganizationData = async()=>{
@@ -38,15 +43,32 @@ function Organization(){
         fetchOrganizationData();
     },[]);
 
-    const handleCreateDepartment = async(e)=>{
+    const getChildType = (parentType)=>{
+        const hierarchy = {
+            COMPANY: "DEPARTMENT",
+            DEPARTMENT: "TEAM",
+            TEAM: "GROUP"
+        };
+
+        return hierarchy[parentType];
+    };
+
+    const handleCreateUnit = async(e)=>{
         e.preventDefault();
 
-        const rootUnit = organizationUnits.find(
-            (unit)=>unit.type === "COMPANY"
+        const parentUnit = organizationUnits.find(
+            (unit)=>unit.id === parentId
         );
 
-        if(!rootUnit){
-            setError("Company unit not found");
+        if(!parentUnit){
+            setError("Parent organization unit not found");
+            return;
+        }
+
+        const type = getChildType(parentUnit.type);
+
+        if(!type){
+            setError("Groups cannot contain child units");
             return;
         }
 
@@ -59,8 +81,8 @@ function Organization(){
                 "/organization/units",
                 {
                     name,
-                    type: "DEPARTMENT",
-                    parentId: rootUnit.id
+                    type,
+                    parentId: parentUnit.id
                 }
             );
 
@@ -70,18 +92,215 @@ function Organization(){
             ]);
 
             setName("");
-            setMessage("Department created successfully");
+            setParentId("");
+            setMessage(`${type} created successfully`);
         }
         catch(error){
             setError(
                 error.response?.data?.message ||
-                "Failed to create department"
+                "Failed to create organization unit"
             );
         }
         finally{
             setCreating(false);
         }
     };
+
+    const handleEditUnit = (unit)=>{
+        setEditingUnitId(unit.id);
+        setEditingName(unit.name);
+        setError("");
+        setMessage("");
+    };
+
+    const handleCancelEdit = ()=>{
+        setEditingUnitId(null);
+        setEditingName("");
+    };
+
+    const handleUpdateUnit = async(e,unitId)=>{
+        e.preventDefault();
+
+        try{
+            setUpdating(true);
+            setError("");
+            setMessage("");
+
+            const response = await api.patch(
+                `/organization/units/${unitId}`,
+                {
+                    name: editingName
+                }
+            );
+
+            setOrganizationUnits((currentUnits)=>
+                currentUnits.map((unit)=>
+                    unit.id === unitId
+                        ? response.data.data
+                        : unit
+                )
+            );
+
+            setEditingUnitId(null);
+            setEditingName("");
+            setMessage("Organization unit updated successfully");
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to update organization unit"
+            );
+        }
+        finally{
+            setUpdating(false);
+        }
+    };
+    const handleDeleteUnit = async(unit)=>{
+        const confirmed = window.confirm(
+            `Are you sure you want to delete ${unit.name}?`
+        );
+    
+        if(!confirmed){
+            return;
+        }
+    
+        try{
+            setDeletingUnitId(unit.id);
+            setError("");
+            setMessage("");
+    
+            await api.delete(
+                `/organization/units/${unit.id}`
+            );
+    
+            setOrganizationUnits((currentUnits)=>
+                currentUnits.filter(
+                    (currentUnit)=>currentUnit.id !== unit.id
+                )
+            );
+    
+            setMessage("Organization unit deleted successfully");
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to delete organization unit"
+            );
+        }
+        finally{
+            setDeletingUnitId(null);
+        }
+    };
+
+    const renderOrganizationUnit = (unit)=>{
+        const childUnits = organizationUnits.filter(
+            (childUnit)=>childUnit.parentId === unit.id
+        );
+
+        const isEditing = editingUnitId === unit.id;
+
+        return (
+            <div
+                className="organization-unit-tree"
+                key={unit.id}
+            >
+                <article className="organization-unit-card">
+                    <div className="organization-unit-icon">
+                        {unit.name.charAt(0).toUpperCase()}
+                    </div>
+
+                    <div className="organization-unit-content">
+                        {isEditing ? (
+                            <form
+                                className="organization-unit-edit-form"
+                                onSubmit={(e)=>handleUpdateUnit(e,unit.id)}
+                            >
+                                <input
+                                    type="text"
+                                    value={editingName}
+                                    onChange={(e)=>setEditingName(e.target.value)}
+                                    required
+                                    autoFocus
+                                />
+
+                                <button
+                                    type="submit"
+                                    disabled={updating}
+                                >
+                                    {updating ? "Saving..." : "Save"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handleCancelEdit}
+                                    disabled={updating}
+                                >
+                                    Cancel
+                                </button>
+                            </form>
+                        ) : (
+                            <>
+                                <h3>{unit.name}</h3>
+
+                                <span className="organization-unit-type">
+                                    {unit.type}
+                                </span>
+                            </>
+                        )}
+                    </div>
+
+                    {!isEditing && unit.type !== "COMPANY" && (
+                        <div className="organization-unit-actions">
+                            <button
+                                className="organization-unit-edit-button"
+                                type="button"
+                                onClick={()=>handleEditUnit(unit)}
+                                disabled={deletingUnitId === unit.id}
+                            >
+                                Edit
+                            </button>
+
+                            <button
+                                className="organization-unit-delete-button"
+                                type="button"
+                                onClick={()=>handleDeleteUnit(unit)}
+                                disabled={deletingUnitId === unit.id}
+                            >
+                                {deletingUnitId === unit.id
+                                    ? "Deleting..."
+                                    : "Delete"
+                                }
+                            </button>
+                        </div>
+                    )}
+                </article>
+
+                {childUnits.length > 0 && (
+                    <div className="organization-unit-children">
+                        {childUnits.map((childUnit)=>
+                            renderOrganizationUnit(childUnit)
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    const rootUnit = organizationUnits.find(
+        (unit)=>unit.type === "COMPANY"
+    );
+
+    const availableParentUnits = organizationUnits.filter(
+        (unit)=>unit.type !== "GROUP"
+    );
+
+    const selectedParentUnit = organizationUnits.find(
+        (unit)=>unit.id === parentId
+    );
+
+    const childType = selectedParentUnit
+        ? getChildType(selectedParentUnit.type)
+        : null;
 
     if(loading){
         return (
@@ -120,7 +339,7 @@ function Organization(){
                             <h2>Organization Structure</h2>
 
                             <p>
-                                View the departments, teams, and groups
+                                View and manage departments, teams, and groups
                                 within your organization.
                             </p>
                         </div>
@@ -128,17 +347,46 @@ function Organization(){
 
                     <form
                         className="organization-create-form"
-                        onSubmit={handleCreateDepartment}
+                        onSubmit={handleCreateUnit}
                     >
                         <div className="organization-form-field">
-                            <label htmlFor="department-name">
-                                Create Department
+                            <label htmlFor="parent-unit">
+                                Parent Unit
+                            </label>
+
+                            <select
+                                id="parent-unit"
+                                value={parentId}
+                                onChange={(e)=>setParentId(e.target.value)}
+                                required
+                            >
+                                <option value="">
+                                    Select parent unit
+                                </option>
+
+                                {availableParentUnits.map((unit)=>(
+                                    <option
+                                        key={unit.id}
+                                        value={unit.id}
+                                    >
+                                        {unit.name} ({unit.type})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="organization-form-field">
+                            <label htmlFor="unit-name">
+                                {childType
+                                    ? `Create ${childType}`
+                                    : "Organization Unit"
+                                }
                             </label>
 
                             <input
-                                id="department-name"
+                                id="unit-name"
                                 type="text"
-                                placeholder="e.g. Engineering"
+                                placeholder="Enter unit name"
                                 value={name}
                                 onChange={(e)=>setName(e.target.value)}
                                 required
@@ -148,9 +396,14 @@ function Organization(){
                         <button
                             className="organization-create-button"
                             type="submit"
-                            disabled={creating}
+                            disabled={creating || !childType}
                         >
-                            {creating ? "Creating..." : "Add Department"}
+                            {creating
+                                ? "Creating..."
+                                : childType
+                                    ? `Add ${childType}`
+                                    : "Select Parent"
+                            }
                         </button>
                     </form>
 
@@ -167,24 +420,14 @@ function Organization(){
                     )}
 
                     <div className="organization-units">
-                        {organizationUnits.map((unit)=>(
-                            <article
-                                className="organization-unit-card"
-                                key={unit.id}
-                            >
-                                <div className="organization-unit-icon">
-                                    {unit.name.charAt(0).toUpperCase()}
-                                </div>
-
-                                <div className="organization-unit-content">
-                                    <h3>{unit.name}</h3>
-
-                                    <span className="organization-unit-type">
-                                        {unit.type}
-                                    </span>
-                                </div>
-                            </article>
-                        ))}
+                        {rootUnit
+                            ? renderOrganizationUnit(rootUnit)
+                            : (
+                                <p className="organization-form-error">
+                                    Company unit not found
+                                </p>
+                            )
+                        }
                     </div>
                 </section>
             </div>
