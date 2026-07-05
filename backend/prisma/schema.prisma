@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -26,15 +21,36 @@ enum OrganizationUnitType {
   GROUP
 }
 
+enum Permission {
+  INVITE_MEMBER
+  REMOVE_MEMBER
+  UPDATE_MEMBER
+  ASSIGN_ROLE
+  MOVE_MEMBER
+
+  CREATE_UNIT
+  UPDATE_UNIT
+  DELETE_UNIT
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
 model Organization {
   id          String  @id @default(cuid())
   name        String
   description String?
 
-  units OrganizationUnit[]
+  units            OrganizationUnit[]
+  permissionGrants PermissionGrant[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  invitations Invitation[]
 }
 
 model OrganizationUnit {
@@ -48,10 +64,15 @@ model OrganizationUnit {
   parent   OrganizationUnit?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
   children OrganizationUnit[] @relation("OrganizationHierarchy")
 
-  users User[]
+  allocatedCapacity Int?
+
+  users            User[]
+  permissionGrants PermissionGrant[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  invitations Invitation[]
 
   @@index([organizationId])
   @@index([parentId])
@@ -72,9 +93,75 @@ model User {
   unitId String?
   unit   OrganizationUnit? @relation(fields: [unitId], references: [id], onDelete: Restrict)
 
+  receivedPermissionGrants PermissionGrant[] @relation("ReceivedPermissionGrants")
+  givenPermissionGrants    PermissionGrant[] @relation("GivenPermissionGrants")
+
+  sentInvitations Invitation[] @relation("SentInvitations")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([email])
   @@index([unitId])
+}
+
+model PermissionGrant {
+  id String @id @default(cuid())
+
+  permission Permission
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("ReceivedPermissionGrants", fields: [userId], references: [id], onDelete: Cascade)
+
+  scopeUnitId String
+  scopeUnit   OrganizationUnit @relation(fields: [scopeUnitId], references: [id], onDelete: Cascade)
+
+  grantedById String
+  grantedBy   User   @relation("GivenPermissionGrants", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  canDelegate Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  revokedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([scopeUnitId])
+  @@index([grantedById])
+}
+
+model Invitation {
+  id String @id @default(cuid())
+
+  email String
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  unitId String
+  unit   OrganizationUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  role Role @default(MEMBER)
+
+  invitedById String
+  invitedBy   User   @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  token String @unique
+
+  status    InvitationStatus @default(PENDING)
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([unitId])
+  @@index([invitedById])
+  @@index([status])
 }
