@@ -17,13 +17,15 @@ Implementation progress for the Enterprise RAG Platform frontend.
 | Permission Management UI | ✅ |
 | Invitation UI | ✅ |
 | Member Access | ✅ |
+| Capacity Management UI | ✅ |
 | Member Management UI | ⏳ |
-| Capacity Management UI | ⏳ |
 | Unit Reorganization UI | ⏳ |
 
 ---
 
 # Phase 1 — Frontend Foundation ✅
+
+## Completed
 
 | Area | Implementation |
 | --- | --- |
@@ -53,7 +55,11 @@ Implementation progress for the Enterprise RAG Platform frontend.
 ## Flow
 
 ~~~text
-Login → Store JWT → Verify Session → Load User → Protected Routes
+Login
+→ Store JWT
+→ Verify Session
+→ Load User
+→ Protected Routes
 ~~~
 
 ---
@@ -63,18 +69,20 @@ Login → Store JWT → Verify Session → Load User → Protected Routes
 ## Completed
 
 * Organization creation and update
-* Session refresh after creation
+* Optional capacity during organization creation
+* Session refresh after organization creation
 * Redirect to Dashboard
 * Dedicated `/organization` page
 * Organization details and hierarchy retrieval
 * Department, team, and group creation
 * Dynamic child type and valid parent selection
 * Recursive `COMPANY → DEPARTMENT → TEAM → GROUP` rendering
-* Inline rename and leaf deletion
+* Inline unit rename
+* Leaf unit deletion
 * Live updates without page refresh
 * Loading, success, error, and constraint states
 * Root `COMPANY` edit/delete protection
-* Responsive management UI
+* Responsive organization management UI
 
 ## Endpoints Integrated
 
@@ -82,21 +90,29 @@ Login → Store JWT → Verify Session → Load User → Protected Routes
 POST   /api/v1/organization
 GET    /api/v1/organization
 PATCH  /api/v1/organization
+
 GET    /api/v1/organization/units
 POST   /api/v1/organization/units
 PATCH  /api/v1/organization/units/:unitId
 DELETE /api/v1/organization/units/:unitId
+
 GET    /api/v1/organization/members
 ~~~
 
 ## User Flow
 
 ~~~text
-Logged Out → Login
+Logged Out
+→ Login
 
 Logged In
-├── No Organization → Create Organization → Refresh User → Dashboard
-└── Has Organization → Dashboard / Organization
+├── No Organization
+│   → Create Organization
+│   → Refresh User
+│   → Dashboard
+│
+└── Has Organization
+    → Dashboard / Organization
 ~~~
 
 ## Hierarchy
@@ -110,7 +126,7 @@ COMPANY
 └── DEPARTMENT
 ~~~
 
-Non-`COMPANY` units support edit and delete.
+Non-`COMPANY` units support edit and delete operations.
 
 ## Deletion Rules
 
@@ -150,7 +166,9 @@ The frontend reflects authorization state, while the backend remains the final a
 * Current user permission retrieval
 * Permission scope and unit type display
 * Grant permission form
-* Member, permission, and scope selection
+* Member selection
+* Permission selection
+* Scope selection
 * Delegation configuration
 * Organization member retrieval
 * Member permission history
@@ -218,8 +236,11 @@ Grant CREATE_UNIT
 * Invitation acceptance
 * User session refresh after acceptance
 * Organization structure available after joining
+* Backend capacity errors displayed during acceptance
+* Rejection when target unit capacity is not configured
+* Rejection when target unit has no remaining capacity
 
-### Flow
+### Invitation Flow
 
 ~~~text
 Invite Member
@@ -228,8 +249,27 @@ Invite Member
 → Invited User Logs In
 → View Invitation
 → Accept
+→ Validate Capacity
 → Refresh User
 → Organization Access
+~~~
+
+If capacity is not configured:
+
+~~~text
+Accept Invitation
+→ Backend Rejects Request
+→ Capacity Error Displayed
+→ User Remains Outside Organization
+~~~
+
+If the target unit is full:
+
+~~~text
+Accept Invitation
+→ Backend Rejects Request
+→ Capacity Error Displayed
+→ User Remains Outside Organization
 ~~~
 
 Invitation creation is implemented through secure backend tokens. External email delivery is not implemented yet.
@@ -256,17 +296,139 @@ Organization Member
 
 ---
 
-## 4.4 Member Management UI ⏳
+## 4.4 Capacity Management UI ✅
+
+### Completed
+
+* Capacity controls integrated into the existing Organization page
+* Capacity access for `COMPANY`, `DEPARTMENT`, `TEAM`, and `GROUP`
+* Capacity retrieval for individual organization units
+* Allocated capacity display
+* Direct member usage display
+* Child allocation display
+* Remaining capacity display
+* Initial capacity setup
+* Existing capacity updates
+* Capacity increase support
+* Safe capacity decrease support
+* Child capacity allocation
+* Parent over-allocation error display
+* Backend validation error handling
+* Automatic capacity refresh after updates
+* Live capacity calculations without page refresh
+* Invitation acceptance capacity error display
+* Responsive capacity management UI
+
+## Endpoints Integrated
+
+~~~http
+GET   /api/v1/organization/units/:unitId/capacity
+PATCH /api/v1/organization/units/:unitId/capacity
+~~~
+
+## Capacity View
+
+~~~text
+Organization Unit
+├── Allocated Capacity
+├── Direct Members
+├── Child Allocations
+└── Remaining Capacity
+~~~
+
+## Capacity Formula
+
+~~~text
+Remaining Capacity
+=
+Allocated Capacity
+− Direct Members
+− Child Allocations
+~~~
+
+Example:
+
+~~~text
+Allocated Capacity   100
+Direct Members        10
+Child Allocations     70
+Remaining             20
+~~~
+
+## Capacity Flow
+
+~~~text
+Select Organization Unit
+→ Click Capacity
+→ Fetch Current Capacity
+→ Display Capacity Details
+→ Set / Update
+→ Submit New Capacity
+→ Backend Validates
+→ Fetch Updated Capacity
+→ UI Updates Immediately
+~~~
+
+## Tested Scenarios
+
+~~~text
+Set COMPANY Capacity
+→ Capacity Displayed
+
+Set DEPARTMENT Capacity
+→ Parent Child Allocation Updated
+→ Parent Remaining Capacity Recalculated
+
+Increase Capacity
+→ Update Accepted
+
+Safe Capacity Decrease
+→ Update Accepted
+
+Decrease Below Current Usage
+→ Backend Rejects Request
+→ Error Displayed
+
+Child Over-allocation
+→ Backend Rejects Request
+→ Parent Available Capacity Error Displayed
+~~~
+
+Example tested hierarchy:
+
+~~~text
+COMPANY
+Allocated        5
+Direct Members   1
+Child Allocations 2
+Remaining        2
+
+└── DEPARTMENT
+    Allocated        2
+    Direct Members   1
+    Child Allocations 0
+    Remaining        1
+~~~
+
+Capacity management is complete for the current organization hierarchy. Future reorganization operations will update and validate capacity when units or members are moved.
+
+---
+
+## 4.5 Member Management UI ⏳
 
 ### Planned
 
 * Dedicated member list
 * Filter members by hierarchy
 * View member details
-* Update roles
+* Update member roles
 * Move members between units
 * Remove members
 * Validate actions against permission scope
+* Display destination capacity
+* Display movement and capacity errors
+
+### Planned Hierarchy View
 
 ~~~text
 Organization
@@ -278,25 +440,15 @@ Organization
 └── Department
 ~~~
 
----
-
-## 4.5 Capacity Management UI ⏳
-
-### Planned
-
-* Display allocated capacity
-* Display direct member usage
-* Display child allocations
-* Display remaining capacity
-* Allocate capacity to child units
-* Prevent over-allocation
-* Show invitation acceptance capacity errors
+### Planned Flow
 
 ~~~text
-Allocated Capacity   100
-Direct Members        10
-Child Allocations     70
-Remaining             20
+Select Member
+→ View Member Details
+→ Update Role / Move / Remove
+→ Backend Validates Permission + Scope
+→ Validate Capacity If Moving
+→ UI Updates
 ~~~
 
 ---
@@ -310,8 +462,11 @@ Remaining             20
 * Select valid replacement parents
 * Reassign child units
 * Move members to replacement units
-* Display hierarchy and capacity conflicts
+* Display hierarchy conflicts
+* Display capacity conflicts
 * Delete units after successful reorganization
+
+### Planned Flow
 
 ~~~text
 Protected Unit
@@ -331,7 +486,8 @@ Protected Unit
 
 * Permanent dashboard layout and sidebar
 * Organization overview
-* Member and capacity statistics
+* Member statistics
+* Capacity statistics
 * Document statistics
 * Recent activity
 
@@ -364,7 +520,9 @@ Protected Unit
 * Organization settings
 * Role display names
 * Permission configuration
-* Model, retrieval, and cache settings
+* Model settings
+* Retrieval settings
+* Cache settings
 
 ## Phase 10 — Final UI Polish
 
@@ -419,8 +577,8 @@ frontend/
 | Permission Management UI | ✅ Completed |
 | Invitation Management UI | ✅ Completed |
 | Member Access | ✅ Completed |
+| Capacity Management UI | ✅ Completed |
 | Member Management UI | ⏳ Next |
-| Capacity Management UI | ⏳ Planned |
 | Unit Reorganization UI | ⏳ Planned |
 | Dashboard | ⏳ Planned |
 | Document Management | ⏳ Planned |

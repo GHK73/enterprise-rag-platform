@@ -9,7 +9,9 @@ import {
     getOrganizationUnits,
     updateOrganizationUnit,
     deleteOrganizationUnit,
-    getOrganizationMembers
+    getOrganizationMembers,
+    getUnitCapacityController,
+    updateUnitCapacityController
 } from "../controllers/organization.controller.js";
 import authenticate from "../middleware/auth.middleware.js";
 
@@ -31,6 +33,24 @@ router.post(
     createOrganizationUnit
 );
 
+router.get(
+    "/members",
+    authenticate,
+    getOrganizationMembers
+);
+
+router.get(
+    "/units/:unitId/capacity",
+    authenticate,
+    getUnitCapacityController
+);
+
+router.patch(
+    "/units/:unitId/capacity",
+    authenticate,
+    updateUnitCapacityController
+);
+
 router.patch(
     "/units/:unitId",
     authenticate,
@@ -41,10 +61,6 @@ router.delete(
     authenticate,
     deleteOrganizationUnit
 );
-router.get(
-    "/members",
-    authenticate,
-    getOrganizationMembers
-);
+
 
 export default router;

@@ -17,7 +17,7 @@ Implementation progress for the Enterprise RAG Platform. Database design: [`docs
 | Permission Engine | ✅ |
 | Invitation Management | ✅ |
 | Member Access | ✅ |
-| Capacity Management | ⏳ |
+| Capacity Management | ✅ |
 | Member Management | ⏳ |
 | Unit Reorganization | ⏳ |
 
@@ -77,8 +77,10 @@ Users cannot assign their own organization, role, unit, or permissions.
 ## Completed
 
 * Organization creation and update
+* Optional root capacity during organization creation
 * Automatic `COMPANY` root creation
 * Creator assignment as `OWNER`
+* Automatic owner permission grants
 * Organization structure retrieval
 * Department, team, and group creation
 * Hierarchy and organization isolation validation
@@ -182,6 +184,7 @@ MOVE_MEMBER
 CREATE_UNIT
 UPDATE_UNIT
 DELETE_UNIT
+MOVE_UNIT
 ~~~
 
 ### Permission Flow
@@ -234,6 +237,9 @@ The complete lifecycle has been tested with `CREATE_UNIT`.
 * Expiration validation
 * User assignment to unit and role
 * Invitation status tracking
+* Capacity validation during invitation acceptance
+* Rejection when target unit capacity is not configured
+* Rejection when target unit has no remaining capacity
 
 ### Flow
 
@@ -246,8 +252,27 @@ Check INVITE_MEMBER
 → Fetch Invitation by Email
 → Accept
 → Validate Token + Email + Expiry
+→ Validate Target Unit Capacity
 → Assign Unit + Role
 → Mark ACCEPTED
+~~~
+
+If the target unit capacity is not configured:
+
+~~~text
+Invitation Acceptance
+→ Reject
+→ User Remains Outside Organization
+→ Invitation Remains PENDING
+~~~
+
+If the target unit has no remaining capacity:
+
+~~~text
+Invitation Acceptance
+→ Reject
+→ User Remains Outside Organization
+→ Invitation Remains PENDING
 ~~~
 
 Permissions remain separate from membership and are granted through `PermissionGrant`.
@@ -274,7 +299,32 @@ Select Member
 
 ---
 
-## 4.4 Capacity Management ⏳
+## 4.4 Capacity Management ✅
+
+### Completed
+
+* Optional capacity during organization creation
+* Set root company capacity
+* Set child unit capacity
+* Update existing capacity
+* Increase allocated capacity
+* Safely decrease allocated capacity
+* Calculate direct member usage
+* Calculate child capacity allocations
+* Calculate remaining capacity
+* Prevent capacity below current usage
+* Require parent capacity before child allocation
+* Prevent child over-allocation
+* Exclude current child allocation during capacity updates
+* Validate parent available capacity
+* Enforce capacity during invitation acceptance
+* Reject invitations when capacity is not configured
+* Reject invitations when the target unit is full
+* Capacity retrieval API
+* Capacity update API
+* Frontend integration tested
+
+## Capacity Formula
 
 ~~~text
 Remaining Capacity
@@ -287,20 +337,96 @@ Allocated Capacity
 Example:
 
 ~~~text
-Parent = 100
+Parent Capacity = 100
+
+├── Direct Members = 10
 ├── Child A = 40
 ├── Child B = 30
-└── Remaining = 30
+└── Remaining = 20
 ~~~
 
-### Planned
+## Capacity Rules
 
-* Set root capacity
-* Allocate child capacity
-* Calculate remaining capacity
-* Prevent over-allocation
-* Validate invitation acceptance
-* Recalculate during reorganization
+~~~text
+New Capacity
+>=
+Direct Members + Child Allocations
+~~~
+
+For child units:
+
+~~~text
+Child Allocation
+<=
+Parent Capacity
+− Parent Direct Members
+− Sibling Allocations
+~~~
+
+When updating an existing child allocation, the unit's previous allocation is excluded before calculating the capacity available to it.
+
+Example:
+
+~~~text
+Parent Capacity       = 100
+Parent Direct Members = 10
+Child A Current       = 30
+Child B               = 20
+
+Available for Child A
+= 100 - 10 - 20
+= 70
+
+Child A: 30 → 50  Allowed
+Child A: 30 → 70  Allowed
+Child A: 30 → 71  Rejected
+~~~
+
+## Invitation Capacity Flow
+
+~~~text
+Accept Invitation
+→ Load Target Unit
+→ Require Configured Capacity
+→ Count Direct Members
+→ Calculate Child Allocations
+→ Calculate Remaining Capacity
+→ Reject If Full
+→ Assign User
+→ Mark Invitation ACCEPTED
+~~~
+
+The capacity validation and membership assignment execute inside the same database transaction.
+
+## Endpoints
+
+~~~http
+GET   /api/v1/organization/units/:unitId/capacity
+PATCH /api/v1/organization/units/:unitId/capacity
+~~~
+
+## Capacity Response
+
+~~~text
+Allocated Capacity
+Direct Members
+Child Allocations
+Remaining Capacity
+~~~
+
+## Tested Flow
+
+~~~text
+Set COMPANY Capacity
+→ Allocate Capacity to DEPARTMENT
+→ Parent Remaining Capacity Recalculates
+→ Attempt Child Over-allocation
+→ Request Rejected
+→ Set Valid Child Capacity
+→ Remaining Capacity Recalculates
+~~~
+
+Capacity management is complete for the current hierarchy model. Reorganization operations will perform additional capacity recalculation when units or subtrees are moved.
 
 ---
 
@@ -308,11 +434,24 @@ Parent = 100
 
 ### Planned
 
+* Dedicated member management operations
 * Update member roles
 * Move members between units
 * Remove members
 * Validate permission scope
-* Validate capacity
+* Validate target unit capacity
+* Preserve organization isolation
+
+### Planned Flow
+
+~~~text
+Select Member
+→ Validate Management Permission
+→ Validate Scope
+→ Update Role / Move / Remove
+→ Validate Capacity If Moving
+→ Apply Change
+~~~
 
 ---
 
@@ -326,7 +465,25 @@ Parent = 100
 * Move members to replacement units
 * Replace removable parent units
 * Prevent circular hierarchy
-* Validate hierarchy, permissions, and capacity
+* Validate hierarchy
+* Validate permission scope
+* Validate organization isolation
+* Validate capacity before movement
+* Recalculate capacity after reorganization
+
+### Planned Flow
+
+~~~text
+Select Unit
+→ Select New Parent
+→ Validate Organization
+→ Validate Hierarchy
+→ Prevent Circular Reference
+→ Validate Permission Scope
+→ Validate Destination Capacity
+→ Move Subtree
+→ Recalculate Capacity
+~~~
 
 ---
 
@@ -428,8 +585,8 @@ backend/
 | Permission Engine | ✅ Completed |
 | Invitation Management | ✅ Completed |
 | Member Access & Permission Management | ✅ Completed |
-| Capacity Management | ⏳ Next |
-| Member Management | ⏳ Planned |
+| Capacity Management | ✅ Completed |
+| Member Management | ⏳ Next |
 | Unit Reorganization | ⏳ Planned |
 | Document Management | ⏳ Planned |
 | Document Processing | ⏳ Planned |

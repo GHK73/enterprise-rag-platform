@@ -17,6 +17,11 @@ function Organization(){
     const [editingName,setEditingName] = useState("");
     const [updating,setUpdating] = useState(false);
     const [deletingUnitId,setDeletingUnitId] = useState(null);
+    const [capacityData,setCapacityData] = useState({});
+    const [loadingCapacityId,setLoadingCapacityId] = useState(null);
+    const [editingCapacityId,setEditingCapacityId] = useState(null);
+    const [allocatedCapacity,setAllocatedCapacity] = useState("");
+    const [updatingCapacity,setUpdatingCapacity] = useState(false);
 
     useEffect(()=>{
         const fetchOrganizationData = async()=>{
@@ -155,30 +160,31 @@ function Organization(){
             setUpdating(false);
         }
     };
+
     const handleDeleteUnit = async(unit)=>{
         const confirmed = window.confirm(
             `Are you sure you want to delete ${unit.name}?`
         );
-    
+
         if(!confirmed){
             return;
         }
-    
+
         try{
             setDeletingUnitId(unit.id);
             setError("");
             setMessage("");
-    
+
             await api.delete(
                 `/organization/units/${unit.id}`
             );
-    
+
             setOrganizationUnits((currentUnits)=>
                 currentUnits.filter(
                     (currentUnit)=>currentUnit.id !== unit.id
                 )
             );
-    
+
             setMessage("Organization unit deleted successfully");
         }
         catch(error){
@@ -192,12 +198,88 @@ function Organization(){
         }
     };
 
+    const handleViewCapacity = async(unitId)=>{
+        try{
+            setLoadingCapacityId(unitId);
+            setError("");
+            setMessage("");
+
+            const response = await api.get(
+                `/organization/units/${unitId}/capacity`
+            );
+
+            setCapacityData((currentCapacity)=>({
+                ...currentCapacity,
+                [unitId]: response.data.data
+            }));
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to fetch organization unit capacity"
+            );
+        }
+        finally{
+            setLoadingCapacityId(null);
+        }
+    };
+    const handleEditCapacity = (unit)=>{
+        const unitCapacity = capacityData[unit.id];
+    
+        setEditingCapacityId(unit.id);
+        setAllocatedCapacity(
+            unitCapacity?.allocatedCapacity ?? ""
+        );
+        setError("");
+        setMessage("");
+    };
+    
+    const handleUpdateCapacity = async(e,unitId)=>{
+        e.preventDefault();
+    
+        try{
+            setUpdatingCapacity(true);
+            setError("");
+            setMessage("");
+    
+            await api.patch(
+                `/organization/units/${unitId}/capacity`,
+                {
+                    allocatedCapacity: Number(allocatedCapacity)
+                }
+            );
+    
+            const response = await api.get(
+                `/organization/units/${unitId}/capacity`
+            );
+    
+            setCapacityData((currentCapacity)=>({
+                ...currentCapacity,
+                [unitId]: response.data.data
+            }));
+    
+            setEditingCapacityId(null);
+            setAllocatedCapacity("");
+            setMessage("Organization unit capacity updated successfully");
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to update organization unit capacity"
+            );
+        }
+        finally{
+            setUpdatingCapacity(false);
+        }
+    };
     const renderOrganizationUnit = (unit)=>{
         const childUnits = organizationUnits.filter(
             (childUnit)=>childUnit.parentId === unit.id
         );
 
         const isEditing = editingUnitId === unit.id;
+        const unitCapacity = capacityData[unit.id];
+        const isEditingCapacity = editingCapacityId === unit.id;
 
         return (
             <div
@@ -249,31 +331,119 @@ function Organization(){
                         )}
                     </div>
 
-                    {!isEditing && unit.type !== "COMPANY" && (
+                    {!isEditing && (
                         <div className="organization-unit-actions">
                             <button
-                                className="organization-unit-edit-button"
+                                className="organization-unit-capacity-button"
                                 type="button"
-                                onClick={()=>handleEditUnit(unit)}
-                                disabled={deletingUnitId === unit.id}
+                                onClick={()=>handleViewCapacity(unit.id)}
+                                disabled={loadingCapacityId === unit.id}
                             >
-                                Edit
-                            </button>
-
-                            <button
-                                className="organization-unit-delete-button"
-                                type="button"
-                                onClick={()=>handleDeleteUnit(unit)}
-                                disabled={deletingUnitId === unit.id}
-                            >
-                                {deletingUnitId === unit.id
-                                    ? "Deleting..."
-                                    : "Delete"
+                                {loadingCapacityId === unit.id
+                                    ? "Loading..."
+                                    : "Capacity"
                                 }
                             </button>
+
+                            {unit.type !== "COMPANY" && (
+                                <>
+                                    <button
+                                        className="organization-unit-edit-button"
+                                        type="button"
+                                        onClick={()=>handleEditUnit(unit)}
+                                        disabled={deletingUnitId === unit.id}
+                                    >
+                                        Edit
+                                    </button>
+
+                                    <button
+                                        className="organization-unit-delete-button"
+                                        type="button"
+                                        onClick={()=>handleDeleteUnit(unit)}
+                                        disabled={deletingUnitId === unit.id}
+                                    >
+                                        {deletingUnitId === unit.id
+                                            ? "Deleting..."
+                                            : "Delete"
+                                        }
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
                 </article>
+
+                {unitCapacity && (
+                    <div className="organization-unit-capacity">
+                        {isEditingCapacity ? (
+                            <form
+                                className="organization-capacity-form"
+                                onSubmit={(e)=>handleUpdateCapacity(e,unit.id)}
+                            >
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={allocatedCapacity}
+                                    onChange={(e)=>setAllocatedCapacity(e.target.value)}
+                                    placeholder="Enter capacity"
+                                    required
+                                />
+
+                                <button
+                                    type="submit"
+                                    disabled={updatingCapacity}
+                                >
+                                    {updatingCapacity ? "Saving..." : "Save"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={()=>{
+                                        setEditingCapacityId(null);
+                                        setAllocatedCapacity("");
+                                    }}
+                                    disabled={updatingCapacity}
+                                >
+                                    Cancel
+                                </button>
+                            </form>
+                        ) : (
+                            <>
+                                <div>
+                                    <span>Allocated</span>
+                                    <strong>
+                                        {unitCapacity.allocatedCapacity ?? "Not set"}
+                                    </strong>
+                                </div>
+
+                                <div>
+                                    <span>Direct Members</span>
+                                    <strong>{unitCapacity.directMembers}</strong>
+                                </div>
+
+                                <div>
+                                    <span>Child Allocations</span>
+                                    <strong>{unitCapacity.childAllocations}</strong>
+                                </div>
+
+                                <div>
+                                    <span>Remaining</span>
+                                    <strong>
+                                        {unitCapacity.remainingCapacity ?? "Not set"}
+                                    </strong>
+                                </div>
+
+                                <button
+                                    className="organization-capacity-edit-button"
+                                    type="button"
+                                    onClick={()=>handleEditCapacity(unit)}
+                                >
+                                    Set / Update
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {childUnits.length > 0 && (
                     <div className="organization-unit-children">
@@ -436,3 +606,4 @@ function Organization(){
 }
 
 export default Organization;
+

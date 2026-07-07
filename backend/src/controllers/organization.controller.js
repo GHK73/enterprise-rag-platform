@@ -8,7 +8,9 @@ import {
     getOrganizationUnits as getOrganizationUnitsService,
     updateOrganizationUnit as updateOrganizationUnitService,
     deleteOrganizationUnit as deleteOrganizationUnitService,
-    getOrganizationMembers as getOrganizationMembersService
+    getOrganizationMembers as getOrganizationMembersService,
+    getUnitCapacity,
+    updateUnitCapacity
 } from "../services/organization.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
@@ -127,6 +129,7 @@ export const deleteOrganizationUnit = asyncHandler(async(req,res)=>{
         )
     );
 });
+
 export const getOrganizationMembers = asyncHandler(async(req,res)=>{
     const organizationMembers =
         await getOrganizationMembersService(
@@ -138,6 +141,37 @@ export const getOrganizationMembers = asyncHandler(async(req,res)=>{
             200,
             "Organization members fetched successfully",
             organizationMembers
+
         )
     );
 });
+
+export const getUnitCapacityController = asyncHandler(
+    async(req,res)=>{
+        const userId = req.user.id;
+        const {unitId} = req.params;
+
+        const capacity = await getUnitCapacity(userId,unitId);
+
+        return res.status(200).json(
+            new ApiResponse(
+                200,
+                "Organization unit capacity fetched successfully",
+                capacity
+            )
+        );
+    }
+);
+
+export const updateUnitCapacityController = asyncHandler(
+    async(req,res)=>{
+        const userId = req.user.id;
+        const {unitId} = req.params;
+        const organizationUnit = await updateUnitCapacity(
+            userId, unitId, req.body
+        );
+        return res.status(200).json(
+            new ApiResponse(200,"Organization unit capacity updated successfully",organizationUnit)
+        );
+    }
+);

@@ -201,10 +201,7 @@ export const getInvitations = async(userId)=>{
     return invitations;
 };
 
-export const acceptInvitation = async(
-    userId,
-    token
-)=>{
+export const acceptInvitation = async(userId,token)=>{
     const user = await prisma.user.findUnique({
         where:{
             id: userId
@@ -272,6 +269,57 @@ export const acceptInvitation = async(
     }
 
     const result = await prisma.$transaction(async(tx)=>{
+        const unit = await tx.organizationUnit.findUnique({
+            where:{
+                id: invitation.unitId
+            },
+            include:{
+                _count:{
+                    select:{
+                        users: true
+                    }
+                },
+                children:{
+                    select:{
+                        allocatedCapacity: true
+                    }
+                }
+            }
+        });
+    
+        if(!unit){
+            throw new ApiError(
+                404,
+                "Organization unit not Found"
+            );
+        }
+    
+        if(unit.allocatedCapacity === null){
+            throw new ApiError(
+                400,
+                "Unit capacity has not been configured"
+            );
+        }
+    
+        const childAllocations = unit.children.reduce(
+            (total, child)=>{
+                return total + (child.allocatedCapacity || 0);
+            },
+            0
+        );
+    
+        const remainingCapacity =
+            unit.allocatedCapacity -
+            unit._count.users -
+            childAllocations;
+    
+        if(remainingCapacity <= 0){
+            throw new ApiError(
+                400,
+                "Organization unit has reached its capacity"
+            );
+        }
+    
         const updatedUser = await tx.user.update({
             where:{
                 id: userId
@@ -281,7 +329,7 @@ export const acceptInvitation = async(
                 role: invitation.role
             }
         });
-
+    
         await tx.invitation.update({
             where:{
                 id: invitation.id
@@ -290,7 +338,7 @@ export const acceptInvitation = async(
                 status: "ACCEPTED"
             }
         });
-
+    
         return updatedUser;
     });
 
