@@ -13,7 +13,9 @@ import {
     getUnitCapacityController,
     updateUnitCapacityController,
     updateMemberRole,
-    moveMember
+    moveMember,
+    removeMember,
+    moveOrganizationUnit
 } from "../controllers/organization.controller.js";
 import authenticate from "../middleware/auth.middleware.js";
 
@@ -60,6 +62,12 @@ router.patch(
 );
 
 router.patch(
+    "/units/:unitId/move",
+    authenticate,
+    moveOrganizationUnit
+);
+
+router.patch(
     "/units/:unitId/capacity",
     authenticate,
     updateUnitCapacityController
@@ -74,6 +82,12 @@ router.delete(
     "/units/:unitId",
     authenticate,
     deleteOrganizationUnit
+);
+
+router.delete(
+    "/members/:memberId",
+    authenticate,
+    removeMember
 );
 
 

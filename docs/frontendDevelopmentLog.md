@@ -6,7 +6,7 @@ Implementation progress for the Enterprise RAG Platform frontend.
 
 # Current Status
 
-**Active Phase:** Phase 4.5 — Member Management UI ⏳
+**Active Phase:** Phase 5 — Document Management UI ⏳
 
 | Area | Status |
 | --- | --- |
@@ -18,8 +18,9 @@ Implementation progress for the Enterprise RAG Platform frontend.
 | Invitation UI | ✅ |
 | Member Access | ✅ |
 | Capacity Management UI | ✅ |
-| Member Management UI | ⏳ |
-| Unit Reorganization UI | ⏳ |
+| Member Management UI | ✅ |
+| Unit Reorganization UI | ✅ |
+| Document Management UI | ⏳ |
 
 ---
 
@@ -78,7 +79,6 @@ Login
 * Inline unit rename
 * Safe leaf unit deletion
 * Live state updates
-* Loading, success, error, and constraint states
 * Root `COMPANY` protection
 * Responsive UI
 
@@ -103,21 +103,11 @@ DELETE /api/v1/organization/units/:unitId
 GET    /api/v1/organization/members
 ~~~
 
-## Unit Flow
-
-~~~text
-Select Parent
-→ Determine Valid Child Type
-→ Create / Rename / Delete
-→ Backend Validates
-→ UI Updates Immediately
-~~~
-
 ---
 
-# Phase 4 — Access & Member Management ⏳
+# Phase 4 — Access & Member Management UI ✅
 
-The frontend exposes backend authorization and organization-management capabilities. The backend remains the final authority for all permissions and scope validation.
+The frontend exposes organization and authorization operations while the backend remains the final authority for permission, scope, hierarchy, and capacity validation.
 
 ---
 
@@ -130,7 +120,7 @@ The frontend exposes backend authorization and organization-management capabilit
 * Organization member selection
 * Permission and scope selection
 * Delegation configuration
-* Permission grant
+* Permission grants
 * Permission history
 * Active and revoked states
 * Permission revocation
@@ -145,8 +135,6 @@ Select Member
 → Grant / Revoke
 → UI Updates
 ~~~
-
-The complete permission lifecycle was tested with `CREATE_UNIT`.
 
 ---
 
@@ -176,8 +164,6 @@ Invite Member
 → Organization Access
 ~~~
 
-If capacity is missing or full, the backend rejects acceptance and the UI displays the error.
-
 External email delivery is not implemented yet.
 
 ---
@@ -187,10 +173,10 @@ External email delivery is not implemented yet.
 ## Completed
 
 * Organization member retrieval
-* Member name, role, and unit display
+* Member name, email, role, and unit display
 * Member selection for permission management
 * Permission history display
-* Active and revoked permission display
+* Active and revoked permission visibility
 
 ---
 
@@ -206,7 +192,6 @@ External email delivery is not implemented yet.
 * Remaining capacity display
 * Initial capacity setup
 * Capacity updates
-* Safe increase and decrease handling
 * Parent allocation validation errors
 * Automatic refresh after updates
 * Invitation capacity errors
@@ -229,139 +214,184 @@ Allocated Capacity
 Remaining Capacity
 ~~~
 
-## Flow
-
-~~~text
-Select Unit
-→ View Capacity
-→ Set / Update
-→ Backend Validates
-→ Fetch Updated Capacity
-→ UI Updates
-~~~
-
 ---
 
-## 4.5 Member Management UI ⏳
-
-Member management is integrated into the existing Organization page.
-
-### Update Member Role ✅
+## 4.5 Member Management UI ✅
 
 ## Completed
 
-* Member list display
-* Member name, email, role, and unit display
+### Update Member Role
+
 * Inline role editing
 * `ADMIN`, `MANAGER`, and `MEMBER` selection
-* Owner role protection
-* Backend error display
-* Immediate state update
-* Responsive controls
+* Owner protection
+* Permission and scope error display
+* Immediate state updates
 
 ~~~http
 PATCH /api/v1/organization/members/:memberId/role
 ~~~
 
-~~~text
-Select Member
-→ Change Role
-→ Select New Role
-→ Save
-→ Backend Validates
-→ UI Updates
-~~~
+### Move Member
 
-### Move Member Between Units ✅
-
-## Completed
-
-* Move Member action
 * Destination unit selection
 * Current unit exclusion
-* Owner movement protection
-* Destination capacity error display
+* Owner protection
+* Capacity error display
 * Permission and scope error display
-* Immediate member unit update
-* Responsive move controls
+* Immediate unit updates
 
 ~~~http
 PATCH /api/v1/organization/members/:memberId/unit
 ~~~
 
-~~~text
-Select Member
-→ Move Member
-→ Select Destination
-→ Backend Validates Permission + Scope + Capacity
-→ Move
-→ UI Updates
-~~~
-
-### Next: Remove Member ⏳
-
-Planned:
+### Remove Member
 
 * Remove Member action
 * Confirmation before removal
-* Backend permission and scope errors
 * Owner protection
+* Permission and scope error display
 * Immediate removal from member list
+
+~~~http
+DELETE /api/v1/organization/members/:memberId
+~~~
+
+## Member Management Flow
 
 ~~~text
 Select Member
-→ Remove
-→ Confirm
-→ Backend Validates
-→ Remove From Organization
-→ UI Updates
+→ Choose Operation
+→ Backend Validates Permission + Scope
+→ Apply Operation
+→ UI Updates Immediately
 ~~~
-
-After this operation, **Member Management UI will be complete**.
 
 ---
 
-## 4.6 Unit Reorganization UI ⏳
+## 4.6 Unit Reorganization UI ✅
 
-## Planned
+## Completed
 
-* Move units and subtrees
-* Change parent units
-* Select valid destination parents
-* Prevent invalid hierarchy moves
-* Display capacity conflicts
-* Display permission and scope errors
-* Delete units after reorganization
+* Move Unit action
+* Destination parent selection
+* Valid parent type filtering
+* Current parent exclusion
+* Root `COMPANY` movement protection
+* Hierarchy validation error display
+* Capacity conflict display
+* Permission and scope error display
+* Immediate recursive hierarchy updates
+* Responsive move controls
 
-## Planned Flow
+## Hierarchy Rules
+
+~~~text
+DEPARTMENT → COMPANY
+TEAM       → DEPARTMENT
+GROUP      → TEAM
+COMPANY    → Cannot Move
+~~~
+
+## Endpoint Integrated
+
+~~~http
+PATCH /api/v1/organization/units/:unitId/move
+~~~
+
+## Flow
 
 ~~~text
 Select Unit
-→ Select New Parent
-→ Backend Validates Hierarchy + Scope + Capacity
 → Move Unit
-→ Refresh Hierarchy
+→ Select Valid Destination Parent
+→ Backend Validates Organization
+→ Validate Hierarchy + Scope + Capacity
+→ Move Unit
+→ Hierarchy Updates Immediately
+~~~
+
+## Tested
+
+* Successful unit movement
+* Same-parent prevention
+* Destination type filtering
+* Destination capacity rejection
+* Permission denial
+* Destination scope denial
+
+---
+
+# Phase 5 — Document Management UI ⏳
+
+The frontend document workflow will be implemented after the backend document architecture and storage model are finalized.
+
+## Planned Features
+
+* Dedicated document library
+* Document upload
+* Upload progress and validation
+* Metadata display
+* Processing status
+* Document details
+* Version history
+* New version upload
+* Rollback
+* Soft delete and recovery
+* Authorized download
+* Access policy management
+* Temporary and scheduled access
+
+## Planned Upload Flow
+
+~~~text
+Select File
+→ Enter Metadata
+→ Configure Access Policy
+→ Upload
+→ Backend Stores File in S3
+→ Processing Status Updates
+→ Document Appears in Library
+~~~
+
+## Planned Access Configuration
+
+~~~text
+Access Subject
+→ ORGANIZATION
+→ UNIT
+→ USER
+→ ROLE
+
+Access Period
+→ Starts At
+→ Ends At
+→ Permanent or Temporary
+~~~
+
+The frontend will configure access policies, while the backend remains responsible for authorization enforcement.
+
+## Planned Document Statuses
+
+~~~text
+UPLOADING
+QUEUED
+PROCESSING
+READY
+FAILED
 ~~~
 
 ---
 
 # Future Frontend Phases
 
-## Phase 5 — Dashboard
+## Phase 6 — Document Processing UI
 
-* Permanent dashboard layout
-* Organization overview
-* Member and capacity statistics
-* Document statistics
-* Recent activity
-
-## Phase 6 — Document Management
-
-* Document library and upload
-* Metadata and processing status
-* Version history
-* Update and rollback
-* Soft delete and recovery
+* Processing progress
+* Extraction and OCR status
+* Chunking status
+* Indexing status
+* Failed job retry
 
 ## Phase 7 — Retrieval Interface
 
@@ -374,7 +404,8 @@ Select Unit
 ## Phase 8 — Search & Analytics
 
 * Search history
-* Retrieval and latency metrics
+* Retrieval metrics
+* Latency metrics
 * Cache performance
 * Citation accuracy
 * Usage analytics
@@ -383,7 +414,8 @@ Select Unit
 
 * Organization settings
 * Permission configuration
-* Model and retrieval settings
+* Model settings
+* Retrieval settings
 * Cache settings
 
 ## Phase 10 — Final UI Polish
@@ -431,17 +463,14 @@ frontend/
 # Next Development Step
 
 ~~~text
-Phase 4.5 — Remove Member
+Phase 5 — Document Management
 
-Backend Service
-→ Controller
-→ Route
-→ Frontend Integration
-→ Test
+Finalize Backend Document Architecture
+→ Design PostgreSQL Models
+→ Design S3 Storage Structure
+→ Design Access Policies
+→ Design Qdrant Mapping
+→ Implement Backend
+→ Build Document Management UI
+→ Test Complete Document Lifecycle
 ~~~
-
-After Remove Member:
-
-~~~text
-Member Management ✅
-→ Unit Reorganization

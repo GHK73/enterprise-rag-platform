@@ -8,7 +8,7 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 
 # Current Status
 
-**Active Phase:** Phase 4.5 — Member Management ⏳
+**Active Phase:** Phase 5 — Document Management ⏳
 
 | Area | Status |
 | --- | --- |
@@ -20,8 +20,9 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 | Invitation Management | ✅ |
 | Member Access | ✅ |
 | Capacity Management | ✅ |
-| Member Management | ⏳ |
-| Unit Reorganization | ⏳ |
+| Member Management | ✅ |
+| Unit Reorganization | ✅ |
+| Document Management | ⏳ |
 
 ---
 
@@ -29,7 +30,7 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 
 ## Completed
 
-* Environment configuration and JWT setup
+* Environment and JWT configuration
 * PostgreSQL with Prisma ORM
 * Express application and database connection
 * Versioned `/api/v1` routing
@@ -107,7 +108,7 @@ DELETE /api/v1/organization/units/:unitId
 GET    /api/v1/organization/members
 ~~~
 
-## Unit Operation Flow
+## Operation Flow
 
 ~~~text
 Authenticate
@@ -117,18 +118,9 @@ Authenticate
 → Apply Operation
 ~~~
 
-## Deletion Rules
-
-~~~text
-COMPANY         → Cannot Delete
-Has Children    → Reject
-Has Members     → Reject
-Valid Leaf Unit → Delete
-~~~
-
 ---
 
-# Phase 4 — Access & Member Management ⏳
+# Phase 4 — Access & Member Management ✅
 
 ## Authorization Model
 
@@ -228,8 +220,6 @@ Check INVITE_MEMBER
 → Mark ACCEPTED
 ~~~
 
-If capacity is missing or full, acceptance is rejected and the invitation remains `PENDING`.
-
 Permissions remain separate from membership.
 
 ---
@@ -238,19 +228,12 @@ Permissions remain separate from membership.
 
 ## Completed
 
-* List organization members
-* Retrieve member role and assigned unit
-* View permission history
-* Grant scoped permissions
-* Revoke active permissions
-* View active and revoked grants
-
-~~~text
-Select Member
-→ View Permission History
-→ Grant / Revoke Permission
-→ Authorization Changes Immediately
-~~~
+* Organization member listing
+* Member role and unit retrieval
+* Permission history
+* Scoped permission grants
+* Permission revocation
+* Active and revoked grant visibility
 
 ---
 
@@ -258,17 +241,15 @@ Select Member
 
 ## Completed
 
-* Optional organization capacity
-* Root and child capacity configuration
-* Capacity updates
-* Safe capacity increases and decreases
+* Optional organization and unit capacity
+* Capacity configuration and updates
 * Direct member usage calculation
 * Child allocation calculation
 * Remaining capacity calculation
 * Parent capacity enforcement
 * Child over-allocation prevention
 * Invitation capacity enforcement
-* Capacity API and frontend integration
+* Transaction-safe invitation acceptance
 
 ## Capacity Formula
 
@@ -280,28 +261,6 @@ Allocated Capacity
 − Child Allocations
 ~~~
 
-## Rules
-
-~~~text
-New Capacity
->=
-Direct Members + Child Allocations
-~~~
-
-For child units:
-
-~~~text
-Child Allocation
-<=
-Parent Capacity
-− Parent Direct Members
-− Sibling Allocations
-~~~
-
-When updating a child allocation, its previous allocation is excluded before calculating available parent capacity.
-
-Capacity validation and membership assignment during invitation acceptance execute in the same database transaction.
-
 ## Endpoints
 
 ~~~http
@@ -311,88 +270,94 @@ PATCH /api/v1/organization/units/:unitId/capacity
 
 ---
 
-## 4.5 Member Management ⏳
+## 4.5 Member Management ✅
 
 ## Completed
 
-### Update Member Role ✅
+### Update Member Role
 
 * `ASSIGN_ROLE` permission validation
 * Hierarchy scope validation
 * Organization isolation
 * Owner protection
-* Role update API
 * Frontend integration
 
 ~~~http
 PATCH /api/v1/organization/members/:memberId/role
 ~~~
 
-~~~text
-Select Member
-→ Check ASSIGN_ROLE
-→ Validate Scope
-→ Protect OWNER
-→ Update Role
-~~~
+### Move Member
 
-### Move Member Between Units ✅
-
-* `MOVE_MEMBER` permission validation
-* Source unit scope validation
-* Destination unit scope validation
+* Source and destination `MOVE_MEMBER` scope validation
 * Organization isolation
 * Owner protection
 * Destination capacity validation
 * Same-unit movement rejection
-* Member unit update API
 * Frontend integration
 
 ~~~http
 PATCH /api/v1/organization/members/:memberId/unit
 ~~~
 
-~~~text
-Select Member
-→ Validate Source MOVE_MEMBER Scope
-→ Validate Destination MOVE_MEMBER Scope
-→ Validate Organization
-→ Protect OWNER
-→ Validate Destination Capacity
-→ Move Member
+### Remove Member
+
+* `REMOVE_MEMBER` permission validation
+* Hierarchy scope validation
+* Organization isolation
+* Owner protection
+* Active permission revocation
+* Organization membership removal
+* Frontend integration
+
+~~~http
+DELETE /api/v1/organization/members/:memberId
 ~~~
 
-## Next
-
-### Remove Member ⏳
-
-Planned validation:
+## Member Management Flow
 
 ~~~text
 Select Member
-→ Check REMOVE_MEMBER
-→ Validate Scope
+→ Validate Permission + Scope
 → Validate Organization
 → Protect OWNER
-→ Remove Member From Organization
+→ Apply Operation
+→ Update UI
 ~~~
 
 ---
 
-## 4.6 Unit Reorganization ⏳
+## 4.6 Unit Reorganization ✅
 
-## Planned
+## Completed
 
 * Move units and subtrees
 * Change parent units
-* Prevent circular hierarchy
-* Validate hierarchy relationships
-* Validate permission scope
-* Preserve organization isolation
-* Validate destination capacity
-* Recalculate capacity after movement
+* Organization isolation
+* Strict hierarchy validation
+* Circular reference protection
+* Source scope validation
+* Destination scope validation
+* Destination capacity validation
+* Same-parent movement prevention
+* Immediate hierarchy updates
+* Frontend integration
 
-## Planned Flow
+## Hierarchy Rules
+
+~~~text
+DEPARTMENT → COMPANY
+TEAM       → DEPARTMENT
+GROUP      → TEAM
+COMPANY    → Cannot Move
+~~~
+
+## Endpoint
+
+~~~http
+PATCH /api/v1/organization/units/:unitId/move
+~~~
+
+## Flow
 
 ~~~text
 Select Unit
@@ -400,36 +365,129 @@ Select Unit
 → Validate Organization
 → Validate Hierarchy
 → Prevent Circular Reference
-→ Validate Permission Scope
-→ Validate Capacity
-→ Move Subtree
+→ Validate Source MOVE_UNIT Scope
+→ Validate Destination MOVE_UNIT Scope
+→ Validate Destination Capacity
+→ Move Unit
+→ Update Hierarchy
 ~~~
+
+## Tested
+
+* Successful unit movement
+* Same-parent prevention
+* Hierarchy validation
+* Destination capacity rejection
+* Permission denial
+* Destination scope denial
+
+---
+
+# Phase 5 — Document Management ⏳
+
+## Architecture Design
+
+Before implementation, the document storage and access architecture will be finalized.
+
+~~~text
+PostgreSQL + Prisma
+→ Documents
+→ Versions
+→ Metadata
+→ Chunks
+→ Processing status
+→ Access policies
+→ Audit history
+
+Amazon S3
+→ Original files
+→ Versioned file objects
+→ Processed artifacts
+
+Qdrant
+→ Embedding vectors
+→ Chunk and document references
+→ Filtered vector retrieval
+
+Redis + BullMQ
+→ Caching
+→ Background document processing
+~~~
+
+## Planned Data Flow
+
+~~~text
+Upload
+→ Validate Access
+→ Create Document Record
+→ Store File in S3
+→ Create Document Version
+→ Queue Processing Job
+→ Extract Text / OCR
+→ Chunk Content
+→ Store Chunk Metadata
+→ Generate Embeddings
+→ Index in Qdrant
+~~~
+
+## Planned Features
+
+* Document upload and metadata
+* S3 object storage
+* Document versioning
+* Processing status tracking
+* Permission-aware access
+* Time-based access policies
+* Soft delete and recovery
+* Download through authorized presigned URLs
+
+## Planned Access Model
+
+~~~text
+Organization Isolation
+→ Document Access Policy
+→ Hierarchy / User / Role Scope
+→ Time Validity
+→ Retrieval-Time Validation
+~~~
+
+Access policies will support:
+
+~~~text
+ORGANIZATION
+UNIT
+USER
+ROLE
+~~~
+
+Each policy can include:
+
+~~~text
+validFrom
+validUntil
+revokedAt
+~~~
+
+This supports permanent access, temporary restrictions, expiring access, and scheduled document release without moving files or rebuilding embeddings.
 
 ---
 
 # Future Phases
 
-## Phase 5 — Document Management
-
-* Upload and metadata
-* Versioning
-* Processing status
-* Soft delete and recovery
-* Permission-aware document access
-
 ## Phase 6 — Document Processing
 
-* Extraction and OCR
+* Text extraction and OCR
 * Chunking
 * Content hashing
 * Incremental indexing
-* BullMQ background processing
+* BullMQ workers
 
 ## Phase 7 — Retrieval Infrastructure
 
-* Qdrant
+* Qdrant integration
 * Embeddings
-* Semantic and keyword search
+* Semantic search
+* Keyword search
 * Metadata filtering
 * Hybrid retrieval
 * Permission-aware retrieval
@@ -449,9 +507,8 @@ Select Unit
 
 * Hallucination detection
 * Answer verification
-* Exact query cache
-* Semantic cache
-* Redis cache
+* Exact and semantic caching
+* Redis caching
 * Version-aware invalidation
 
 ## Phase 10 — Evaluation & Monitoring
@@ -468,7 +525,9 @@ Select Unit
 * Containerization
 * Worker deployment
 * Production PostgreSQL
-* Redis and Qdrant
+* Amazon S3
+* Redis
+* Qdrant
 * Monitoring and observability
 
 ---
@@ -479,28 +538,16 @@ Select Unit
 backend/
 ├── prisma/
 │   └── schema.prisma
+├── docs/
+│   └── DATABASE.md
 ├── server.js
 ├── .env
 └── src/
     ├── config/
     ├── controllers/
-    │   ├── auth.controller.js
-    │   ├── health.controller.js
-    │   ├── invitation.controller.js
-    │   ├── organization.controller.js
-    │   └── permission.controller.js
     ├── middleware/
     ├── routes/
-    │   ├── auth.routes.js
-    │   ├── health.routes.js
-    │   ├── invitation.routes.js
-    │   ├── organization.routes.js
-    │   └── permission.routes.js
     ├── services/
-    │   ├── auth.services.js
-    │   ├── invitation.service.js
-    │   ├── organization.service.js
-    │   └── permission.service.js
     ├── utils/
     └── app.js
 ~~~
@@ -510,18 +557,14 @@ backend/
 # Next Development Step
 
 ~~~text
-Phase 4.5 — Remove Member
+Phase 5.1 — Document Architecture & Database Design
 
-Backend Service
-→ Controller
-→ Route
-→ Frontend Integration
-→ Test Permission + Scope + Owner Protection
-~~~
-
-After Remove Member is complete:
-
-~~~text
-Phase 4.5 Member Management ✅
-→ Phase 4.6 Unit Reorganization
+PostgreSQL Data Model
+→ S3 Storage Model
+→ Document Version Model
+→ Access Policy Model
+→ Chunk and Qdrant Mapping
+→ Processing Lifecycle
+→ Finalize DATABASE.md
+→ Update schema.prisma
 ~~~

@@ -2,7 +2,10 @@
 
 import prisma from "../config/prisma.js";
 import ApiError from "../utils/ApiError.js";
-import {hasPermission} from "./permission.service.js";
+import {
+    hasPermission,
+    isUnitInsideScope
+} from "./permission.service.js";
 
 export const createOrganization = async(userId, organizationData)=>{
     const {name, description, allocatedCapacity} = organizationData;
@@ -837,4 +840,306 @@ export const moveMember = async(userId,memberId,memberData)=>{
     });
 
     return updatedMember;
+};
+
+export const removeMember = async(userId, memberId)=>{
+    const user = await prisma.user.findUnique({
+        where:{id:userId},
+        include:{unit:true}
+    });
+
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            404,
+            "User does not belong to an organization"
+        );
+    }
+
+    const member = await prisma.user.findUnique({
+        where:{id:memberId},
+        include:{unit:true}
+    });
+
+    if(!member){
+        throw new ApiError(404,"Member not Found");
+    }
+
+    if(!member.unitId || !member.unit){
+        throw new ApiError(
+            400,
+            "Member does not belong to an organization"
+        );
+    }
+
+    if(member.unit.organizationId !== user.unit.organizationId){
+        throw new ApiError(
+            403,
+            "Member does not belong to your organization"
+        );
+    }
+
+    if(member.role === "OWNER"){
+        throw new ApiError(
+            403,
+            "Organization owner cannot be removed"
+        );
+    }
+
+    const canRemoveMember = await hasPermission(
+        userId,
+        "REMOVE_MEMBER",
+        member.unitId
+    );
+
+    if(!canRemoveMember){
+        throw new ApiError(
+            403,
+            "You do not have permission to remove this member"
+        );
+    }
+
+    const removedMember = await prisma.$transaction(async(tx)=>{
+        await tx.permissionGrant.updateMany({
+            where:{
+                userId:memberId,
+                organizationId:user.unit.organizationId,
+                revokedAt:null
+            },
+            data:{
+                revokedAt:new Date()
+            }
+        });
+
+        return tx.user.update({
+            where:{id:memberId},
+            data:{
+                role:null,
+                unitId:null
+            },
+            select:{
+                id:true,
+                fullName:true,
+                email:true,
+                role:true,
+                unitId:true
+            }
+        });
+    });
+
+    return removedMember;
+};
+
+export const moveOrganizationUnit = async(
+    userId,
+    unitId,
+    unitData
+)=>{
+    const {parentId} = unitData;
+
+    if(!parentId){
+        throw new ApiError(
+            400,
+            "Destination parent unit is required"
+        );
+    }
+
+    const user = await prisma.user.findUnique({
+        where:{
+            id:userId
+        },
+        include:{
+            unit:true
+        }
+    });
+
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            404,
+            "User does not belong to an organization"
+        );
+    }
+
+    const organizationUnit =
+        await prisma.organizationUnit.findUnique({
+            where:{
+                id:unitId
+            }
+        });
+
+    if(!organizationUnit){
+        throw new ApiError(
+            404,
+            "Organization unit not Found"
+        );
+    }
+
+    if(
+        organizationUnit.organizationId !==
+        user.unit.organizationId
+    ){
+        throw new ApiError(
+            403,
+            "Organization unit does not belong to your organization"
+        );
+    }
+
+    if(organizationUnit.type === "COMPANY"){
+        throw new ApiError(
+            400,
+            "COMPANY organization unit cannot be moved"
+        );
+    }
+
+    if(organizationUnit.parentId === parentId){
+        throw new ApiError(
+            400,
+            "Organization unit already belongs to this parent"
+        );
+    }
+
+    const destinationUnit =
+        await prisma.organizationUnit.findUnique({
+            where:{
+                id:parentId
+            },
+            include:{
+                _count:{
+                    select:{
+                        users:true
+                    }
+                },
+                children:{
+                    select:{
+                        id:true,
+                        allocatedCapacity:true
+                    }
+                }
+            }
+        });
+
+    if(!destinationUnit){
+        throw new ApiError(
+            404,
+            "Destination organization unit not Found"
+        );
+    }
+
+    if(
+        destinationUnit.organizationId !==
+        user.unit.organizationId
+    ){
+        throw new ApiError(
+            403,
+            "Destination unit does not belong to your organization"
+        );
+    }
+
+    const validParents = {
+        DEPARTMENT:"COMPANY",
+        TEAM:"DEPARTMENT",
+        GROUP:"TEAM"
+    };
+
+    if(
+        validParents[organizationUnit.type] !==
+        destinationUnit.type
+    ){
+        throw new ApiError(
+            400,
+            `${organizationUnit.type} cannot be moved under ${destinationUnit.type}`
+        );
+    }
+
+    const destinationInsideSubtree =
+        await isUnitInsideScope(
+            organizationUnit.id,
+            destinationUnit.id
+        );
+
+    if(destinationInsideSubtree){
+        throw new ApiError(
+            400,
+            "Organization unit cannot be moved inside its own subtree"
+        );
+    }
+
+    const canMoveUnit = await hasPermission(
+        userId,
+        "MOVE_UNIT",
+        organizationUnit.id
+    );
+
+    if(!canMoveUnit){
+        throw new ApiError(
+            403,
+            "You do not have permission to move this organization unit"
+        );
+    }
+
+    const canMoveToDestination = await hasPermission(
+        userId,
+        "MOVE_UNIT",
+        destinationUnit.id
+    );
+
+    if(!canMoveToDestination){
+        throw new ApiError(
+            403,
+            "You do not have permission to move units into the destination scope"
+        );
+    }
+
+    if(destinationUnit.allocatedCapacity === null){
+        throw new ApiError(
+            400,
+            "Destination unit capacity must be configured first"
+        );
+    }
+
+    const directMembers =
+        destinationUnit._count.users;
+
+    const childAllocations =
+        destinationUnit.children.reduce(
+            (total,child)=>{
+                return total +
+                    (child.allocatedCapacity || 0);
+            },
+            0
+        );
+
+    const destinationAvailableCapacity =
+        destinationUnit.allocatedCapacity -
+        directMembers -
+        childAllocations;
+
+    const requiredCapacity =
+        organizationUnit.allocatedCapacity || 0;
+
+    if(requiredCapacity > destinationAvailableCapacity){
+        throw new ApiError(
+            400,
+            `Destination unit has only ${destinationAvailableCapacity} available capacity`
+        );
+    }
+
+    const updatedOrganizationUnit =
+        await prisma.organizationUnit.update({
+            where:{
+                id:unitId
+            },
+            data:{
+                parentId
+            }
+        });
+
+    return updatedOrganizationUnit;
 };

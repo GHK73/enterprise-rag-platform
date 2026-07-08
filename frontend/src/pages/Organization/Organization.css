@@ -12,12 +12,20 @@
     margin: 0 auto;
 }
 
-.organization-header {
+.organization-header,
+.organization-section {
     padding: 32px;
-    margin-bottom: 24px;
     background-color: var(--card);
     border: 1px solid var(--border);
     border-radius: 16px;
+}
+
+.organization-header {
+    margin-bottom: 24px;
+}
+
+.organization-section + .organization-section {
+    margin-top: 24px;
 }
 
 .organization-eyebrow {
@@ -41,17 +49,6 @@
     max-width: 680px;
     color: var(--text-secondary);
     font-size: 15px;
-}
-
-.organization-section {
-    padding: 32px;
-    background-color: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-}
-
-.organization-section + .organization-section {
-    margin-top: 24px;
 }
 
 .organization-section-header {
@@ -150,18 +147,19 @@
     opacity: 0.6;
 }
 
-.organization-success {
+.organization-success,
+.organization-form-error {
     margin-bottom: 20px;
-    color: var(--success);
     font-size: 14px;
     font-weight: 500;
 }
 
+.organization-success {
+    color: var(--success);
+}
+
 .organization-form-error {
-    margin-bottom: 20px;
     color: var(--error);
-    font-size: 14px;
-    font-weight: 500;
 }
 
 .organization-units {
@@ -219,7 +217,8 @@
     transform: translateX(2px);
 }
 
-.organization-unit-icon {
+.organization-unit-icon,
+.organization-member-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -261,51 +260,72 @@
 }
 
 .organization-unit-edit-button,
-.organization-unit-capacity-button {
+.organization-unit-capacity-button,
+.organization-unit-move-button,
+.organization-unit-delete-button {
     padding: 7px 12px;
-    color: var(--primary);
     background-color: transparent;
     border: 1px solid var(--border);
     border-radius: 7px;
     font-size: 13px;
     font-weight: 600;
+    transition:
+        border-color 0.2s ease,
+        background-color 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.organization-unit-edit-button,
+.organization-unit-capacity-button,
+.organization-unit-move-button {
+    color: var(--primary);
+}
+
+.organization-unit-delete-button {
+    color: var(--error);
 }
 
 .organization-unit-edit-button:hover:not(:disabled),
-.organization-unit-capacity-button:hover:not(:disabled) {
+.organization-unit-capacity-button:hover:not(:disabled),
+.organization-unit-move-button:hover:not(:disabled) {
     border-color: var(--primary);
     background-color: #EFF6FF;
 }
 
-.organization-unit-delete-button {
-    padding: 7px 12px;
-    color: var(--error);
-    background-color: transparent;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
 .organization-unit-delete-button:hover:not(:disabled) {
     border-color: var(--error);
+    background-color: rgba(220, 38, 38, 0.06);
 }
 
 .organization-unit-edit-button:disabled,
-.organization-unit-delete-button:disabled,
-.organization-unit-capacity-button:disabled {
+.organization-unit-capacity-button:disabled,
+.organization-unit-move-button:disabled,
+.organization-unit-delete-button:disabled {
     cursor: not-allowed;
     opacity: 0.6;
 }
 
-.organization-unit-edit-form {
+.organization-unit-edit-form,
+.organization-unit-move-form,
+.organization-capacity-form,
+.organization-member-role-form,
+.organization-member-move-form {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.organization-unit-edit-form {
     width: 100%;
 }
 
-.organization-unit-edit-form input {
+.organization-unit-move-form {
+    width: 100%;
+}
+
+.organization-unit-edit-form input,
+.organization-capacity-form input,
+.organization-unit-move-form select {
     width: 100%;
     min-width: 0;
     height: 38px;
@@ -319,11 +339,24 @@
     font-size: 14px;
 }
 
-.organization-unit-edit-form input:focus {
+.organization-unit-move-form select {
+    cursor: pointer;
+}
+
+.organization-unit-edit-form input:focus,
+.organization-unit-move-form select:focus,
+.organization-capacity-form input:focus,
+.organization-member-role-form select:focus,
+.organization-member-move-form select:focus {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-.organization-unit-edit-form button {
+.organization-unit-edit-form button,
+.organization-unit-move-form button,
+.organization-capacity-form button,
+.organization-capacity-edit-button,
+.organization-member-role-form button,
+.organization-member-move-form button {
     height: 38px;
     padding: 0 14px;
     flex-shrink: 0;
@@ -333,22 +366,41 @@
     font-weight: 600;
 }
 
-.organization-unit-edit-form button[type="submit"] {
+.organization-unit-edit-form button[type="submit"],
+.organization-unit-move-form button[type="submit"],
+.organization-capacity-form button[type="submit"],
+.organization-capacity-edit-button,
+.organization-member-role-form button[type="submit"],
+.organization-member-move-form button[type="submit"] {
     color: #FFFFFF;
     background-color: var(--primary);
     border-color: var(--primary);
 }
 
-.organization-unit-edit-form button[type="button"] {
+.organization-unit-edit-form button[type="button"],
+.organization-unit-move-form button[type="button"],
+.organization-capacity-form button[type="button"],
+.organization-member-role-form button[type="button"],
+.organization-member-move-form button[type="button"] {
     color: var(--text-secondary);
     background-color: var(--card);
 }
 
-.organization-unit-edit-form button:hover:not(:disabled) {
+.organization-unit-edit-form button:hover:not(:disabled),
+.organization-unit-move-form button:hover:not(:disabled),
+.organization-capacity-form button:hover:not(:disabled),
+.organization-capacity-edit-button:hover:not(:disabled),
+.organization-member-role-form button:hover:not(:disabled),
+.organization-member-move-form button:hover:not(:disabled) {
     transform: translateY(-1px);
 }
 
-.organization-unit-edit-form button:disabled {
+.organization-unit-edit-form button:disabled,
+.organization-unit-move-form button:disabled,
+.organization-capacity-form button:disabled,
+.organization-capacity-edit-button:disabled,
+.organization-member-role-form button:disabled,
+.organization-member-move-form button:disabled {
     cursor: not-allowed;
     opacity: 0.6;
 }
@@ -381,61 +433,7 @@
 }
 
 .organization-capacity-form {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     grid-column: 1 / -1;
-}
-
-.organization-capacity-form input {
-    width: 100%;
-    height: 38px;
-    padding: 0 12px;
-    color: var(--text-primary);
-    background-color: var(--card);
-    border: 1px solid var(--primary);
-    border-radius: 7px;
-    outline: none;
-    font-family: inherit;
-    font-size: 14px;
-}
-
-.organization-capacity-form input:focus {
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.organization-capacity-form button,
-.organization-capacity-edit-button {
-    height: 38px;
-    padding: 0 14px;
-    flex-shrink: 0;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.organization-capacity-form button[type="submit"],
-.organization-capacity-edit-button {
-    color: #FFFFFF;
-    background-color: var(--primary);
-    border-color: var(--primary);
-}
-
-.organization-capacity-form button[type="button"] {
-    color: var(--text-secondary);
-    background-color: var(--card);
-}
-
-.organization-capacity-form button:hover:not(:disabled),
-.organization-capacity-edit-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-}
-
-.organization-capacity-form button:disabled,
-.organization-capacity-edit-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
 }
 
 .organization-members {
@@ -468,20 +466,6 @@
     gap: 14px;
     flex: 1;
     min-width: 0;
-}
-
-.organization-member-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 42px;
-    height: 42px;
-    flex-shrink: 0;
-    color: var(--primary);
-    background-color: #EFF6FF;
-    border-radius: 10px;
-    font-size: 16px;
-    font-weight: 700;
 }
 
 .organization-member-info h3 {
@@ -527,14 +511,27 @@
 }
 
 .organization-member-role button,
-.organization-member-move-button {
+.organization-member-move-button,
+.organization-member-remove-button {
     padding: 7px 12px;
-    color: var(--primary);
     background-color: transparent;
     border: 1px solid var(--border);
     border-radius: 7px;
     font-size: 13px;
     font-weight: 600;
+    transition:
+        border-color 0.2s ease,
+        background-color 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.organization-member-role button,
+.organization-member-move-button {
+    color: var(--primary);
+}
+
+.organization-member-remove-button {
+    color: var(--error);
 }
 
 .organization-member-role button:hover:not(:disabled),
@@ -543,11 +540,20 @@
     background-color: #EFF6FF;
 }
 
+.organization-member-remove-button:hover:not(:disabled) {
+    border-color: var(--error);
+    background-color: rgba(220, 38, 38, 0.06);
+}
+
+.organization-member-role button:disabled,
+.organization-member-move-button:disabled,
+.organization-member-remove-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .organization-member-role-form,
 .organization-member-move-form {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     flex-shrink: 0;
 }
 
@@ -569,47 +575,6 @@
     min-width: 220px;
 }
 
-.organization-member-role-form select:focus,
-.organization-member-move-form select:focus {
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-.organization-member-role-form button,
-.organization-member-move-form button {
-    height: 38px;
-    padding: 0 14px;
-    flex-shrink: 0;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.organization-member-role-form button[type="submit"],
-.organization-member-move-form button[type="submit"] {
-    color: #FFFFFF;
-    background-color: var(--primary);
-    border-color: var(--primary);
-}
-
-.organization-member-role-form button[type="button"],
-.organization-member-move-form button[type="button"] {
-    color: var(--text-secondary);
-    background-color: var(--card);
-}
-
-.organization-member-role-form button:hover:not(:disabled),
-.organization-member-move-form button:hover:not(:disabled) {
-    transform: translateY(-1px);
-}
-
-.organization-member-role-form button:disabled,
-.organization-member-move-form button:disabled,
-.organization-member-move-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
 .organization-state {
     display: flex;
     align-items: center;
@@ -621,6 +586,27 @@
 
 .organization-error {
     color: var(--error);
+}
+
+@media (max-width: 900px) {
+    .organization-unit-card {
+        align-items: stretch;
+        flex-wrap: wrap;
+    }
+
+    .organization-unit-actions {
+        flex-wrap: wrap;
+    }
+
+    .organization-member-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .organization-member-actions {
+        flex-wrap: wrap;
+        width: 100%;
+    }
 }
 
 @media (max-width: 700px) {
@@ -660,19 +646,40 @@
         width: 24px;
     }
 
-    .organization-unit-capacity {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .organization-member-card {
+    .organization-unit-actions {
         align-items: stretch;
         flex-direction: column;
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .organization-unit-edit-button,
+    .organization-unit-capacity-button,
+    .organization-unit-move-button,
+    .organization-unit-delete-button {
+        width: 100%;
+    }
+
+    .organization-unit-edit-form,
+    .organization-unit-move-form {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .organization-unit-edit-form input,
+    .organization-unit-edit-form button,
+    .organization-unit-move-form select,
+    .organization-unit-move-form button {
+        width: 100%;
+    }
+
+    .organization-unit-capacity {
+        grid-template-columns: repeat(2, 1fr);
     }
 
     .organization-member-actions {
         align-items: stretch;
         flex-direction: column;
-        width: 100%;
     }
 
     .organization-member-role {
@@ -680,7 +687,8 @@
         width: 100%;
     }
 
-    .organization-member-move-button {
+    .organization-member-move-button,
+    .organization-member-remove-button {
         width: 100%;
     }
 

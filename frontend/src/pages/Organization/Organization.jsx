@@ -1,5 +1,3 @@
-// frontend/src/pages/Organization/Organization.jsx
-
 import {useEffect,useState} from "react";
 import api from "../../api/axios";
 import "./Organization.css";
@@ -9,19 +7,27 @@ function Organization(){
     const [organizationUnits,setOrganizationUnits] = useState([]);
     const [loading,setLoading] = useState(true);
     const [error,setError] = useState("");
+    const [message,setMessage] = useState("");
+
     const [name,setName] = useState("");
     const [parentId,setParentId] = useState("");
     const [creating,setCreating] = useState(false);
-    const [message,setMessage] = useState("");
+
     const [editingUnitId,setEditingUnitId] = useState(null);
     const [editingName,setEditingName] = useState("");
     const [updating,setUpdating] = useState(false);
     const [deletingUnitId,setDeletingUnitId] = useState(null);
+
+    const [movingUnitId,setMovingUnitId] = useState(null);
+    const [destinationParentId,setDestinationParentId] = useState("");
+    const [movingUnit,setMovingUnit] = useState(false);
+
     const [capacityData,setCapacityData] = useState({});
     const [loadingCapacityId,setLoadingCapacityId] = useState(null);
     const [editingCapacityId,setEditingCapacityId] = useState(null);
     const [allocatedCapacity,setAllocatedCapacity] = useState("");
     const [updatingCapacity,setUpdatingCapacity] = useState(false);
+
     const [organizationMembers,setOrganizationMembers] = useState([]);
     const [editingMemberId,setEditingMemberId] = useState(null);
     const [editingRole,setEditingRole] = useState("");
@@ -29,6 +35,7 @@ function Organization(){
     const [movingMemberId,setMovingMemberId] = useState(null);
     const [destinationUnitId,setDestinationUnitId] = useState("");
     const [movingMember,setMovingMember] = useState(false);
+    const [removingMemberId,setRemovingMemberId] = useState(null);
 
     useEffect(()=>{
         const fetchOrganizationData = async()=>{
@@ -63,12 +70,22 @@ function Organization(){
 
     const getChildType = (parentType)=>{
         const hierarchy = {
-            COMPANY: "DEPARTMENT",
-            DEPARTMENT: "TEAM",
-            TEAM: "GROUP"
+            COMPANY:"DEPARTMENT",
+            DEPARTMENT:"TEAM",
+            TEAM:"GROUP"
         };
 
         return hierarchy[parentType];
+    };
+
+    const getValidParentType = (unitType)=>{
+        const hierarchy = {
+            DEPARTMENT:"COMPANY",
+            TEAM:"DEPARTMENT",
+            GROUP:"TEAM"
+        };
+
+        return hierarchy[unitType];
     };
 
     const handleCreateUnit = async(e)=>{
@@ -100,7 +117,7 @@ function Organization(){
                 {
                     name,
                     type,
-                    parentId: parentUnit.id
+                    parentId:parentUnit.id
                 }
             );
 
@@ -127,6 +144,8 @@ function Organization(){
     const handleEditUnit = (unit)=>{
         setEditingUnitId(unit.id);
         setEditingName(unit.name);
+        setMovingUnitId(null);
+        setDestinationParentId("");
         setError("");
         setMessage("");
     };
@@ -147,7 +166,7 @@ function Organization(){
             const response = await api.patch(
                 `/organization/units/${unitId}`,
                 {
-                    name: editingName
+                    name:editingName
                 }
             );
 
@@ -171,6 +190,59 @@ function Organization(){
         }
         finally{
             setUpdating(false);
+        }
+    };
+
+    const handleMoveUnit = (unit)=>{
+        setMovingUnitId(unit.id);
+        setDestinationParentId("");
+        setEditingUnitId(null);
+        setEditingName("");
+        setError("");
+        setMessage("");
+    };
+
+    const handleCancelMoveUnit = ()=>{
+        setMovingUnitId(null);
+        setDestinationParentId("");
+    };
+
+    const handleUpdateUnitParent = async(e,unitId)=>{
+        e.preventDefault();
+
+        try{
+            setMovingUnit(true);
+            setError("");
+            setMessage("");
+
+            const response = await api.patch(
+                `/organization/units/${unitId}/move`,
+                {
+                    parentId:destinationParentId
+                }
+            );
+
+            setOrganizationUnits((currentUnits)=>
+                currentUnits.map((unit)=>
+                    unit.id === unitId
+                        ? response.data.data
+                        : unit
+                )
+            );
+
+            setMovingUnitId(null);
+            setDestinationParentId("");
+            setCapacityData({});
+            setMessage("Organization unit moved successfully");
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to move organization unit"
+            );
+        }
+        finally{
+            setMovingUnit(false);
         }
     };
 
@@ -223,7 +295,7 @@ function Organization(){
 
             setCapacityData((currentCapacity)=>({
                 ...currentCapacity,
-                [unitId]: response.data.data
+                [unitId]:response.data.data
             }));
         }
         catch(error){
@@ -259,7 +331,7 @@ function Organization(){
             await api.patch(
                 `/organization/units/${unitId}/capacity`,
                 {
-                    allocatedCapacity: Number(allocatedCapacity)
+                    allocatedCapacity:Number(allocatedCapacity)
                 }
             );
 
@@ -269,7 +341,7 @@ function Organization(){
 
             setCapacityData((currentCapacity)=>({
                 ...currentCapacity,
-                [unitId]: response.data.data
+                [unitId]:response.data.data
             }));
 
             setEditingCapacityId(null);
@@ -314,7 +386,7 @@ function Organization(){
             const response = await api.patch(
                 `/organization/members/${memberId}/role`,
                 {
-                    role: editingRole
+                    role:editingRole
                 }
             );
 
@@ -366,7 +438,7 @@ function Organization(){
             const response = await api.patch(
                 `/organization/members/${memberId}/unit`,
                 {
-                    unitId: destinationUnitId
+                    unitId:destinationUnitId
                 }
             );
 
@@ -393,15 +465,64 @@ function Organization(){
         }
     };
 
+    const handleRemoveMember = async(member)=>{
+        const confirmed = window.confirm(
+            `Are you sure you want to remove ${member.fullName} from the organization?`
+        );
+
+        if(!confirmed){
+            return;
+        }
+
+        try{
+            setRemovingMemberId(member.id);
+            setError("");
+            setMessage("");
+
+            await api.delete(
+                `/organization/members/${member.id}`
+            );
+
+            setOrganizationMembers((currentMembers)=>
+                currentMembers.filter(
+                    (currentMember)=>
+                        currentMember.id !== member.id
+                )
+            );
+
+            setMessage("Member removed successfully");
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to remove member"
+            );
+        }
+        finally{
+            setRemovingMemberId(null);
+        }
+    };
+
     const renderOrganizationUnit = (unit)=>{
         const childUnits = organizationUnits.filter(
             (childUnit)=>childUnit.parentId === unit.id
         );
 
         const isEditing = editingUnitId === unit.id;
+        const isMovingUnit = movingUnitId === unit.id;
         const unitCapacity = capacityData[unit.id];
         const isEditingCapacity =
             editingCapacityId === unit.id;
+
+        const validParentType =
+            getValidParentType(unit.type);
+
+        const validDestinationUnits =
+            organizationUnits.filter(
+                (destinationUnit)=>
+                    destinationUnit.type === validParentType &&
+                    destinationUnit.id !== unit.parentId
+            );
 
         return (
             <div
@@ -449,6 +570,62 @@ function Organization(){
                                     Cancel
                                 </button>
                             </form>
+                        ) : isMovingUnit ? (
+                            <form
+                                className="organization-unit-move-form"
+                                onSubmit={(e)=>
+                                    handleUpdateUnitParent(
+                                        e,
+                                        unit.id
+                                    )
+                                }
+                            >
+                                <select
+                                    value={destinationParentId}
+                                    onChange={(e)=>
+                                        setDestinationParentId(
+                                            e.target.value
+                                        )
+                                    }
+                                    required
+                                    autoFocus
+                                >
+                                    <option value="">
+                                        Select new parent
+                                    </option>
+
+                                    {validDestinationUnits.map(
+                                        (destinationUnit)=>(
+                                            <option
+                                                key={destinationUnit.id}
+                                                value={destinationUnit.id}
+                                            >
+                                                {destinationUnit.name}
+                                                {" "}
+                                                ({destinationUnit.type})
+                                            </option>
+                                        )
+                                    )}
+                                </select>
+
+                                <button
+                                    type="submit"
+                                    disabled={movingUnit}
+                                >
+                                    {movingUnit
+                                        ? "Moving..."
+                                        : "Move"
+                                    }
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handleCancelMoveUnit}
+                                    disabled={movingUnit}
+                                >
+                                    Cancel
+                                </button>
+                            </form>
                         ) : (
                             <>
                                 <h3>{unit.name}</h3>
@@ -460,7 +637,7 @@ function Organization(){
                         )}
                     </div>
 
-                    {!isEditing && (
+                    {!isEditing && !isMovingUnit && (
                         <div className="organization-unit-actions">
                             <button
                                 className="organization-unit-capacity-button"
@@ -491,6 +668,19 @@ function Organization(){
                                         }
                                     >
                                         Edit
+                                    </button>
+
+                                    <button
+                                        className="organization-unit-move-button"
+                                        type="button"
+                                        onClick={()=>
+                                            handleMoveUnit(unit)
+                                        }
+                                        disabled={
+                                            deletingUnitId === unit.id
+                                        }
+                                    >
+                                        Move Unit
                                     </button>
 
                                     <button
@@ -673,11 +863,23 @@ function Organization(){
                             <h2>Organization Structure</h2>
 
                             <p>
-                                View and manage departments, teams,
-                                and groups within your organization.
+                                Create, update, reorganize, and manage
+                                departments, teams, and groups.
                             </p>
                         </div>
                     </div>
+
+                    {message && (
+                        <p className="organization-success">
+                            {message}
+                        </p>
+                    )}
+
+                    {error && (
+                        <p className="organization-form-error">
+                            {error}
+                        </p>
+                    )}
 
                     <form
                         className="organization-create-form"
@@ -763,23 +965,12 @@ function Organization(){
                             <h2>Member Management</h2>
 
                             <p>
-                                View organization members, update
-                                their roles, and move them between units.
+                                View organization members, update their
+                                roles, move them between units, and
+                                remove them from the organization.
                             </p>
                         </div>
                     </div>
-
-                    {message && (
-                        <p className="organization-success">
-                            {message}
-                        </p>
-                    )}
-
-                    {error && (
-                        <p className="organization-form-error">
-                            {error}
-                        </p>
-                    )}
 
                     <div className="organization-members">
                         {organizationMembers.map((member)=>{
@@ -951,6 +1142,10 @@ function Organization(){
                                                                 member
                                                             )
                                                         }
+                                                        disabled={
+                                                            removingMemberId ===
+                                                            member.id
+                                                        }
                                                     >
                                                         Change Role
                                                     </button>
@@ -958,17 +1153,43 @@ function Organization(){
                                             </div>
 
                                             {member.role !== "OWNER" && (
-                                                <button
-                                                    className="organization-member-move-button"
-                                                    type="button"
-                                                    onClick={()=>
-                                                        handleMoveMember(
-                                                            member
-                                                        )
-                                                    }
-                                                >
-                                                    Move Member
-                                                </button>
+                                                <>
+                                                    <button
+                                                        className="organization-member-move-button"
+                                                        type="button"
+                                                        onClick={()=>
+                                                            handleMoveMember(
+                                                                member
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            removingMemberId ===
+                                                            member.id
+                                                        }
+                                                    >
+                                                        Move Member
+                                                    </button>
+
+                                                    <button
+                                                        className="organization-member-remove-button"
+                                                        type="button"
+                                                        onClick={()=>
+                                                            handleRemoveMember(
+                                                                member
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            removingMemberId ===
+                                                            member.id
+                                                        }
+                                                    >
+                                                        {removingMemberId ===
+                                                        member.id
+                                                            ? "Removing..."
+                                                            : "Remove Member"
+                                                        }
+                                                    </button>
+                                                </>
                                             )}
                                         </div>
                                     )}

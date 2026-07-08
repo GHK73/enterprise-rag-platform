@@ -1,257 +1,531 @@
 # Enterprise Retrieval-Augmented Generation (RAG) Platform
 
-> A production-inspired Retrieval-Augmented Generation (RAG) platform that enables organizations to securely ingest, version, retrieve, and query enterprise knowledge using configurable retrieval pipelines. The platform emphasizes secure document access, scalable indexing, low-latency retrieval, reduced hallucinations, and measurable performance improvements through modular RAG components.
+> A production-inspired enterprise RAG platform for securely ingesting, versioning, retrieving, and querying organizational knowledge. The system combines hierarchy-scoped authorization, permission-aware retrieval, document lifecycle management, configurable RAG pipelines, and measurable performance optimization.
 
 ---
 
 # Motivation
 
-Modern enterprises manage vast collections of documents, including financial reports, legal contracts, HR policies, technical documentation, research papers, and internal knowledge bases.
+Enterprise knowledge is distributed across financial reports, legal contracts, HR policies, technical documentation, research papers, and internal knowledge bases.
 
-Traditional AI assistants struggle in enterprise environments because they often:
+Traditional AI assistants often:
 
 * Hallucinate unsupported information
-* Ignore organization-level access permissions
+* Ignore organizational access boundaries
 * Expose confidential documents
 * Fail to reflect document updates
-* Provide answers without supporting evidence
+* Return answers without supporting evidence
 
-This project addresses these challenges by building a secure, modular, and production-oriented RAG platform that retrieves trusted information before generating responses.
+This project addresses these problems by retrieving authorized, trusted information before generating responses.
 
 ---
 
 # Core Objectives
 
-* Build an enterprise-grade Retrieval-Augmented Generation platform.
-* Design a modular RAG pipeline without relying heavily on high-level frameworks.
-* Support secure multi-organization document retrieval.
-* Minimize hallucinations using retrieval validation and answer verification.
-* Learn scalable backend architecture for AI systems.
-* Benchmark every optimization using measurable evaluation metrics.
+* Build a secure enterprise RAG platform
+* Support multi-organization knowledge isolation
+* Design modular RAG components without depending heavily on high-level frameworks
+* Enforce authorization before document content reaches the LLM
+* Preserve complete document and version history
+* Reduce hallucinations using retrieval and answer validation
+* Build scalable AI backend infrastructure
+* Measure every major optimization
 
 ---
 
-# Key Features
+# Current Progress
 
-## Enterprise Security
+~~~text
+Backend Foundation              ✅
+Authentication                  ✅
+Organization Management         ✅
+Organization Hierarchy          ✅
+Permission Engine               ✅
+Invitation Management           ✅
+Member Access                   ✅
+Capacity Management             ✅
+Member Management               ✅
+Unit Reorganization             ✅
 
-* JWT Authentication
-* Organization & Department Management
-* Role-Based Access Control (RBAC)
-* Permission-aware Retrieval
-* Sensitive Information Detection & Masking
-* Audit Logging
-
----
-
-## Document Lifecycle Management
-
-The platform maintains complete document history instead of overwriting files.
-
-### Features
-
-* Document Upload
-* Document Updates
-* Automatic Versioning
-* Metadata Extraction
-* OCR Support
-* Processing Status Tracking
-* Rollback Support
-* Soft Delete & Recovery
+Document Management             ⏳
+Document Processing             ⏳
+Retrieval Infrastructure        ⏳
+RAG Pipeline                    ⏳
+Reliability and Caching         ⏳
+Evaluation and Monitoring       ⏳
+Deployment                      ⏳
+~~~
 
 ---
 
-## Incremental Indexing
+# Enterprise Organization Model
 
-Instead of regenerating embeddings for an entire document after every update, the platform identifies modified chunks using content hashing.
+The platform models organizations as hierarchical trees:
 
-Benefits include:
+~~~text
+COMPANY
+└── DEPARTMENT
+    └── TEAM
+        └── GROUP
+~~~
+
+Supported operations include:
+
+* Organization creation and updates
+* Department, team, and group management
+* Member invitations
+* Member role updates
+* Member movement between units
+* Member removal
+* Unit and subtree movement
+* Capacity allocation across the hierarchy
+
+---
+
+# Authorization Model
+
+The platform does not rely on roles alone.
+
+~~~text
+Effective Access
+=
+Permission
+AND
+Hierarchy Scope
+AND
+Valid Delegation
+~~~
+
+Roles classify members:
+
+~~~text
+OWNER
+ADMIN
+MANAGER
+MEMBER
+~~~
+
+Atomic permissions control actions:
+
+~~~text
+INVITE_MEMBER
+REMOVE_MEMBER
+UPDATE_MEMBER
+ASSIGN_ROLE
+MOVE_MEMBER
+
+CREATE_UNIT
+UPDATE_UNIT
+DELETE_UNIT
+MOVE_UNIT
+~~~
+
+Each permission grant includes:
+
+~~~text
+Permission
+→ What action is allowed?
+
+Scope
+→ Where in the organization tree is it allowed?
+
+Delegation
+→ Who granted the authority?
+
+Can Delegate
+→ May the recipient grant it further?
+~~~
+
+Example:
+
+~~~text
+Engineering Head
+└── MOVE_UNIT
+    ├── Scope: Engineering
+    └── Can Delegate: true
+~~~
+
+The permission applies only to the selected hierarchy subtree.
+
+---
+
+# Capacity Management
+
+Organization capacity flows through the hierarchy.
+
+~~~text
+Remaining Capacity
+=
+Allocated Capacity
+− Direct Members
+− Direct Child Allocations
+~~~
+
+Example:
+
+~~~text
+Engineering Capacity = 100
+
+├── Direct Members = 10
+├── Backend Allocation = 40
+├── Frontend Allocation = 30
+└── Remaining Capacity = 20
+~~~
+
+Capacity is validated during:
+
+* Invitation acceptance
+* Capacity updates
+* Member movement
+* Unit movement
+
+---
+
+# Document Architecture
+
+The document system separates application data, file storage, and vector retrieval.
+
+~~~text
+PostgreSQL + Prisma
+→ Documents
+→ Versions
+→ Metadata
+→ Access policies
+→ Processing status
+→ Chunks
+→ Storage references
+→ Vector references
+
+Amazon S3
+→ Original files
+→ Versioned file objects
+→ Processed artifacts
+
+Qdrant
+→ Embedding vectors
+→ Chunk references
+→ Filtered vector retrieval
+
+Redis + BullMQ
+→ Caching
+→ Background processing
+~~~
+
+---
+
+# Document Lifecycle
+
+The platform preserves document history instead of overwriting files.
+
+Planned lifecycle:
+
+~~~text
+Upload
+→ Validate Access
+→ Create Document
+→ Store File in S3
+→ Create Document Version
+→ Queue Processing Job
+→ Extract Text / OCR
+→ Chunk Content
+→ Generate Embeddings
+→ Index in Qdrant
+→ Mark READY
+~~~
+
+Features include:
+
+* Document upload
+* Metadata management
+* Automatic versioning
+* Processing status tracking
+* OCR support
+* Rollback
+* Soft delete and recovery
+* Authorized downloads using short-lived S3 presigned URLs
+
+---
+
+# Permission-Aware Document Access
+
+Document access is separate from operational permissions.
+
+~~~text
+PermissionGrant
+→ May the user perform an operation?
+
+DocumentAccessPolicy
+→ May the user access this document?
+~~~
+
+Access policies can target:
+
+~~~text
+ORGANIZATION
+UNIT
+USER
+ROLE
+~~~
+
+Policies can be permanent or time-bound:
+
+~~~text
+validFrom
+validUntil
+revokedAt
+~~~
+
+Example:
+
+~~~text
+July 1 → July 15
+Finance only
+
+July 15 → August 1
+Finance + Managers
+
+After August 1
+Entire organization
+~~~
+
+Access changes do not require moving files or rebuilding embeddings.
+
+~~~text
+S3 File          → Unchanged
+Document Record  → Unchanged
+Chunks           → Unchanged
+Qdrant Vectors   → Unchanged
+Active Policy    → Changes with time
+~~~
+
+PostgreSQL remains the authorization authority.
+
+---
+
+# Incremental Indexing
+
+When a document changes, the platform will avoid regenerating embeddings for unchanged content.
+
+~~~text
+New Version
+→ Extract Content
+→ Create Chunks
+→ Calculate Content Hashes
+→ Compare With Previous Version
+→ Reuse Unchanged Chunks
+→ Embed Only Changed Chunks
+→ Update Qdrant
+~~~
+
+Benefits:
 
 * Faster indexing
 * Lower embedding cost
-* Reduced storage
+* Reduced duplicate processing
 * Faster document synchronization
 
 ---
 
-## Retrieval Pipeline
+# Secure Retrieval Pipeline
 
-Every user query passes through a secure Retrieval-Augmented Generation pipeline.
+Every query passes through a permission-aware retrieval pipeline.
 
-```
+~~~text
 User Query
-      │
+      ↓
 Authentication
-      │
-Permission Validation
-      │
-Query Embedding
-      │
-┌───────────────┬────────────────┐
-│               │                │
-Semantic Search Keyword Search Metadata Filter
-│               │                │
-└───────────────┴────────────────┘
-        │
+      ↓
+Resolve Active Document Access
+      ↓
+Query Processing
+      ↓
+┌────────────────┬────────────────┐
+│                │                │
+Semantic Search  Keyword Search   Metadata Filters
+│                │                │
+└────────────────┴────────────────┘
+      ↓
 Merge Results
-        │
-Reranker
-        │
+      ↓
+Final Authorization Validation
+      ↓
+Reranking
+      ↓
 Context Validation
-        │
+      ↓
 Answer Generation
-        │
+      ↓
 Answer Verification
-        │
+      ↓
 Citation Generation
-        │
+      ↓
 Response
-```
+~~~
+
+The LLM must never receive unauthorized document content.
 
 ---
 
-## Hallucination Reduction
+# Qdrant Retrieval Model
 
-The platform prioritizes factual correctness over uncertain responses.
+Qdrant stores embedding vectors and stable retrieval identifiers.
+
+Example payload:
+
+~~~text
+{
+    organizationId,
+    documentId,
+    versionId,
+    chunkId,
+    isCurrentVersion
+}
+~~~
+
+Retrieval flow:
+
+~~~text
+User Query
+→ Resolve Active Access in PostgreSQL
+→ Determine Authorized Search Scope
+→ Search Qdrant
+→ Retrieve Candidate Chunks
+→ Validate Authorization Again
+→ Rerank
+→ Send Authorized Context to LLM
+~~~
+
+Frequently changing access policies remain in PostgreSQL rather than being duplicated as the only authorization source across every vector.
+
+---
+
+# Hallucination Reduction
+
+The platform prioritizes supported answers over uncertain generation.
 
 Techniques include:
 
-* Hybrid Retrieval
-* Context Validation
-* Confidence Thresholds
-* Retrieval Verification
-* Citation Generation
-* Permission-aware Context Filtering
+* Hybrid retrieval
+* Context validation
+* Confidence thresholds
+* Retrieval verification
+* Answer verification
+* Citation generation
+* Permission-aware context filtering
 
-If sufficient supporting evidence cannot be retrieved, the system refuses to generate an answer.
+If sufficient evidence cannot be retrieved, the system refuses to generate an unsupported answer.
 
 ---
 
-## Intelligent Query Caching
+# Intelligent Query Caching
 
-Frequently asked questions are optimized using multiple cache layers.
+The platform will use multiple cache layers:
 
-### Cache Layers
+* Exact query cache
+* Semantic query cache
+* Redis response cache
 
-* Exact Query Cache
-* Semantic Query Cache
-* Redis Response Cache
+Before serving cached responses, the system validates:
 
-Before serving cached responses, the platform validates:
-
-* User permissions
+* Current user access
 * Document versions
 * Source chunk integrity
 * Confidence thresholds
 * Verification status
 
-Only cache entries affected by updated documents are invalidated.
+Only cache entries affected by changed documents or access conditions should be invalidated.
 
 ---
 
-## Configurable RAG Pipeline
+# Configurable RAG Pipeline
 
-Every stage of the RAG pipeline can be enabled, disabled, or replaced using configuration.
-# Environment-Driven Configuration
+Major pipeline components can be enabled, disabled, or replaced through configuration.
 
-The platform is designed to be highly configurable using environment variables.
-Every major component of the RAG pipeline can be enabled, disabled, or replaced
-without modifying application code.
-
-## Retrieval
-
+~~~env
+# Retrieval
 RETRIEVAL_MODE=hybrid
 
-## Caching
-
+# Caching
 REDIS_ENABLED=true
 QUERY_CACHE_ENABLED=true
 SEMANTIC_CACHE_ENABLED=true
 
-## AI Pipeline
-
+# AI Pipeline
 RERANKER_ENABLED=true
 QUERY_EXPANSION_ENABLED=false
 HALLUCINATION_CHECK_ENABLED=true
 CITATION_GENERATION_ENABLED=true
 
-## Document Processing
-
+# Document Processing
 INCREMENTAL_INDEXING_ENABLED=true
 OCR_ENABLED=false
 STREAMING_ENABLED=true
 
-## Monitoring
-
+# Monitoring
 AUDIT_LOGGING_ENABLED=true
 METRICS_ENABLED=true
 
-## Models
-
+# Models
 EMBEDDING_MODEL=bge-small-en
 LLM_PROVIDER=llama
+~~~
 
-### Retrieval
+Configurable components include:
 
-* Semantic Search
-* Keyword Search
-* Hybrid Search
+~~~text
+Retrieval
+→ Semantic
+→ Keyword
+→ Hybrid
 
-### Embeddings
+Embeddings
+→ BGE
+→ E5
+→ MiniLM
 
-* BGE
-* E5
-* MiniLM
+Query Processing
+→ Query Expansion
+→ Metadata Filtering
+→ Context Compression
 
-### Reranking
+Generation
+→ Multiple LLM Providers
+→ Streaming
+→ Citations
 
-* Enabled
-* Disabled
+Reliability
+→ Hallucination Detection
+→ Answer Verification
 
-### Query Processing
-
-* Query Expansion
-* Metadata Filtering
-* Context Compression
-
-### Generation
-
-* Multiple LLM Providers
-* Streaming Responses
-* Citation Generation
-
-### Reliability
-
-* Hallucination Detection
-* Answer Verification
-
-### Performance
-
-* Redis Cache
-* Incremental Indexing
-* Background Processing
+Performance
+→ Redis Caching
+→ Background Processing
+→ Incremental Indexing
+~~~
 
 ---
 
 # Performance Optimizations
 
-The project explores production-scale RAG optimizations including:
+The project explores:
 
-* Redis Caching
-* BullMQ Workers
-* Background Processing
-* Parallel Retrieval
-* Promise.all()
-* Promise.allSettled()
-* Event-Driven Architecture
-* Streaming Responses
-* Incremental Embedding Updates
+* Redis caching
+* BullMQ workers
+* Background processing
+* Parallel retrieval
+* `Promise.all()`
+* `Promise.allSettled()`
+* Event-driven architecture
+* Streaming responses
+* Incremental embedding updates
+* Filtered vector retrieval
+* Version-aware cache invalidation
+
+Every major optimization should be benchmarked before and after implementation.
 
 ---
 
 # Evaluation Framework
-
-Every optimization is benchmarked before and after implementation.
 
 ## Retrieval Metrics
 
@@ -264,20 +538,20 @@ Every optimization is benchmarked before and after implementation.
 ## Generation Metrics
 
 * Faithfulness
-* Answer Relevancy
-* Hallucination Rate
-* Citation Accuracy
+* Answer relevancy
+* Hallucination rate
+* Citation accuracy
 
 ## Performance Metrics
 
-* Average Response Time
-* Retrieval Latency
-* Embedding Latency
-* LLM Latency
-* Cache Hit Rate
+* Average response time
+* Retrieval latency
+* Embedding latency
+* LLM latency
+* Cache hit rate
 * Throughput
-* Token Usage
-* Cost Reduction
+* Token usage
+* Cost reduction
 
 ---
 
@@ -286,7 +560,9 @@ Every optimization is benchmarked before and after implementation.
 ## Frontend
 
 * React
-* Tailwind CSS
+* Vite
+* Axios
+* CSS
 
 ## Backend
 
@@ -298,18 +574,42 @@ Every optimization is benchmarked before and after implementation.
 * PostgreSQL
 * Prisma ORM
 
+## File Storage
+
+* Amazon S3
+
 ## AI Services
 
 * FastAPI
 * Sentence Transformers
 * Lightweight LLMs
 
-## Infrastructure
+## Retrieval Infrastructure
+
+* Qdrant
+
+## Background Processing and Caching
 
 * Redis
 * BullMQ
-* Qdrant
-* MinIO
+
+---
+
+# Development Roadmap
+
+~~~text
+Phase 1  → Backend Foundation                    ✅
+Phase 2  → Authentication                        ✅
+Phase 3  → Organization Management               ✅
+Phase 4  → Access and Member Management          ✅
+Phase 5  → Document Management                   ⏳
+Phase 6  → Document Processing                   ⏳
+Phase 7  → Retrieval Infrastructure              ⏳
+Phase 8  → RAG Pipeline                          ⏳
+Phase 9  → Reliability and Caching               ⏳
+Phase 10 → Evaluation and Monitoring             ⏳
+Phase 11 → Deployment                            ⏳
+~~~
 
 ---
 
@@ -317,25 +617,29 @@ Every optimization is benchmarked before and after implementation.
 
 This project provides practical experience with:
 
-* Retrieval-Augmented Generation (RAG)
-* Enterprise Backend Development
-* Secure AI Systems
-* Vector Databases
-* Distributed Processing
-* Asynchronous Programming
-* Event-Driven Architecture
-* Caching Strategies
-* Performance Optimization
-* AI Evaluation & Benchmarking
+* Retrieval-Augmented Generation
+* Enterprise backend development
+* Secure AI systems
+* Multi-tenant architecture
+* Hierarchy-scoped authorization
+* Document lifecycle management
+* Amazon S3 object storage
+* Vector databases
+* Distributed processing
+* Asynchronous programming
+* Event-driven architecture
+* Caching strategies
+* Performance optimization
+* AI evaluation and benchmarking
 
 ---
 
 # Project Philosophy
 
-Every engineering decision should answer three questions:
+Every major engineering decision should answer:
 
-1. Why is this optimization needed?
-2. How does it improve the RAG pipeline?
+1. Why is this needed?
+2. How does it improve the system?
 3. Can the improvement be measured?
 
-The objective is not simply to build another chatbot, but to engineer a secure, scalable, explainable, and measurable Retrieval-Augmented Generation platform suitable for enterprise knowledge management.
+The objective is not to build another chatbot. The goal is to engineer a secure, scalable, explainable, and measurable enterprise knowledge retrieval platform.

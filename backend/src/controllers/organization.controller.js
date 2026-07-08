@@ -12,7 +12,9 @@ import {
     getUnitCapacity,
     updateUnitCapacity,
     updateMemberRole as updateMemberRoleService,
-    moveMember as moveMemberService
+    moveMember as moveMemberService,
+    removeMember as removeMemberService,
+    moveOrganizationUnit as moveOrganizationUnitService
 } from "../services/organization.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
@@ -201,4 +203,42 @@ export const moveMember = asyncHandler(async(req,res)=>{
         }
     );
     return res.status(200).json(new ApiResponse(200,"Member moved Successfully", member));
+});
+
+export const removeMember = asyncHandler(async(req,res)=>{
+    const {memberId} = req.params;
+
+    const member = await removeMemberService(
+        req.user.id,
+        memberId
+    );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Member removed successfully",
+            member
+        )
+    );
+});
+
+export const moveOrganizationUnit = asyncHandler(async(req,res)=>{
+    const {unitId} = req.params;
+    const {parentId} = req.body;
+
+    const organizationUnit = await moveOrganizationUnitService(
+        req.user.id,
+        unitId,
+        {
+            parentId
+        }
+    );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Organization unit moved successfully",
+            organizationUnit
+        )
+    );
 });
