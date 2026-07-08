@@ -599,3 +599,242 @@ export const updateUnitCapacity = async(userId, unitId, capacityData)=>{
    });
    return updatedOrganizationUnit;
 };
+
+export const updateMemberRole = async(userId,memberId,memberData)=>{
+    const {role} = memberData;
+    const validRoles = ["ADMIN","MANAGER","MEMBER"];
+    if(!validRoles.includes(role)){
+        throw new ApiError(400,"Invlaid member role");
+    }
+
+    const user = await prisma.user.findUnique({
+        where:{id: userId},
+        include:{unit: true}
+    });
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(404,"User does not belong to an organization");
+    }
+    const member = await prisma.user.findUnique({
+        where:{id: memberId},
+        include:{unit: true }
+    });
+
+    if(!member){
+        throw new ApiError(404,"Member not Found");
+    }
+    if(!member.unitId || !member.unit){
+        throw new ApiError(400,"Member does not belong to an organization");
+    }
+    if(member.unit.organizationId !== user.unit.organizationId){
+        throw new ApiError(403,"Member does not belong to your organization");
+    }
+    if(member.role === "OWNER"){
+        throw new ApiError(403,"Organization owner role cannot be changed");
+    }
+    const canAssignRole = await hasPermission(userId,"ASSIGN_ROLE",member.unitId);
+    if(!canAssignRole){
+        throw new ApiError(403,"You do not have permission to assign roles to this member");
+    }
+
+    const updatedMember = await prisma.user.update({
+        where:{id: memberId},
+        data:{role},
+        select:{
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            unitId: true,
+            unit:{
+                select:{
+                    id: true,
+                    name: true,
+                    type: true 
+                }
+            }
+        }
+    });
+    return updatedMember;
+}
+
+export const moveMember = async(userId,memberId,memberData)=>{
+    const {unitId} = memberData;
+
+    if(!unitId){
+        throw new ApiError(400,"Destination organization unit is required");
+    }
+
+    const user = await prisma.user.findUnique({
+        where:{
+            id: userId
+        },
+        include:{
+            unit: true
+        }
+    });
+
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            404,
+            "User does not belong to an organization"
+        );
+    }
+
+    const member = await prisma.user.findUnique({
+        where:{
+            id: memberId
+        },
+        include:{
+            unit: true
+        }
+    });
+
+    if(!member){
+        throw new ApiError(
+            404,
+            "Member not Found"
+        );
+    }
+
+    if(!member.unitId || !member.unit){
+        throw new ApiError(
+            400,
+            "Member does not belong to an organization"
+        );
+    }
+
+    if(
+        member.unit.organizationId !==
+        user.unit.organizationId
+    ){
+        throw new ApiError(
+            403,
+            "Member does not belong to your organization"
+        );
+    }
+
+    if(member.role === "OWNER"){
+        throw new ApiError(
+            403,
+            "Organization owner cannot be moved"
+        );
+    }
+
+    if(member.unitId === unitId){
+        throw new ApiError(
+            400,
+            "Member already belongs to this organization unit"
+        );
+    }
+
+    const destinationUnit =await prisma.organizationUnit.findUnique({
+            where:{id: unitId},
+            include:{
+                _count:{
+                    select:{
+                        users: true
+                    }
+                },
+                children:{
+                    select:{
+                        allocatedCapacity: true
+                    }
+                }
+            }
+        });
+
+    if(!destinationUnit){
+        throw new ApiError(404,"Destination organization unit not Found");
+    }
+
+    if(destinationUnit.organizationId !== user.unit.organizationId){
+        throw new ApiError(403,"Destination unit does not belong to your organization");
+    }
+
+    const canMoveMember = await hasPermission(
+        userId,
+        "MOVE_MEMBER",
+        member.unitId
+    );
+
+    if(!canMoveMember){
+        throw new ApiError(403,"You do not have permission to move this member");
+    }
+
+    const canMoveToDestination = await hasPermission(
+        userId,
+        "MOVE_MEMBER",
+        unitId
+    );
+
+    if(!canMoveToDestination){
+        throw new ApiError(
+            403,
+            "You do not have permission to move members into the destination unit"
+        );
+    }
+
+    if(destinationUnit.allocatedCapacity === null){
+        throw new ApiError(
+            400,
+            "Destination unit capacity must be configured first"
+        );
+    }
+
+    const directMembers =
+        destinationUnit._count.users;
+
+    const childAllocations =
+        destinationUnit.children.reduce(
+            (total,child)=>{
+                return total +
+                    (child.allocatedCapacity || 0);
+            },
+            0
+        );
+
+    const remainingCapacity =
+        destinationUnit.allocatedCapacity -
+        directMembers -
+        childAllocations;
+
+    if(remainingCapacity <= 0){
+        throw new ApiError(
+            400,
+            "Destination organization unit has no remaining capacity"
+        );
+    }
+
+    const updatedMember = await prisma.user.update({
+        where:{
+            id: memberId
+        },
+        data:{
+            unitId
+        },
+        select:{
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+            unitId: true,
+            unit:{
+                select:{
+                    id: true,
+                    name: true,
+                    type: true
+                }
+            }
+        }
+    });
+
+    return updatedMember;
+};

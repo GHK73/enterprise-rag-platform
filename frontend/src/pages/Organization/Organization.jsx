@@ -22,17 +22,30 @@ function Organization(){
     const [editingCapacityId,setEditingCapacityId] = useState(null);
     const [allocatedCapacity,setAllocatedCapacity] = useState("");
     const [updatingCapacity,setUpdatingCapacity] = useState(false);
+    const [organizationMembers,setOrganizationMembers] = useState([]);
+    const [editingMemberId,setEditingMemberId] = useState(null);
+    const [editingRole,setEditingRole] = useState("");
+    const [updatingMemberRole,setUpdatingMemberRole] = useState(false);
+    const [movingMemberId,setMovingMemberId] = useState(null);
+    const [destinationUnitId,setDestinationUnitId] = useState("");
+    const [movingMember,setMovingMember] = useState(false);
 
     useEffect(()=>{
         const fetchOrganizationData = async()=>{
             try{
-                const [organizationResponse,unitsResponse] = await Promise.all([
+                const [
+                    organizationResponse,
+                    unitsResponse,
+                    membersResponse
+                ] = await Promise.all([
                     api.get("/organization"),
-                    api.get("/organization/units")
+                    api.get("/organization/units"),
+                    api.get("/organization/members")
                 ]);
 
                 setOrganization(organizationResponse.data.data);
                 setOrganizationUnits(unitsResponse.data.data);
+                setOrganizationMembers(membersResponse.data.data);
             }
             catch(error){
                 setError(
@@ -223,9 +236,10 @@ function Organization(){
             setLoadingCapacityId(null);
         }
     };
+
     const handleEditCapacity = (unit)=>{
         const unitCapacity = capacityData[unit.id];
-    
+
         setEditingCapacityId(unit.id);
         setAllocatedCapacity(
             unitCapacity?.allocatedCapacity ?? ""
@@ -233,34 +247,36 @@ function Organization(){
         setError("");
         setMessage("");
     };
-    
+
     const handleUpdateCapacity = async(e,unitId)=>{
         e.preventDefault();
-    
+
         try{
             setUpdatingCapacity(true);
             setError("");
             setMessage("");
-    
+
             await api.patch(
                 `/organization/units/${unitId}/capacity`,
                 {
                     allocatedCapacity: Number(allocatedCapacity)
                 }
             );
-    
+
             const response = await api.get(
                 `/organization/units/${unitId}/capacity`
             );
-    
+
             setCapacityData((currentCapacity)=>({
                 ...currentCapacity,
                 [unitId]: response.data.data
             }));
-    
+
             setEditingCapacityId(null);
             setAllocatedCapacity("");
-            setMessage("Organization unit capacity updated successfully");
+            setMessage(
+                "Organization unit capacity updated successfully"
+            );
         }
         catch(error){
             setError(
@@ -272,6 +288,111 @@ function Organization(){
             setUpdatingCapacity(false);
         }
     };
+
+    const handleEditMemberRole = (member)=>{
+        setEditingMemberId(member.id);
+        setEditingRole(member.role);
+        setMovingMemberId(null);
+        setDestinationUnitId("");
+        setError("");
+        setMessage("");
+    };
+
+    const handleCancelMemberRole = ()=>{
+        setEditingMemberId(null);
+        setEditingRole("");
+    };
+
+    const handleUpdateMemberRole = async(e,memberId)=>{
+        e.preventDefault();
+
+        try{
+            setUpdatingMemberRole(true);
+            setError("");
+            setMessage("");
+
+            const response = await api.patch(
+                `/organization/members/${memberId}/role`,
+                {
+                    role: editingRole
+                }
+            );
+
+            setOrganizationMembers((currentMembers)=>
+                currentMembers.map((member)=>
+                    member.id === memberId
+                        ? response.data.data
+                        : member
+                )
+            );
+
+            setEditingMemberId(null);
+            setEditingRole("");
+            setMessage("Member role updated successfully");
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to update member role"
+            );
+        }
+        finally{
+            setUpdatingMemberRole(false);
+        }
+    };
+
+    const handleMoveMember = (member)=>{
+        setMovingMemberId(member.id);
+        setDestinationUnitId("");
+        setEditingMemberId(null);
+        setEditingRole("");
+        setError("");
+        setMessage("");
+    };
+
+    const handleCancelMoveMember = ()=>{
+        setMovingMemberId(null);
+        setDestinationUnitId("");
+    };
+
+    const handleUpdateMemberUnit = async(e,memberId)=>{
+        e.preventDefault();
+
+        try{
+            setMovingMember(true);
+            setError("");
+            setMessage("");
+
+            const response = await api.patch(
+                `/organization/members/${memberId}/unit`,
+                {
+                    unitId: destinationUnitId
+                }
+            );
+
+            setOrganizationMembers((currentMembers)=>
+                currentMembers.map((member)=>
+                    member.id === memberId
+                        ? response.data.data
+                        : member
+                )
+            );
+
+            setMovingMemberId(null);
+            setDestinationUnitId("");
+            setMessage("Member moved successfully");
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to move member"
+            );
+        }
+        finally{
+            setMovingMember(false);
+        }
+    };
+
     const renderOrganizationUnit = (unit)=>{
         const childUnits = organizationUnits.filter(
             (childUnit)=>childUnit.parentId === unit.id
@@ -279,7 +400,8 @@ function Organization(){
 
         const isEditing = editingUnitId === unit.id;
         const unitCapacity = capacityData[unit.id];
-        const isEditingCapacity = editingCapacityId === unit.id;
+        const isEditingCapacity =
+            editingCapacityId === unit.id;
 
         return (
             <div
@@ -295,12 +417,16 @@ function Organization(){
                         {isEditing ? (
                             <form
                                 className="organization-unit-edit-form"
-                                onSubmit={(e)=>handleUpdateUnit(e,unit.id)}
+                                onSubmit={(e)=>
+                                    handleUpdateUnit(e,unit.id)
+                                }
                             >
                                 <input
                                     type="text"
                                     value={editingName}
-                                    onChange={(e)=>setEditingName(e.target.value)}
+                                    onChange={(e)=>
+                                        setEditingName(e.target.value)
+                                    }
                                     required
                                     autoFocus
                                 />
@@ -309,7 +435,10 @@ function Organization(){
                                     type="submit"
                                     disabled={updating}
                                 >
-                                    {updating ? "Saving..." : "Save"}
+                                    {updating
+                                        ? "Saving..."
+                                        : "Save"
+                                    }
                                 </button>
 
                                 <button
@@ -336,8 +465,12 @@ function Organization(){
                             <button
                                 className="organization-unit-capacity-button"
                                 type="button"
-                                onClick={()=>handleViewCapacity(unit.id)}
-                                disabled={loadingCapacityId === unit.id}
+                                onClick={()=>
+                                    handleViewCapacity(unit.id)
+                                }
+                                disabled={
+                                    loadingCapacityId === unit.id
+                                }
                             >
                                 {loadingCapacityId === unit.id
                                     ? "Loading..."
@@ -350,8 +483,12 @@ function Organization(){
                                     <button
                                         className="organization-unit-edit-button"
                                         type="button"
-                                        onClick={()=>handleEditUnit(unit)}
-                                        disabled={deletingUnitId === unit.id}
+                                        onClick={()=>
+                                            handleEditUnit(unit)
+                                        }
+                                        disabled={
+                                            deletingUnitId === unit.id
+                                        }
                                     >
                                         Edit
                                     </button>
@@ -359,8 +496,12 @@ function Organization(){
                                     <button
                                         className="organization-unit-delete-button"
                                         type="button"
-                                        onClick={()=>handleDeleteUnit(unit)}
-                                        disabled={deletingUnitId === unit.id}
+                                        onClick={()=>
+                                            handleDeleteUnit(unit)
+                                        }
+                                        disabled={
+                                            deletingUnitId === unit.id
+                                        }
                                     >
                                         {deletingUnitId === unit.id
                                             ? "Deleting..."
@@ -378,13 +519,19 @@ function Organization(){
                         {isEditingCapacity ? (
                             <form
                                 className="organization-capacity-form"
-                                onSubmit={(e)=>handleUpdateCapacity(e,unit.id)}
+                                onSubmit={(e)=>
+                                    handleUpdateCapacity(e,unit.id)
+                                }
                             >
                                 <input
                                     type="number"
                                     min="1"
                                     value={allocatedCapacity}
-                                    onChange={(e)=>setAllocatedCapacity(e.target.value)}
+                                    onChange={(e)=>
+                                        setAllocatedCapacity(
+                                            e.target.value
+                                        )
+                                    }
                                     placeholder="Enter capacity"
                                     required
                                 />
@@ -393,7 +540,10 @@ function Organization(){
                                     type="submit"
                                     disabled={updatingCapacity}
                                 >
-                                    {updatingCapacity ? "Saving..." : "Save"}
+                                    {updatingCapacity
+                                        ? "Saving..."
+                                        : "Save"
+                                    }
                                 </button>
 
                                 <button
@@ -411,32 +561,46 @@ function Organization(){
                             <>
                                 <div>
                                     <span>Allocated</span>
+
                                     <strong>
-                                        {unitCapacity.allocatedCapacity ?? "Not set"}
+                                        {unitCapacity.allocatedCapacity
+                                            ?? "Not set"
+                                        }
                                     </strong>
                                 </div>
 
                                 <div>
                                     <span>Direct Members</span>
-                                    <strong>{unitCapacity.directMembers}</strong>
+
+                                    <strong>
+                                        {unitCapacity.directMembers}
+                                    </strong>
                                 </div>
 
                                 <div>
                                     <span>Child Allocations</span>
-                                    <strong>{unitCapacity.childAllocations}</strong>
+
+                                    <strong>
+                                        {unitCapacity.childAllocations}
+                                    </strong>
                                 </div>
 
                                 <div>
                                     <span>Remaining</span>
+
                                     <strong>
-                                        {unitCapacity.remainingCapacity ?? "Not set"}
+                                        {unitCapacity.remainingCapacity
+                                            ?? "Not set"
+                                        }
                                     </strong>
                                 </div>
 
                                 <button
                                     className="organization-capacity-edit-button"
                                     type="button"
-                                    onClick={()=>handleEditCapacity(unit)}
+                                    onClick={()=>
+                                        handleEditCapacity(unit)
+                                    }
                                 >
                                     Set / Update
                                 </button>
@@ -509,8 +673,8 @@ function Organization(){
                             <h2>Organization Structure</h2>
 
                             <p>
-                                View and manage departments, teams, and groups
-                                within your organization.
+                                View and manage departments, teams,
+                                and groups within your organization.
                             </p>
                         </div>
                     </div>
@@ -527,7 +691,9 @@ function Organization(){
                             <select
                                 id="parent-unit"
                                 value={parentId}
-                                onChange={(e)=>setParentId(e.target.value)}
+                                onChange={(e)=>
+                                    setParentId(e.target.value)
+                                }
                                 required
                             >
                                 <option value="">
@@ -558,7 +724,9 @@ function Organization(){
                                 type="text"
                                 placeholder="Enter unit name"
                                 value={name}
-                                onChange={(e)=>setName(e.target.value)}
+                                onChange={(e)=>
+                                    setName(e.target.value)
+                                }
                                 required
                             />
                         </div>
@@ -577,6 +745,30 @@ function Organization(){
                         </button>
                     </form>
 
+                    <div className="organization-units">
+                        {rootUnit
+                            ? renderOrganizationUnit(rootUnit)
+                            : (
+                                <p className="organization-form-error">
+                                    Company unit not found
+                                </p>
+                            )
+                        }
+                    </div>
+                </section>
+
+                <section className="organization-section">
+                    <div className="organization-section-header">
+                        <div>
+                            <h2>Member Management</h2>
+
+                            <p>
+                                View organization members, update
+                                their roles, and move them between units.
+                            </p>
+                        </div>
+                    </div>
+
                     {message && (
                         <p className="organization-success">
                             {message}
@@ -589,15 +781,200 @@ function Organization(){
                         </p>
                     )}
 
-                    <div className="organization-units">
-                        {rootUnit
-                            ? renderOrganizationUnit(rootUnit)
-                            : (
-                                <p className="organization-form-error">
-                                    Company unit not found
-                                </p>
-                            )
-                        }
+                    <div className="organization-members">
+                        {organizationMembers.map((member)=>{
+                            const isEditingMember =
+                                editingMemberId === member.id;
+
+                            const isMovingMember =
+                                movingMemberId === member.id;
+
+                            return (
+                                <article
+                                    className="organization-member-card"
+                                    key={member.id}
+                                >
+                                    <div className="organization-member-info">
+                                        <div className="organization-member-icon">
+                                            {member.fullName
+                                                .charAt(0)
+                                                .toUpperCase()
+                                            }
+                                        </div>
+
+                                        <div>
+                                            <h3>{member.fullName}</h3>
+
+                                            <p>{member.email}</p>
+
+                                            <span>
+                                                {member.unit?.name
+                                                    || "No unit"
+                                                }
+                                                {" · "}
+                                                {member.unit?.type
+                                                    || "No unit type"
+                                                }
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {isEditingMember ? (
+                                        <form
+                                            className="organization-member-role-form"
+                                            onSubmit={(e)=>
+                                                handleUpdateMemberRole(
+                                                    e,
+                                                    member.id
+                                                )
+                                            }
+                                        >
+                                            <select
+                                                value={editingRole}
+                                                onChange={(e)=>
+                                                    setEditingRole(
+                                                        e.target.value
+                                                    )
+                                                }
+                                                required
+                                            >
+                                                <option value="ADMIN">
+                                                    ADMIN
+                                                </option>
+
+                                                <option value="MANAGER">
+                                                    MANAGER
+                                                </option>
+
+                                                <option value="MEMBER">
+                                                    MEMBER
+                                                </option>
+                                            </select>
+
+                                            <button
+                                                type="submit"
+                                                disabled={
+                                                    updatingMemberRole
+                                                }
+                                            >
+                                                {updatingMemberRole
+                                                    ? "Saving..."
+                                                    : "Save"
+                                                }
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={
+                                                    handleCancelMemberRole
+                                                }
+                                                disabled={
+                                                    updatingMemberRole
+                                                }
+                                            >
+                                                Cancel
+                                            </button>
+                                        </form>
+                                    ) : isMovingMember ? (
+                                        <form
+                                            className="organization-member-move-form"
+                                            onSubmit={(e)=>
+                                                handleUpdateMemberUnit(
+                                                    e,
+                                                    member.id
+                                                )
+                                            }
+                                        >
+                                            <select
+                                                value={destinationUnitId}
+                                                onChange={(e)=>
+                                                    setDestinationUnitId(
+                                                        e.target.value
+                                                    )
+                                                }
+                                                required
+                                            >
+                                                <option value="">
+                                                    Select destination unit
+                                                </option>
+
+                                                {organizationUnits
+                                                    .filter((unit)=>
+                                                        unit.id !==
+                                                        member.unitId
+                                                    )
+                                                    .map((unit)=>(
+                                                        <option
+                                                            key={unit.id}
+                                                            value={unit.id}
+                                                        >
+                                                            {unit.name}
+                                                            {" "}
+                                                            ({unit.type})
+                                                        </option>
+                                                    ))
+                                                }
+                                            </select>
+
+                                            <button
+                                                type="submit"
+                                                disabled={movingMember}
+                                            >
+                                                {movingMember
+                                                    ? "Moving..."
+                                                    : "Move"
+                                                }
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={
+                                                    handleCancelMoveMember
+                                                }
+                                                disabled={movingMember}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </form>
+                                    ) : (
+                                        <div className="organization-member-actions">
+                                            <div className="organization-member-role">
+                                                <span>
+                                                    {member.role}
+                                                </span>
+
+                                                {member.role !== "OWNER" && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={()=>
+                                                            handleEditMemberRole(
+                                                                member
+                                                            )
+                                                        }
+                                                    >
+                                                        Change Role
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {member.role !== "OWNER" && (
+                                                <button
+                                                    className="organization-member-move-button"
+                                                    type="button"
+                                                    onClick={()=>
+                                                        handleMoveMember(
+                                                            member
+                                                        )
+                                                    }
+                                                >
+                                                    Move Member
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </article>
+                            );
+                        })}
                     </div>
                 </section>
             </div>
@@ -606,4 +983,3 @@ function Organization(){
 }
 
 export default Organization;
-

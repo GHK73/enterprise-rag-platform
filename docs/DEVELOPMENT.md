@@ -1,12 +1,14 @@
 # RAG Backend Development Log
 
-Implementation progress for the Enterprise RAG Platform. Database design: [`docs/DATABASE.md`](DATABASE.md).
+Implementation progress for the Enterprise RAG Platform.
+
+Database design: [`docs/DATABASE.md`](DATABASE.md)
 
 ---
 
 # Current Status
 
-**Active Phase:** Phase 4 — Access & Member Management ⏳
+**Active Phase:** Phase 4.5 — Member Management ⏳
 
 | Area | Status |
 | --- | --- |
@@ -27,14 +29,13 @@ Implementation progress for the Enterprise RAG Platform. Database design: [`docs
 
 ## Completed
 
-| Area | Implementation |
-| --- | --- |
-| Environment | `.env`, configuration, Neon `DATABASE_URL`, JWT |
-| Database | PostgreSQL, Prisma schema and client |
-| Express | App, CORS, JSON parsing, database connection |
-| Routing | Versioned `/api/v1`, centralized router |
-| Middleware | Authentication, global error and 404 handlers |
-| Utilities | `ApiResponse`, `ApiError`, `asyncHandler` |
+* Environment configuration and JWT setup
+* PostgreSQL with Prisma ORM
+* Express application and database connection
+* Versioned `/api/v1` routing
+* Authentication middleware
+* Global error and 404 handling
+* `ApiResponse`, `ApiError`, and `asyncHandler`
 
 ~~~http
 GET /api/v1/health
@@ -48,12 +49,10 @@ GET /api/v1/health
 
 * Registration and login
 * JWT generation and validation
-* Current user retrieval
 * Password hashing and verification
+* Current user retrieval
 * Missing and inactive user rejection
 * Authentication independent of organization membership
-
-## Endpoints
 
 ~~~http
 POST /api/v1/auth/register
@@ -61,7 +60,7 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 ~~~
 
-New users initially have:
+New users start with:
 
 ~~~text
 role   = null
@@ -77,15 +76,21 @@ Users cannot assign their own organization, role, unit, or permissions.
 ## Completed
 
 * Organization creation and update
-* Optional root capacity during organization creation
 * Automatic `COMPANY` root creation
 * Creator assignment as `OWNER`
 * Automatic owner permission grants
 * Organization structure retrieval
 * Department, team, and group creation
-* Hierarchy and organization isolation validation
+* Hierarchy validation
+* Organization isolation
 * Unit rename and safe deletion
-* Root company and non-leaf deletion protection
+* Root and non-leaf deletion protection
+
+## Hierarchy
+
+~~~text
+COMPANY → DEPARTMENT → TEAM → GROUP
+~~~
 
 ## Endpoints
 
@@ -102,14 +107,6 @@ DELETE /api/v1/organization/units/:unitId
 GET    /api/v1/organization/members
 ~~~
 
-## Hierarchy
-
-~~~text
-COMPANY → DEPARTMENT → TEAM → GROUP
-~~~
-
-All other parent-child relationships are rejected.
-
 ## Unit Operation Flow
 
 ~~~text
@@ -117,19 +114,17 @@ Authenticate
 → Validate Membership
 → Validate Permission + Scope
 → Validate Organization + Hierarchy
-→ Create / Update / Delete
+→ Apply Operation
 ~~~
 
 ## Deletion Rules
 
 ~~~text
 COMPANY         → Cannot Delete
-Has Children    → Move children first
-Has Members     → Move/remove members first
-Valid Leaf Unit → Can Delete
+Has Children    → Reject
+Has Members     → Reject
+Valid Leaf Unit → Delete
 ~~~
-
-Future reorganization will validate organization ownership, hierarchy, circular references, permissions, and capacity.
 
 ---
 
@@ -147,33 +142,24 @@ AND
 Valid Delegation
 ~~~
 
-| Concept | Purpose |
-| --- | --- |
-| Role | Internal organizational classification |
-| Permission | What the user may do |
-| Scope | Where the action is allowed |
-| Delegation | Who may grant authority |
-| Capacity | How much the tree may contain |
-
-Roles do not directly grant access.
+Roles classify members but do not directly grant access.
 
 ---
 
 ## 4.1 Permission Engine ✅
 
-### Completed
+## Completed
 
-* Atomic permission schema
+* Atomic permissions
 * Scoped permission grants
 * Active permission validation
 * Hierarchy scope validation
 * Delegation authority
-* Permission revocation
-* Permission history
+* Permission revocation and history
 * Member permission retrieval
-* Scoped `CREATE_UNIT` enforcement
+* Scoped operation enforcement
 
-### Permissions
+## Permissions
 
 ~~~text
 INVITE_MEMBER
@@ -181,24 +167,24 @@ REMOVE_MEMBER
 UPDATE_MEMBER
 ASSIGN_ROLE
 MOVE_MEMBER
+
 CREATE_UNIT
 UPDATE_UNIT
 DELETE_UNIT
 MOVE_UNIT
 ~~~
 
-### Permission Flow
+## Permission Flow
 
 ~~~text
 Authenticated User
 → Find Active Grant
 → Validate Organization
 → Validate Hierarchy Scope
-→ Validate Target
 → ALLOW / DENY
 ~~~
 
-### Delegation Flow
+## Delegation Flow
 
 ~~~text
 Has Permission?
@@ -208,84 +194,53 @@ Has Permission?
 → Create Grant
 ~~~
 
-Historical grants are never rewritten. Authority changes use revoke + new grant.
-
-### Grant Lifecycle
-
-~~~text
-Grant Permission
-→ Active Scoped Access
-→ Use Permission
-→ Revoke Grant
-→ Access Denied
-~~~
-
-The complete lifecycle has been tested with `CREATE_UNIT`.
+Historical grants are preserved. Authority changes use revoke + new grant.
 
 ---
 
 ## 4.2 Invitation Management ✅
 
-### Completed
+## Completed
 
-* Create invitations
-* Validate invitation permissions and scope
+* Invitation creation
+* Permission and scope validation
 * Optional role assignment
 * Secure token generation
-* Received invitation retrieval by email
-* Invitation acceptance
+* Received invitation retrieval
 * Expiration validation
+* Invitation acceptance
 * User assignment to unit and role
 * Invitation status tracking
-* Capacity validation during invitation acceptance
-* Rejection when target unit capacity is not configured
-* Rejection when target unit has no remaining capacity
+* Capacity validation during acceptance
 
-### Flow
+## Flow
 
 ~~~text
 Check INVITE_MEMBER
 → Validate Scope + Unit
-→ Validate ASSIGN_ROLE if needed
+→ Validate ASSIGN_ROLE If Needed
 → Create PENDING Invitation
 → Invited User Logs In
-→ Fetch Invitation by Email
-→ Accept
+→ Accept Invitation
 → Validate Token + Email + Expiry
-→ Validate Target Unit Capacity
+→ Validate Unit Capacity
 → Assign Unit + Role
 → Mark ACCEPTED
 ~~~
 
-If the target unit capacity is not configured:
+If capacity is missing or full, acceptance is rejected and the invitation remains `PENDING`.
 
-~~~text
-Invitation Acceptance
-→ Reject
-→ User Remains Outside Organization
-→ Invitation Remains PENDING
-~~~
-
-If the target unit has no remaining capacity:
-
-~~~text
-Invitation Acceptance
-→ Reject
-→ User Remains Outside Organization
-→ Invitation Remains PENDING
-~~~
-
-Permissions remain separate from membership and are granted through `PermissionGrant`.
+Permissions remain separate from membership.
 
 ---
 
 ## 4.3 Member Access ✅
 
-### Completed
+## Completed
 
 * List organization members
 * Retrieve member role and assigned unit
-* View member permission history
+* View permission history
 * Grant scoped permissions
 * Revoke active permissions
 * View active and revoked grants
@@ -301,28 +256,19 @@ Select Member
 
 ## 4.4 Capacity Management ✅
 
-### Completed
+## Completed
 
-* Optional capacity during organization creation
-* Set root company capacity
-* Set child unit capacity
-* Update existing capacity
-* Increase allocated capacity
-* Safely decrease allocated capacity
-* Calculate direct member usage
-* Calculate child capacity allocations
-* Calculate remaining capacity
-* Prevent capacity below current usage
-* Require parent capacity before child allocation
-* Prevent child over-allocation
-* Exclude current child allocation during capacity updates
-* Validate parent available capacity
-* Enforce capacity during invitation acceptance
-* Reject invitations when capacity is not configured
-* Reject invitations when the target unit is full
-* Capacity retrieval API
-* Capacity update API
-* Frontend integration tested
+* Optional organization capacity
+* Root and child capacity configuration
+* Capacity updates
+* Safe capacity increases and decreases
+* Direct member usage calculation
+* Child allocation calculation
+* Remaining capacity calculation
+* Parent capacity enforcement
+* Child over-allocation prevention
+* Invitation capacity enforcement
+* Capacity API and frontend integration
 
 ## Capacity Formula
 
@@ -331,21 +277,10 @@ Remaining Capacity
 =
 Allocated Capacity
 − Direct Members
-− Capacity Allocated to Children
+− Child Allocations
 ~~~
 
-Example:
-
-~~~text
-Parent Capacity = 100
-
-├── Direct Members = 10
-├── Child A = 40
-├── Child B = 30
-└── Remaining = 20
-~~~
-
-## Capacity Rules
+## Rules
 
 ~~~text
 New Capacity
@@ -363,40 +298,9 @@ Parent Capacity
 − Sibling Allocations
 ~~~
 
-When updating an existing child allocation, the unit's previous allocation is excluded before calculating the capacity available to it.
+When updating a child allocation, its previous allocation is excluded before calculating available parent capacity.
 
-Example:
-
-~~~text
-Parent Capacity       = 100
-Parent Direct Members = 10
-Child A Current       = 30
-Child B               = 20
-
-Available for Child A
-= 100 - 10 - 20
-= 70
-
-Child A: 30 → 50  Allowed
-Child A: 30 → 70  Allowed
-Child A: 30 → 71  Rejected
-~~~
-
-## Invitation Capacity Flow
-
-~~~text
-Accept Invitation
-→ Load Target Unit
-→ Require Configured Capacity
-→ Count Direct Members
-→ Calculate Child Allocations
-→ Calculate Remaining Capacity
-→ Reject If Full
-→ Assign User
-→ Mark Invitation ACCEPTED
-~~~
-
-The capacity validation and membership assignment execute inside the same database transaction.
+Capacity validation and membership assignment during invitation acceptance execute in the same database transaction.
 
 ## Endpoints
 
@@ -405,73 +309,90 @@ GET   /api/v1/organization/units/:unitId/capacity
 PATCH /api/v1/organization/units/:unitId/capacity
 ~~~
 
-## Capacity Response
-
-~~~text
-Allocated Capacity
-Direct Members
-Child Allocations
-Remaining Capacity
-~~~
-
-## Tested Flow
-
-~~~text
-Set COMPANY Capacity
-→ Allocate Capacity to DEPARTMENT
-→ Parent Remaining Capacity Recalculates
-→ Attempt Child Over-allocation
-→ Request Rejected
-→ Set Valid Child Capacity
-→ Remaining Capacity Recalculates
-~~~
-
-Capacity management is complete for the current hierarchy model. Reorganization operations will perform additional capacity recalculation when units or subtrees are moved.
-
 ---
 
 ## 4.5 Member Management ⏳
 
-### Planned
+## Completed
 
-* Dedicated member management operations
-* Update member roles
-* Move members between units
-* Remove members
-* Validate permission scope
-* Validate target unit capacity
-* Preserve organization isolation
+### Update Member Role ✅
 
-### Planned Flow
+* `ASSIGN_ROLE` permission validation
+* Hierarchy scope validation
+* Organization isolation
+* Owner protection
+* Role update API
+* Frontend integration
+
+~~~http
+PATCH /api/v1/organization/members/:memberId/role
+~~~
 
 ~~~text
 Select Member
-→ Validate Management Permission
+→ Check ASSIGN_ROLE
 → Validate Scope
-→ Update Role / Move / Remove
-→ Validate Capacity If Moving
-→ Apply Change
+→ Protect OWNER
+→ Update Role
+~~~
+
+### Move Member Between Units ✅
+
+* `MOVE_MEMBER` permission validation
+* Source unit scope validation
+* Destination unit scope validation
+* Organization isolation
+* Owner protection
+* Destination capacity validation
+* Same-unit movement rejection
+* Member unit update API
+* Frontend integration
+
+~~~http
+PATCH /api/v1/organization/members/:memberId/unit
+~~~
+
+~~~text
+Select Member
+→ Validate Source MOVE_MEMBER Scope
+→ Validate Destination MOVE_MEMBER Scope
+→ Validate Organization
+→ Protect OWNER
+→ Validate Destination Capacity
+→ Move Member
+~~~
+
+## Next
+
+### Remove Member ⏳
+
+Planned validation:
+
+~~~text
+Select Member
+→ Check REMOVE_MEMBER
+→ Validate Scope
+→ Validate Organization
+→ Protect OWNER
+→ Remove Member From Organization
 ~~~
 
 ---
 
 ## 4.6 Unit Reorganization ⏳
 
-### Planned
+## Planned
 
-* Move subtrees
+* Move units and subtrees
 * Change parent units
-* Reassign child units
-* Move members to replacement units
-* Replace removable parent units
 * Prevent circular hierarchy
-* Validate hierarchy
+* Validate hierarchy relationships
 * Validate permission scope
-* Validate organization isolation
-* Validate capacity before movement
-* Recalculate capacity after reorganization
+* Preserve organization isolation
+* Validate destination capacity
+* Recalculate capacity after movement
 
-### Planned Flow
+## Planned Flow
 
 ~~~text
 Select Unit
@@ -480,9 +401,8 @@ Select Unit
 → Validate Hierarchy
 → Prevent Circular Reference
 → Validate Permission Scope
-→ Validate Destination Capacity
+→ Validate Capacity
 → Move Subtree
-→ Recalculate Capacity
 ~~~
 
 ---
@@ -491,41 +411,53 @@ Select Unit
 
 ## Phase 5 — Document Management
 
-* Upload, metadata, versioning, and processing status
+* Upload and metadata
+* Versioning
+* Processing status
 * Soft delete and recovery
 * Permission-aware document access
 
 ## Phase 6 — Document Processing
 
-* Extraction, OCR, and chunking
-* Content hashing and incremental indexing
+* Extraction and OCR
+* Chunking
+* Content hashing
+* Incremental indexing
 * BullMQ background processing
 
 ## Phase 7 — Retrieval Infrastructure
 
-* Qdrant and embeddings
+* Qdrant
+* Embeddings
 * Semantic and keyword search
 * Metadata filtering
-* Hybrid and permission-aware retrieval
+* Hybrid retrieval
+* Permission-aware retrieval
 
 ## Phase 8 — RAG Pipeline
 
 * Query processing
-* Parallel retrieval and merging
-* Reranking and context validation
-* Answer and citation generation
-* Streaming responses
+* Parallel retrieval
+* Result merging
+* Reranking
+* Context validation
+* Answer generation
+* Citation generation
+* Streaming
 
 ## Phase 9 — Reliability & Caching
 
 * Hallucination detection
 * Answer verification
-* Exact, semantic, and Redis caching
+* Exact query cache
+* Semantic cache
+* Redis cache
 * Version-aware invalidation
 
 ## Phase 10 — Evaluation & Monitoring
 
-* Retrieval and generation metrics
+* Retrieval metrics
+* Generation metrics
 * Latency and throughput
 * Cache hit rate
 * Token and cost analysis
@@ -533,9 +465,10 @@ Select Unit
 
 ## Phase 11 — Deployment
 
-* Containerization and environment configuration
+* Containerization
 * Worker deployment
-* Production PostgreSQL, Redis, and Qdrant
+* Production PostgreSQL
+* Redis and Qdrant
 * Monitoring and observability
 
 ---
@@ -574,24 +507,21 @@ backend/
 
 ---
 
-# Progress Summary
+# Next Development Step
 
-| Phase | Status |
-| --- | --- |
-| Backend Foundation | ✅ Completed |
-| Authentication | ✅ Completed |
-| Organization Management | ✅ Completed |
-| Organization Hierarchy | ✅ Completed |
-| Permission Engine | ✅ Completed |
-| Invitation Management | ✅ Completed |
-| Member Access & Permission Management | ✅ Completed |
-| Capacity Management | ✅ Completed |
-| Member Management | ⏳ Next |
-| Unit Reorganization | ⏳ Planned |
-| Document Management | ⏳ Planned |
-| Document Processing | ⏳ Planned |
-| Retrieval Infrastructure | ⏳ Planned |
-| RAG Pipeline | ⏳ Planned |
-| Reliability & Caching | ⏳ Planned |
-| Evaluation & Monitoring | ⏳ Planned |
-| Deployment | ⏳ Planned |
+~~~text
+Phase 4.5 — Remove Member
+
+Backend Service
+→ Controller
+→ Route
+→ Frontend Integration
+→ Test Permission + Scope + Owner Protection
+~~~
+
+After Remove Member is complete:
+
+~~~text
+Phase 4.5 Member Management ✅
+→ Phase 4.6 Unit Reorganization
+~~~
