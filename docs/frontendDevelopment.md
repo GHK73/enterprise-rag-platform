@@ -1,96 +1,80 @@
 # Frontend Architecture & Development Guide
 
-Defines the architecture, development standards, UI guidelines, and implementation workflow for the Enterprise Retrieval-Augmented Generation (RAG) Platform frontend.
+Architecture, development standards, UI rules, and implementation workflow for the Enterprise RAG Platform frontend.
 
 ---
 
-# Goals
+# 1. Core Principles
 
-Build a professional, scalable, and maintainable enterprise frontend.
+The frontend should be professional, maintainable, responsive, and consistent.
 
-Development principles:
+Development rules:
 
-- Build reusable components when reuse is required.
-- Keep pages independent and focused.
-- Maintain consistent UI and styling.
-- Avoid unnecessary files and abstractions.
-- Develop incrementally.
-- Modify only 2–3 related files or functions at a time.
-- Test every feature before continuing.
-- Do not rename existing variables or restructure working code unnecessarily.
-
----
-
-# Technology Stack
-
-| Layer | Technology |
-|-------|------------|
-| Framework | React |
-| Routing | React Router DOM |
-| Styling | Component-based CSS |
-| HTTP Client | Axios |
-| State Management | React Context API |
-| Build Tool | Vite |
+* Build reusable components only when reuse is needed.
+* Keep pages focused on their own responsibilities.
+* Avoid unnecessary files and abstractions.
+* Modify only 2–3 related files or functions at a time.
+* Test each step before continuing.
+* Do not rename working variables unnecessarily.
+* Do not restructure working code without a clear need.
+* Complete the current feature before starting another.
 
 ---
 
-# Project Structure
+# 2. Technology Stack
 
-Create folders and files only when required by the current implementation phase.
+| Layer            | Technology          |
+| ---------------- | ------------------- |
+| Framework        | React               |
+| Build Tool       | Vite                |
+| Routing          | React Router DOM    |
+| HTTP Client      | Axios               |
+| State Management | React Context API   |
+| Styling          | Component-based CSS |
+
+---
+
+# 3. Project Structure
+
+Create files and folders only when required.
 
 ```text
 frontend/
-│
-├── public/
-│
-├── src/
-│   ├── assets/
-│   │
-│   ├── api/
-│   │   └── axios.js
-│   │
-│   ├── components/
-│   │   ├── Navbar/
-│   │   ├── ProtectedRoute/
-│   │   ├── PublicRoute/
-│   │   ├── Sidebar/
-│   │   └── Topbar/
-│   │
-│   ├── context/
-│   │   └── AuthContext.jsx
-│   │
-│   ├── layouts/
-│   │   ├── PublicLayout.jsx
-│   │   └── DashboardLayout.jsx
-│   │
-│   ├── pages/
-│   │   ├── Home/
-│   │   ├── Login/
-│   │   ├── Register/
-│   │   ├── Dashboard/
-│   │   ├── Organization/
-│   │   ├── Documents/
-│   │   ├── Upload/
-│   │   ├── Query/
-│   │   ├── Analytics/
-│   │   └── Settings/
-│   │
-│   ├── App.jsx
-│   ├── main.jsx
-│   └── index.css
-│
-└── package.json
+└── src/
+    ├── api/
+    ├── assets/
+    ├── components/
+    ├── context/
+    ├── layouts/
+    ├── pages/
+    ├── App.jsx
+    ├── main.jsx
+    └── index.css
 ```
 
-Do not create empty folders or placeholder components before they are needed.
+Current page structure:
+
+```text
+pages/
+├── CreateOrganization/
+├── Dashboard/
+├── Home/
+├── Invitations/
+├── Login/
+├── Organization/
+├── Permissions/
+└── Register/
+```
+
+Future pages should be added only when their implementation begins.
+
+Do not create empty folders, placeholder pages, or speculative abstractions.
 
 ---
 
-# Styling Guidelines
+# 4. Styling Standards
 
-Every page and reusable component should have its own CSS file.
-
-Example:
+Every page and reusable visual component should keep its styles in a corresponding CSS file.
 
 ```text
 Login/
@@ -102,176 +86,187 @@ Navbar/
 └── Navbar.css
 ```
 
-`index.css` should contain only global styles:
+`index.css` should contain only global styling:
 
-- CSS reset
-- Font imports
-- CSS variables
-- Global typography
-- Global element defaults
-- Scrollbar styling
+* CSS reset
+* Font imports
+* CSS variables
+* Global typography
+* Global element defaults
+* Scrollbar styling
 
 Use:
 
-- `rem` for fonts, spacing, and border radius.
-- `%`, `vw`, `vh`, `min()`, `max()`, and `clamp()` for responsive sizing.
-- Flexbox and CSS Grid for layouts.
-- `1px` only where fixed borders are required.
-- Existing CSS variables instead of repeating color values.
+* `rem` for typography, spacing, and border radius
+* `%`, `vw`, `vh`, `min()`, `max()`, and `clamp()` for responsive sizing
+* Flexbox and CSS Grid for layouts
+* Existing CSS variables for colors
+* `1px` only where fixed borders are required
 
 Avoid:
 
-- Inline styles.
-- Unnecessary fixed widths and heights.
-- Duplicate global styles.
-- Page-specific styles inside `index.css`.
+* Inline styles
+* Unnecessary fixed dimensions
+* Repeated color values
+* Duplicate global styles
+* Page-specific styles in `index.css`
 
 ---
 
-# Layout Strategy
-
-## Public Layout
-
-Used for:
-
-- Home
-- Login
-- Register
-
-Contains:
-
-```text
-Navbar
-Main Content
-```
-
-The public Navbar should respond to authentication state:
-
-```text
-Logged Out → Login + Register
-Logged In  → Logout
-```
-
----
-
-## Dashboard Layout
-
-Used for authenticated application pages.
-
-Contains:
-
-```text
-Sidebar
-Topbar
-Main Content
-```
-
-The public Navbar must not appear inside the dashboard.
-
-Dashboard pages include:
-
-- Dashboard
-- Organization
-- Documents
-- Upload
-- Query
-- Analytics
-- Settings
-
----
-
-# Navigation
-
-## Public Navigation
-
-- Home
-- Features
-- Documentation
-- GitHub
-- Login
-- Register
-- Logout when authenticated
-
-## Dashboard Sidebar
-
-- Dashboard
-- Organization
-- Documents
-- Upload
-- Search
-- Analytics
-- Settings
-- Logout
-
-Navigation should remain consistent across all dashboard pages.
-
----
-
-# Design System
+# 5. Design System
 
 ## Colors
 
-| Purpose | Color |
-|---------|-------|
-| Primary | `#2563EB` |
-| Secondary | `#1E293B` |
-| Background | `#F8FAFC` |
-| Card | `#FFFFFF` |
-| Border | `#E2E8F0` |
-| Success | `#22C55E` |
-| Warning | `#F59E0B` |
-| Error | `#EF4444` |
-| Primary Text | `#0F172A` |
-| Secondary Text | `#64748B` |
+```text
+Primary        → #2563EB
+Secondary      → #1E293B
+Background     → #F8FAFC
+Card           → #FFFFFF
+Border         → #E2E8F0
+Success        → #22C55E
+Warning        → #F59E0B
+Error          → #EF4444
+Primary Text   → #0F172A
+Secondary Text → #64748B
+```
 
-These values should be defined as CSS variables and reused throughout the application.
+These values should remain CSS variables and be reused throughout the application.
 
 ## Typography
 
 ```text
-Primary Font: Inter
-Fallback: sans-serif
+Primary Font → Inter
+Fallback     → sans-serif
 ```
 
-Typography should remain consistent across pages and components.
+Typography, spacing, controls, cards, status indicators, and error states should remain visually consistent across pages.
 
 ---
 
-# Component Guidelines
+# 6. Layout Architecture
+
+## Public Layout
+
+Used for public and authentication pages.
+
+```text
+Navbar
+└── Main Content
+```
+
+Current pages include:
+
+```text
+Home
+Login
+Register
+```
+
+The Navbar responds to authentication state:
+
+```text
+Logged Out
+→ Login
+→ Register
+
+Logged In
+→ Application Navigation
+→ Logout
+```
+
+## Application Layout
+
+Protected application pages should share consistent navigation and content structure.
+
+Current protected areas include:
+
+```text
+Dashboard
+Organization
+Permissions
+Invitations
+```
+
+Future protected areas include:
+
+```text
+Documents
+Retrieval
+Analytics
+Settings
+```
+
+The public landing-page interface should not be duplicated inside the authenticated workspace.
+
+---
+
+# 7. Navigation Rules
+
+Navigation must:
+
+* Remain consistent across protected pages
+* Reflect authentication state immediately
+* Hide unavailable actions when appropriate
+* Preserve clear active-page state
+* Remain usable on mobile and desktop
+
+Future navigation items should not be added before their corresponding features exist.
+
+---
+
+# 8. Component Guidelines
 
 Create a reusable component only when:
 
-- The same UI pattern is used in multiple places.
-- The component has a clear independent responsibility.
-- Reuse reduces meaningful duplication.
+* The same UI pattern appears in multiple places.
+* The component has an independent responsibility.
+* Reuse removes meaningful duplication.
 
 Reusable components should:
 
-- Accept data through props.
-- Avoid page-specific business logic.
-- Avoid direct API calls.
-- Keep styling in their own CSS file.
-- Remain focused and predictable.
+* Accept data and callbacks through props.
+* Avoid page-specific business logic.
+* Avoid direct API calls.
+* Keep styles in their own CSS file.
+* Remain focused and predictable.
 
-Possible reusable components:
+Possible reusable components may include:
 
-- Button
-- Input
-- Card
-- Modal
-- Loader
-- Badge
-- EmptyState
+```text
+Button
+Input
+Modal
+Loader
+Badge
+EmptyState
+```
 
-Do not create these components before they are actually needed.
+Do not create them before actual reuse is required.
 
 ---
 
-# API Integration
+# 9. Page Responsibilities
 
-The frontend communicates only with the backend REST API.
+Pages may:
 
-All requests should use the shared Axios instance:
+* Fetch page-specific data.
+* Manage page-specific state.
+* Coordinate API calls.
+* Compose reusable components.
+* Handle page-level loading and errors.
+
+Pages should not:
+
+* Duplicate global authentication logic.
+* Construct backend base URLs.
+* Contain unrelated feature logic.
+* Create abstractions for hypothetical future use.
+
+---
+
+# 10. API Integration
+
+All backend requests must use the shared Axios configuration.
 
 ```text
 src/api/axios.js
@@ -279,263 +274,450 @@ src/api/axios.js
 
 Rules:
 
-- Pages and components must not construct backend base URLs.
-- Protected requests must include the JWT access token.
-- API errors should be handled consistently.
-- Invalid or expired authentication should clear the session.
-- Backend error messages should be shown when appropriate.
+* Do not construct backend base URLs inside pages or components.
+* Protected requests must use the stored JWT.
+* Invalid authentication must clear the session.
+* Backend validation messages should be shown when useful.
+* API-specific logic should remain separate from reusable visual components.
+* Avoid duplicate request logic when an existing API function already exists.
 
 ---
 
-# Authentication Flow
+# 11. Authentication
 
 ```text
 Register / Login
-        │
-        ▼
-   Receive JWT
-        │
-        ▼
-Authentication Context
-        │
-        ▼
-   Store Token
-        │
-        ▼
-Update Authentication State
-        │
-        ▼
-  Protected Routes
-        │
-        ▼
-     Dashboard
+→ Receive JWT
+→ Store Token
+→ Verify Session
+→ Update Authentication Context
+→ Access Protected Routes
 ```
 
-Authentication requirements:
+Requirements:
 
-- Unauthenticated users can access public pages.
-- Authenticated users cannot access Login or Register.
-- Unauthenticated users cannot access protected pages.
-- Login and registration update global authentication state.
-- Logout removes the token and resets authentication state.
-- Navbar content updates immediately when authentication state changes.
+* Public pages remain accessible without authentication.
+* Authenticated users are redirected away from Login and Register.
+* Unauthenticated users cannot access protected routes.
+* Login and registration update global authentication state.
+* Logout clears the token and resets the session.
+* Invalid or expired tokens are removed.
+* Authentication-aware UI updates immediately.
 
 ---
 
-# Route Strategy
+# 12. Route Strategy
 
 ## Public Routes
-
-Examples:
 
 ```text
 /
 ```
 
-Accessible to all users.
-
 ## Authentication Routes
-
-Examples:
 
 ```text
 /login
 /register
 ```
 
-Authenticated users should be redirected away from these routes.
+Authenticated users should be redirected away from authentication routes.
 
 ## Protected Routes
 
-Examples:
+Current examples:
 
 ```text
 /dashboard
 /organization
-/documents
-/upload
-/query
-/analytics
-/settings
+/permissions
+/invitations
 ```
 
-Unauthenticated users should be redirected to Login.
+Future protected routes should be added only when implementation begins.
 
 ---
 
-# Dashboard Philosophy
+# 13. State Management
 
-The dashboard should prioritize clarity and usability over decoration.
+Use React Context only for state that is genuinely shared across multiple areas.
+
+Current global responsibility:
+
+```text
+Authentication Context
+→ User
+→ Session
+→ Authentication state
+```
+
+Page-specific state should remain local unless multiple unrelated pages need the same live state.
+
+Avoid introducing additional global state libraries unless the existing architecture creates a real limitation.
+
+---
+
+# 14. Multi-User Synchronization
+
+Organization state uses backend revisions for stale-state detection.
+
+The frontend should preserve the existing synchronization model:
+
+```text
+Load State
+→ Store Revision
+→ Check Latest Revision
+
+Same Revision
+→ No Action
+
+New Revision
+→ Fetch Consistent Snapshot
+→ Update Local State
+```
+
+Local mutations should:
+
+```text
+Mutation
+→ Backend Revision Increment
+→ Update Local State
+→ Synchronize Local Revision
+```
+
+Rules:
+
+* Avoid unnecessary full-page reloads.
+* Preserve valid user selections after refresh.
+* Reject inconsistent snapshots.
+* Prevent duplicate concurrent refreshes.
+* Do not show false update notifications for local mutations.
+
+Future document synchronization should follow its own backend consistency model rather than automatically reusing organization revision logic.
+
+---
+
+# 15. Document Management UI Architecture
+
+Document Management includes the complete document lifecycle.
+
+It should not be split into unrelated upload and document phases.
+
+```text
+Document Library
++
+Draft Upload
++
+Metadata
++
+Classification
++
+Access Configuration
++
+Publication
++
+Versions
++
+Access Management
++
+History
++
+Deletion
+```
+
+## Draft Upload Flow
+
+```text
+Select File
+→ Validate File
+→ Upload Draft
+→ Configure Metadata
+→ Select Classification
+→ Configure Access
+→ Review
+→ Publish
+```
+
+The UI must distinguish:
+
+```text
+DRAFT
+≠
+SUBMITTED
+≠
+PROCESSING
+≠
+READY
+≠
+DELETED
+```
+
+A draft may remain temporarily in storage while configuration is completed.
+
+The interface should clearly show draft expiry.
+
+## Document Lifecycle
+
+```text
+DRAFT
+→ SUBMITTED
+→ QUEUED
+→ PROCESSING
+→ READY
+```
+
+Additional states:
+
+```text
+PROCESSING → FAILED
+
+DRAFT → EXPIRED
+
+READY → DELETED
+```
+
+The frontend displays lifecycle state but does not determine authoritative state transitions.
+
+---
+
+# 16. Document Access UI
+
+Document access is separate from administrative permission management.
+
+Access subjects:
+
+```text
+ORGANIZATION
+UNIT
+ROLE
+USER
+```
+
+Access actions:
+
+```text
+QUERY
+VIEW
+DOWNLOAD
+MANAGE_ACCESS
+```
+
+The interface should eventually support:
+
+* Current access policies
+* Unit scope selection
+* Role access
+* Specific-user access
+* Permanent access
+* Temporary access
+* Access revocation
+* Change reasons
+* Access history
+
+Temporary access should clearly display start time, expiry time, and expired state.
+
+The frontend must not assume that a user's administrative role automatically grants document access.
+
+---
+
+# 17. Access History UI
+
+Access history is append-only.
+
+The frontend may display:
+
+```text
+Actor
+Subject
+Event Type
+Previous State
+New State
+Reason
+Timestamp
+```
+
+The interface must not provide edit or delete operations for audit records.
+
+Current access state and historical events should remain visually distinct.
+
+---
+
+# 18. Loading, Empty, and Error States
+
+Every data-driven interface should handle:
+
+```text
+Loading
+Empty
+Success
+Validation Error
+Permission Error
+Server Error
+```
 
 Guidelines:
 
-- Clean spacing.
-- Consistent layout.
-- Minimal animations.
-- Responsive design.
-- Predictable navigation.
-- Clear loading states.
-- Clear empty states.
-- Clear error states.
-- Fast interaction.
-
-The dashboard should resemble a modern enterprise SaaS application.
+* Do not show blank pages while loading.
+* Empty states should explain what the user can do next.
+* Permission errors should not appear as generic failures.
+* Backend validation messages should be preserved when useful.
+* Destructive actions should require clear confirmation.
 
 ---
 
-# Development Workflow
+# 19. Responsive Design
 
-Each implementation step should modify only:
+Every new page should be tested for:
 
-- 2–3 related files, or
-- 2–3 related functions.
+* Desktop
+* Tablet
+* Mobile
+
+Guidelines:
+
+* Avoid horizontal page overflow.
+* Allow large panels to scroll within controlled boundaries.
+* Keep important actions accessible.
+* Stack layouts when horizontal space is insufficient.
+* Preserve readable text widths.
+* Avoid fixed heights unless the interface requires them.
+
+Responsive behavior should be designed during implementation, not postponed until final polish.
+
+---
+
+# 20. Development Workflow
+
+Each step should modify only:
+
+```text
+2–3 related files
+or
+2–3 related functions
+```
 
 Workflow:
 
 ```text
 Implement
-   │
-   ▼
-Test
-   │
-   ▼
-Fix Issues
-   │
-   ▼
-Update Development Log
-   │
-   ▼
-Continue
+→ Test
+→ Fix Issues
+→ Update Development Log
+→ Continue
 ```
 
 Rules:
 
-- Do not skip testing.
-- Do not combine unrelated features in one step.
-- Do not add unnecessary files.
-- Do not rename working variables without a reason.
-- Do not restructure working code unnecessarily.
-- Complete the current feature before starting the next one.
+* Do not skip testing.
+* Do not combine unrelated features.
+* Do not add unnecessary files.
+* Do not rename working variables without a reason.
+* Do not restructure stable code unnecessarily.
+* Finish the current step before starting the next one.
 
 ---
 
-# Development Roadmap
+# 21. Implementation Order
 
-## Phase 1 — Frontend Foundation
+Development should follow backend readiness.
 
-- Project setup
-- Dependencies
-- Global styling
-- Routing
-- Public layout
-- Responsive Navbar
-- Home page
-- Landing page sections
+```text
+Backend Feature Ready
+→ Confirm API Contract
+→ Add Frontend API Integration
+→ Build UI
+→ Test Success Cases
+→ Test Validation and Permission Errors
+→ Test Responsive Behavior
+→ Update Development Log
+```
 
-## Phase 2 — Authentication
+For Document Management:
 
-- Login page
-- Register page
-- Axios configuration
-- Login API integration
-- Register API integration
-- JWT storage
-- Authentication Context
-- Public route protection
-- Protected routes
-- Authentication redirects
-- Authentication-aware Navbar
-- Logout
-- Protected API authorization
-- Session verification
-- Expired token handling
+```text
+Backend Document APIs Ready
+→ Document API Layer
+→ Document Library
+→ Draft Upload
+→ Metadata and Classification
+→ Access Configuration
+→ Publication
+→ Document Details
+→ Version History
+→ Access Management
+→ Access History
+→ Download and Delete Flows
+```
 
-## Phase 3 — Dashboard Layout
-
-- DashboardLayout
-- Sidebar
-- Topbar
-- Responsive dashboard navigation
-- Dashboard page structure
-
-## Phase 4 — Organization Management
-
-- Organization creation
-- Organization details
-- Organization membership
-- Role-based UI access
-
-## Phase 5 — Document Management
-
-- Document listing
-- Document details
-- Document status
-- Document actions
-
-## Phase 6 — Document Upload
-
-- Upload interface
-- File validation
-- Upload progress
-- Processing status
-- Upload error handling
-
-## Phase 7 — Retrieval Interface
-
-- Query input
-- Retrieval configuration
-- Query submission
-- Response display
-
-## Phase 8 — Search and Citations
-
-- Search results
-- Source citations
-- Retrieved context
-- Streaming responses
-
-## Phase 9 — Analytics
-
-- Usage metrics
-- Document statistics
-- Query statistics
-- Retrieval performance
-
-## Phase 10 — Settings and Final Polish
-
-- User profile
-- Organization settings
-- Application settings
-- Responsive improvements
-- Accessibility review
-- Loading and error states
-- Final UI consistency review
+Do not build UI against speculative API contracts.
 
 ---
 
-# Coding Standards
+# 22. Coding Standards
 
-- Keep components small and focused.
-- Reuse existing components when meaningful.
-- Avoid duplicate code.
-- Follow consistent naming conventions.
-- Keep styles isolated to the corresponding page or component.
-- Do not rename existing variables or files unless necessary.
-- Do not change the folder structure unnecessarily.
-- Keep API logic separate from reusable UI components.
-- Test every feature before moving forward.
-- Add abstractions only when the existing code requires them.
+* Keep components small and focused.
+* Reuse existing components when meaningful.
+* Avoid duplicate code.
+* Follow existing naming conventions.
+* Keep styles isolated.
+* Keep API logic out of reusable visual components.
+* Do not rename existing variables or files unnecessarily.
+* Do not change folder structure without a real need.
+* Add abstractions only when current code requires them.
+* Test every feature before continuing.
+
+---
+
+# 23. Documentation Boundaries
+
+This guide defines:
+
+```text
+Frontend architecture
+Development standards
+UI rules
+Implementation workflow
+```
+
+The frontend development log defines:
+
+```text
+Completed work
+Current progress
+Planned frontend features
+Next implementation step
+```
+
+`docs/DATABASE.md` defines:
+
+```text
+Database architecture
+Document models
+Access models
+Storage relationships
+Future retrieval mapping
+```
+
+The backend development log defines:
+
+```text
+Backend implementation progress
+Completed backend behavior
+Current backend phase
+```
+
+Avoid duplicating detailed architecture or progress across these documents.
 
 ---
 
 # Project Philosophy
 
-The frontend should resemble a modern enterprise SaaS application rather than a traditional academic project.
+The frontend should resemble a modern enterprise SaaS application rather than an academic project.
 
-Every interface should answer three questions:
+Every interface should answer:
 
 1. Is the feature easy to understand?
-2. Is the layout consistent with the rest of the application?
-3. Can the feature be extended without restructuring the project?
+2. Is it consistent with the rest of the application?
+3. Can it be extended without unnecessary restructuring?
 
-The objective is to build a professional, scalable, and maintainable frontend that complements the Enterprise Retrieval-Augmented Generation (RAG) Platform.
+The goal is a professional frontend that supports secure organization management, document workflows, and permission-aware enterprise knowledge retrieval.

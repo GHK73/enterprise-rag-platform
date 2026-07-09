@@ -2,7 +2,7 @@
 
 Implementation progress for the Enterprise RAG Platform.
 
-Database design: [`docs/DATABASE.md`](DATABASE.md)
+Database architecture: [`docs/DATABASE.md`](DATABASE.md)
 
 ---
 
@@ -10,15 +10,15 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 
 **Active Phase:** Phase 5 — Document Management ⏳
 
-| Area | Status |
-| --- | --- |
-| Backend Foundation | ✅ |
-| Authentication | ✅ |
-| Organization Management | ✅ |
-| Access & Administration | ✅ |
-| Organization Synchronization | ✅ |
-| Concurrency Protection | ✅ |
-| Document Management | ⏳ |
+| Area                         | Status |
+| ---------------------------- | ------ |
+| Backend Foundation           | ✅      |
+| Authentication               | ✅      |
+| Organization Management      | ✅      |
+| Access & Administration      | ✅      |
+| Organization Synchronization | ✅      |
+| Concurrency Protection       | ✅      |
+| Document Management          | ⏳      |
 
 ---
 
@@ -34,9 +34,9 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 * Global error and 404 handling
 * Reusable API response and error utilities
 
-~~~http
+```http
 GET /api/v1/health
-~~~
+```
 
 ---
 
@@ -50,18 +50,18 @@ GET /api/v1/health
 * Inactive and missing user rejection
 * Authentication independent of organization membership
 
-~~~http
+```http
 POST /api/v1/auth/register
 POST /api/v1/auth/login
 GET  /api/v1/auth/me
-~~~
+```
 
-New users start with:
+New users start without organization membership:
 
-~~~text
+```text
 role   = null
 unitId = null
-~~~
+```
 
 ---
 
@@ -80,13 +80,13 @@ unitId = null
 
 ## Hierarchy
 
-~~~text
+```text
 COMPANY → DEPARTMENT → TEAM → GROUP
-~~~
+```
 
 ## Endpoints
 
-~~~http
+```http
 POST   /api/v1/organization
 GET    /api/v1/organization
 PATCH  /api/v1/organization
@@ -98,7 +98,7 @@ DELETE /api/v1/organization/units/:unitId
 PATCH  /api/v1/organization/units/:unitId/move
 
 GET    /api/v1/organization/members
-~~~
+```
 
 ---
 
@@ -108,11 +108,13 @@ GET    /api/v1/organization/members
 
 Authorization model:
 
-~~~text
+```text
 Permission
-+ Hierarchy Scope
-+ Delegation Authority
-~~~
++
+Hierarchy Scope
++
+Delegation Authority
+```
 
 ## Completed
 
@@ -126,17 +128,18 @@ Permission
 
 ## Permissions
 
-~~~text
+```text
 INVITE_MEMBER
 REMOVE_MEMBER
 UPDATE_MEMBER
 ASSIGN_ROLE
 MOVE_MEMBER
+
 CREATE_UNIT
 UPDATE_UNIT
 DELETE_UNIT
 MOVE_UNIT
-~~~
+```
 
 Roles classify members. Permissions control operations.
 
@@ -170,20 +173,18 @@ Roles classify members. Permissions control operations.
 * Child over-allocation prevention
 * Invitation capacity enforcement
 
-## Capacity Formula
-
-~~~text
+```text
 Remaining Capacity
 =
 Allocated Capacity
 − Direct Members
 − Child Allocations
-~~~
+```
 
-~~~http
+```http
 GET   /api/v1/organization/units/:unitId/capacity
 PATCH /api/v1/organization/units/:unitId/capacity
-~~~
+```
 
 ---
 
@@ -200,12 +201,12 @@ PATCH /api/v1/organization/units/:unitId/capacity
 * Destination capacity validation
 * Permission revocation on removal
 
-~~~http
+```http
 GET    /api/v1/organization/members
 PATCH  /api/v1/organization/members/:memberId/role
 PATCH  /api/v1/organization/members/:memberId/unit
 DELETE /api/v1/organization/members/:memberId
-~~~
+```
 
 ---
 
@@ -220,12 +221,12 @@ DELETE /api/v1/organization/members/:memberId
 * Destination capacity validation
 * Same-parent movement prevention
 
-~~~text
+```text
 DEPARTMENT → COMPANY
 TEAM       → DEPARTMENT
 GROUP      → TEAM
 COMPANY    → Cannot Move
-~~~
+```
 
 ---
 
@@ -233,17 +234,10 @@ COMPANY    → Cannot Move
 
 Revision-based stale-state detection provides lightweight multi-user synchronization without WebSockets.
 
-Each organization stores a monotonically increasing revision:
-
-~~~text
-Organization
-└── revision
-~~~
-
 ## Completed
 
-* Revision increment for organization-changing mutations
-* Mutation and revision update in the same transaction
+* Monotonically increasing organization revision
+* Revision updates inside organization-changing transactions
 * Organization revision endpoint
 * Frontend stale-state detection support
 * Periodic and visibility-based revision checking
@@ -257,30 +251,31 @@ Organization
 * Member role updates, movement, and removal
 * Invitation acceptance
 
-~~~http
+```http
 GET /api/v1/organization/revision
-~~~
+```
 
-~~~text
+```text
 Organization Mutation
-+ Revision Increment
++
+Revision Increment
 → Commit Together
 or
 → Roll Back Together
-~~~
+```
 
 ---
 
 ## 4.7 Concurrency Protection ✅
 
-Capacity-sensitive operations are protected from parallel requests validating against the same stale state.
+Capacity-sensitive operations are protected from parallel requests validating against stale state.
 
 ## Completed
 
 * PostgreSQL serializable transactions
 * Automatic retry for Prisma `P2034` conflicts
 * Transaction-aware hierarchy scope checks
-* Fresh state validation inside transactions
+* Fresh validation inside transactions
 * Transactional revision increments
 
 ## Protected Operations
@@ -290,87 +285,150 @@ Capacity-sensitive operations are protected from parallel requests validating ag
 * Unit and subtree movement
 * Invitation acceptance
 
-## Flow
-
-~~~text
+```text
 Start Serializable Transaction
-→ Read Current State
-→ Validate Capacity and Constraints
+→ Read Fresh State
+→ Validate Constraints
 → Apply Mutation
 → Increment Revision
 → Commit
 
-Transaction Conflict
+Conflict
 → Retry with Fresh State
-~~~
-
-This prevents concurrent requests from consuming the same remaining capacity.
+```
 
 ---
 
 # Phase 5 — Document Management ⏳
 
-## Architecture
+Detailed document models and architecture are maintained in `docs/DATABASE.md`.
 
-~~~text
-PostgreSQL + Prisma
-→ Documents
-→ Versions
-→ Metadata
-→ Processing Status
-→ Access Policies
-→ Audit History
+## 5.1 Document Architecture & Database Design ⏳
 
-Amazon S3
-→ Original Files
-→ Versioned Objects
-→ Processed Artifacts
+Current work:
+
+* Document lifecycle
+* Document and version models
+* S3 storage mapping
+* Data classification
+* Document access policies
+* Temporary access
+* Access change history
+* Soft deletion and cleanup boundaries
+* Future processing and Qdrant references
+
+## Agreed Lifecycle
+
+```text
+DRAFT
+→ SUBMITTED
+→ QUEUED
+→ PROCESSING
+→ READY
+```
+
+Additional states:
+
+```text
+PROCESSING → FAILED → RETRY
+
+DRAFT → EXPIRED → CLEANUP
+
+READY → DELETED → ASYNC CLEANUP
+```
+
+A file may remain temporarily in S3 as a draft, but cannot remain permanently as unused S3-only storage.
+
+Initial rules:
+
+```text
+Maximum draft staging period
+→ 24 hours
+
+Maximum temporary access period
+→ 7 days
+```
+
+These limits should remain configurable.
+
+## Agreed Security Boundaries
+
+```text
+Administrative Permission
+≠
+Document Access
+
+Data Classification
+≠
+Document Access
+
+PostgreSQL
+→ Authorization authority
 
 Qdrant
-→ Embeddings
-→ Chunk References
-→ Filtered Vector Retrieval
+→ Retrieval infrastructure
+```
 
-Redis + BullMQ
-→ Caching
-→ Background Processing
-~~~
+Document access will support:
 
-## Planned Lifecycle
+```text
+ORGANIZATION
+UNIT
+ROLE
+USER
+```
 
-~~~text
-Upload
-→ Validate Access
-→ Create Document Record
-→ Store File in S3
-→ Create Version
-→ Queue Processing
-→ Extract Text / OCR
-→ Chunk Content
-→ Generate Embeddings
-→ Index in Qdrant
-~~~
+Initial access actions:
 
-## Planned Features
+```text
+QUERY
+VIEW
+DOWNLOAD
+MANAGE_ACCESS
+```
 
-* Document upload and metadata
-* S3 object storage
-* Document versioning
+Every access mutation must create an append-only audit record in the same transaction.
+
+```text
+No access mutation
+without an audit record.
+```
+
+Access changes must take effect through PostgreSQL without requiring vector reindexing.
+
+## Planned Phase 5 Features
+
+* Draft document creation and expiry
+* S3 upload and private object storage
+* Document metadata and classification
+* Document publication
+* Immutable document versions
 * Processing status tracking
-* Permission-aware access
-* Time-based access policies
-* Soft delete and recovery
+* Document access policies
+* Temporary access
+* Access audit history
+* Controlled access changes
+* Immediate revocation
 * Authorized downloads
+* Soft deletion
+* Asynchronous cleanup preparation
 
-## Access Model
+## Phase 5 Implementation Order
 
-~~~text
-Organization Isolation
-→ Access Policy
-→ Organization / Unit / User / Role
-→ Time Validity
-→ Retrieval-Time Validation
-~~~
+```text
+Finalize DATABASE.md
+→ Update schema.prisma
+→ Create Prisma migration
+→ Implement Document Lifecycle
+→ Integrate S3 Uploads
+→ Implement Publication
+→ Implement Access Policies
+→ Implement Access Audit History
+→ Implement Temporary Access
+→ Implement Authorized Downloads
+→ Implement Soft Delete and Cleanup Jobs
+→ Test Complete Document Lifecycle
+```
 
 ---
 
@@ -378,25 +436,29 @@ Organization Isolation
 
 ## Phase 6 — Document Processing
 
-* Text extraction and OCR
+* Layout-aware extraction
+* OCR
+* Pages and content blocks
+* Tables, charts, images, and diagrams
 * Chunking and content hashing
-* Incremental indexing
-* BullMQ workers
+* BullMQ processing workers
 
 ## Phase 7 — Retrieval Infrastructure
 
 * Qdrant integration
 * Embeddings
+* Vector placement
+* Tenant-aware routing
 * Semantic and keyword search
-* Metadata filtering
-* Hybrid and permission-aware retrieval
+* Permission-aware retrieval
 
 ## Phase 8 — RAG Pipeline
 
 * Query processing
 * Parallel retrieval
+* Context reconstruction
 * Reranking
-* Context validation
+* Final authorization validation
 * Answer and citation generation
 * Streaming
 
@@ -413,7 +475,7 @@ Organization Isolation
 * Latency and throughput
 * Cache hit rate
 * Token and cost analysis
-* Audit logging
+* Security and audit monitoring
 
 ## Phase 11 — Deployment
 
@@ -428,7 +490,7 @@ Organization Isolation
 
 # Current Backend Structure
 
-~~~text
+```text
 backend/
 ├── prisma/
 │   └── schema.prisma
@@ -444,21 +506,20 @@ backend/
     ├── services/
     ├── utils/
     └── app.js
-~~~
+```
 
 ---
 
 # Next Development Step
 
-~~~text
-Phase 5.1 — Document Architecture & Database Design
+```text
+Phase 5.1 — Finalize Document Database Design
 
-PostgreSQL Data Model
-→ S3 Storage Model
-→ Document Version Model
-→ Access Policy Model
-→ Chunk and Qdrant Mapping
-→ Processing Lifecycle
-→ Finalize DATABASE.md
+Finalize Phase 5 Enums
+→ Finalize Document Model
+→ Finalize DocumentVersion Model
+→ Finalize DocumentAccessPolicy Model
+→ Finalize DocumentAccessAudit Model
+→ Validate Referential Integrity
 → Update schema.prisma
-~~~
+```

@@ -8,15 +8,15 @@ Implementation progress for the Enterprise RAG Platform frontend.
 
 **Active Phase:** Phase 5 — Document Management UI ⏳
 
-| Area | Status |
-| --- | --- |
-| Frontend Foundation | ✅ |
-| Authentication | ✅ |
-| Dashboard | ✅ |
-| Organization Management | ✅ |
-| Access & Administration UI | ✅ |
-| Organization Synchronization | ✅ |
-| Document Management UI | ⏳ |
+| Area                         | Status |
+| ---------------------------- | ------ |
+| Frontend Foundation          | ✅      |
+| Authentication               | ✅      |
+| Dashboard                    | ✅      |
+| Organization Management      | ✅      |
+| Access & Administration UI   | ✅      |
+| Organization Synchronization | ✅      |
+| Document Management UI       | ⏳      |
 
 ---
 
@@ -45,13 +45,13 @@ Implementation progress for the Enterprise RAG Platform frontend.
 * Public and protected route guards
 * Authentication-aware Navbar and logout
 
-~~~text
+```text
 Login
 → Store JWT
 → Verify Session
 → Load User
 → Access Protected Routes
-~~~
+```
 
 ---
 
@@ -85,9 +85,9 @@ Login
 
 ## Hierarchy
 
-~~~text
+```text
 COMPANY → DEPARTMENT → TEAM → GROUP
-~~~
+```
 
 ---
 
@@ -128,13 +128,13 @@ External email delivery is not implemented yet.
 * Validation error display
 * Automatic local refresh
 
-~~~text
+```text
 Remaining Capacity
 =
 Allocated Capacity
 − Direct Members
 − Child Allocations
-~~~
+```
 
 ---
 
@@ -152,8 +152,6 @@ Allocated Capacity
 
 ## 4.5 Dynamic Organization Workspace ✅
 
-The Organization page supports large and changing organization structures.
-
 ## Completed
 
 * Collapsible recursive hierarchy tree
@@ -168,7 +166,7 @@ The Organization page supports large and changing organization structures.
 
 ## Workspace
 
-~~~text
+```text
 Organization Structure
 ├── Collapsible Hierarchy
 │   └── Select Unit
@@ -178,7 +176,7 @@ Organization Structure
     ├── Capacity
     ├── Unit Summary
     └── Direct Members
-~~~
+```
 
 ---
 
@@ -190,12 +188,12 @@ Organization Structure
 * Hierarchy and capacity error display
 * Immediate recursive hierarchy updates
 
-~~~text
+```text
 DEPARTMENT → COMPANY
 TEAM       → DEPARTMENT
 GROUP      → TEAM
 COMPANY    → Cannot Move
-~~~
+```
 
 ---
 
@@ -220,9 +218,9 @@ Revision-based multi-user change detection provides synchronization without WebS
 * Preserve the selected unit after refresh
 * Fall back to the root unit when necessary
 
-## Flow
+## Refresh Flow
 
-~~~text
+```text
 Load Organization
 → Store Revision
 → Check Latest Revision
@@ -232,77 +230,204 @@ Same Revision
 
 New Revision
 → Show Updates Available
-→ Read Revision Before Refresh
-→ Fetch Organization State
-→ Read Revision After Refresh
-
-Revisions Match
-→ Accept Snapshot
+→ Fetch Consistent Snapshot
 → Update React State
-
-Revisions Differ
-→ Reject Snapshot
-→ Refresh Again
-~~~
+```
 
 ## Local Mutation Flow
 
-~~~text
+```text
 Organization Mutation
 → Backend Increments Revision
 → Update Local React State
-→ Fetch Latest Revision
 → Synchronize Local Revision
-~~~
+```
 
 ---
 
 # Phase 5 — Document Management UI ⏳
 
-The document interface will be implemented after the backend document architecture is finalized.
+The frontend will be implemented after the Phase 5 backend APIs are ready.
 
-## Planned Features
+## 5.1 Document Library ⏳
 
-* Document library
-* Upload and validation
-* Upload progress
-* Metadata and processing status
-* Document details and version history
-* New version upload and rollback
-* Soft delete and recovery
-* Authorized download
-* Access policy management
-* Temporary and scheduled access
+Planned:
 
-## Planned Flow
+* Document listing
+* Search and filtering
+* Classification display
+* Lifecycle and processing status
+* Current version information
+* Draft expiry visibility
+* Deleted document handling
 
-~~~text
+## 5.2 Upload and Draft Management ⏳
+
+The frontend must support temporary draft storage rather than immediate processing.
+
+```text
 Select File
-→ Enter Metadata
+→ Validate File
+→ Upload Draft
+→ Configure Metadata
+→ Configure Classification
 → Configure Access
-→ Upload
-→ Processing
-→ Document Library
-~~~
+→ Review
+→ Publish
+```
 
-## Access Subjects
+Planned:
 
-~~~text
+* File selection and validation
+* Upload progress
+* Draft creation
+* Draft expiry display
+* Metadata editing
+* Classification selection
+* Access configuration
+* Publish confirmation
+* Expired draft handling
+
+A draft cannot remain permanently as unused S3-only storage.
+
+---
+
+## 5.3 Document Details and Versions ⏳
+
+Planned:
+
+* Document metadata
+* Current lifecycle status
+* Processing status
+* Current version
+* Version history
+* New version upload
+* Failed processing visibility
+* Retry actions when supported
+* Authorized download
+
+---
+
+## 5.4 Document Access Management ⏳
+
+Access subjects:
+
+```text
 ORGANIZATION
 UNIT
-USER
 ROLE
-~~~
+USER
+```
 
-## Document Statuses
+Access actions:
 
-~~~text
-UPLOADING
-QUEUED
-PROCESSING
-READY
-FAILED
-~~~
+```text
+QUERY
+VIEW
+DOWNLOAD
+MANAGE_ACCESS
+```
+
+Planned:
+
+* Current access policy display
+* Organization access
+* Unit access
+* Unit-only or descendant scope selection
+* Role access
+* Specific-user access
+* Permanent access
+* Temporary access
+* Access revocation
+* Access-change reason input
+* Permission and validation error display
+
+Temporary access is initially limited to a maximum of seven days.
+
+---
+
+## 5.5 Access History ⏳
+
+Planned:
+
+* Append-only access history
+* Actor display
+* Subject display
+* Change type
+* Previous and new state
+* Change reason
+* Timestamp
+* Active, revoked, and expired state visibility
+
+The frontend may display access history but must never provide edit or delete actions for audit records.
+
+---
+
+## 5.6 Deletion and Recovery ⏳
+
+Planned:
+
+* Soft-delete confirmation
+* Immediate removal from normal document views
+* Deleted document state
+* Recovery when supported
+* Cleanup-state visibility when needed
+
+Physical S3 and vector cleanup remain backend responsibilities.
+
+---
+
+## Document Lifecycle
+
+```text
+DRAFT
+→ SUBMITTED
+→ QUEUED
+→ PROCESSING
+→ READY
+```
+
+Additional states:
+
+```text
+PROCESSING → FAILED
+
+DRAFT → EXPIRED
+
+READY → DELETED
+```
+
+The UI must clearly distinguish:
+
+```text
+Draft State
+≠
+Processing State
+≠
+Ready State
+≠
+Deleted State
+```
+
+---
+
+## Phase 5 Frontend Implementation Order
+
+```text
+Wait for Phase 5 Backend APIs
+→ Add Document API Layer
+→ Build Document Library
+→ Build Draft Upload Flow
+→ Build Metadata and Classification UI
+→ Build Access Configuration UI
+→ Build Publish Flow
+→ Build Document Details
+→ Build Version History
+→ Build Access Management
+→ Build Access History
+→ Build Download and Delete Flows
+→ Test Complete Document Lifecycle
+```
 
 ---
 
@@ -312,6 +437,7 @@ FAILED
 
 * Processing progress
 * Extraction and OCR status
+* Page and content-block status
 * Chunking and indexing status
 * Failed job retry
 
@@ -319,7 +445,8 @@ FAILED
 
 * Query interface
 * Streaming responses
-* Retrieved context and source citations
+* Retrieved context
+* Source citations
 * Confidence and refusal states
 
 ## Phase 8 — Search & Analytics
@@ -333,7 +460,7 @@ FAILED
 ## Phase 9 — Settings & Administration
 
 * Organization settings
-* Permission configuration
+* Document policy settings
 * Model and retrieval settings
 * Cache settings
 
@@ -350,7 +477,7 @@ FAILED
 
 # Current Structure
 
-~~~text
+```text
 frontend/
 └── src/
     ├── api/
@@ -369,17 +496,16 @@ frontend/
     ├── App.jsx
     ├── main.jsx
     └── index.css
-~~~
+```
 
 ---
 
 # Next Development Step
 
-~~~text
-Phase 5 — Document Management
-
-Finalize Backend Document Architecture
-→ Implement Document Backend
+```text
+Finalize Phase 5 Database Design
+→ Implement Phase 5 Backend
+→ Finalize Document API Contracts
 → Build Document Management UI
 → Test Complete Document Lifecycle
-~~~
+```
