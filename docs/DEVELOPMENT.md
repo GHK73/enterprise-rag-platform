@@ -18,10 +18,10 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 | Organization Hierarchy | ✅ |
 | Permission Engine | ✅ |
 | Invitation Management | ✅ |
-| Member Access | ✅ |
-| Capacity Management | ✅ |
 | Member Management | ✅ |
+| Capacity Management | ✅ |
 | Unit Reorganization | ✅ |
+| Organization Sync | ⏳ |
 | Document Management | ⏳ |
 
 ---
@@ -30,13 +30,13 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 
 ## Completed
 
-* Environment and JWT configuration
+* Node.js and Express backend
 * PostgreSQL with Prisma ORM
-* Express application and database connection
+* Environment and JWT configuration
 * Versioned `/api/v1` routing
 * Authentication middleware
 * Global error and 404 handling
-* `ApiResponse`, `ApiError`, and `asyncHandler`
+* Reusable API response and error utilities
 
 ~~~http
 GET /api/v1/health
@@ -48,11 +48,11 @@ GET /api/v1/health
 
 ## Completed
 
-* Registration and login
-* JWT generation and validation
+* User registration and login
 * Password hashing and verification
+* JWT generation and validation
 * Current user retrieval
-* Missing and inactive user rejection
+* Inactive and missing user rejection
 * Authentication independent of organization membership
 
 ~~~http
@@ -61,14 +61,12 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 ~~~
 
-New users start with:
+New users start without organization membership:
 
 ~~~text
 role   = null
 unitId = null
 ~~~
-
-Users cannot assign their own organization, role, unit, or permissions.
 
 ---
 
@@ -81,10 +79,9 @@ Users cannot assign their own organization, role, unit, or permissions.
 * Creator assignment as `OWNER`
 * Automatic owner permission grants
 * Organization structure retrieval
-* Department, team, and group creation
-* Hierarchy validation
+* Unit creation, rename, movement, and deletion
 * Organization isolation
-* Unit rename and safe deletion
+* Hierarchy validation
 * Root and non-leaf deletion protection
 
 ## Hierarchy
@@ -104,47 +101,31 @@ GET    /api/v1/organization/units
 POST   /api/v1/organization/units
 PATCH  /api/v1/organization/units/:unitId
 DELETE /api/v1/organization/units/:unitId
+PATCH  /api/v1/organization/units/:unitId/move
 
 GET    /api/v1/organization/members
 ~~~
 
-## Operation Flow
-
-~~~text
-Authenticate
-→ Validate Membership
-→ Validate Permission + Scope
-→ Validate Organization + Hierarchy
-→ Apply Operation
-~~~
-
 ---
 
-# Phase 4 — Access & Member Management ✅
-
-## Authorization Model
-
-~~~text
-Effective Access
-=
-Permission
-AND
-Hierarchy Scope
-AND
-Valid Delegation
-~~~
-
-Roles classify members but do not directly grant access.
-
----
+# Phase 4 — Access & Organization Administration ✅
 
 ## 4.1 Permission Engine ✅
+
+Authorization is based on:
+
+~~~text
+Permission
++
+Hierarchy Scope
++
+Delegation Authority
+~~~
 
 ## Completed
 
 * Atomic permissions
 * Scoped permission grants
-* Active permission validation
 * Hierarchy scope validation
 * Delegation authority
 * Permission revocation and history
@@ -166,27 +147,7 @@ DELETE_UNIT
 MOVE_UNIT
 ~~~
 
-## Permission Flow
-
-~~~text
-Authenticated User
-→ Find Active Grant
-→ Validate Organization
-→ Validate Hierarchy Scope
-→ ALLOW / DENY
-~~~
-
-## Delegation Flow
-
-~~~text
-Has Permission?
-→ Can Delegate?
-→ Recipient Inside Scope?
-→ New Scope Inside Current Scope?
-→ Create Grant
-~~~
-
-Historical grants are preserved. Authority changes use revoke + new grant.
+Roles classify members, while permissions control operations.
 
 ---
 
@@ -201,55 +162,32 @@ Historical grants are preserved. Authority changes use revoke + new grant.
 * Received invitation retrieval
 * Expiration validation
 * Invitation acceptance
-* User assignment to unit and role
+* Unit and role assignment
+* Capacity validation
 * Invitation status tracking
-* Capacity validation during acceptance
-
-## Flow
 
 ~~~text
-Check INVITE_MEMBER
-→ Validate Scope + Unit
-→ Validate ASSIGN_ROLE If Needed
-→ Create PENDING Invitation
-→ Invited User Logs In
+Create Invitation
+→ User Logs In
 → Accept Invitation
 → Validate Token + Email + Expiry
-→ Validate Unit Capacity
+→ Validate Capacity
 → Assign Unit + Role
 → Mark ACCEPTED
 ~~~
 
-Permissions remain separate from membership.
-
 ---
 
-## 4.3 Member Access ✅
+## 4.3 Capacity Management ✅
 
 ## Completed
 
-* Organization member listing
-* Member role and unit retrieval
-* Permission history
-* Scoped permission grants
-* Permission revocation
-* Active and revoked grant visibility
-
----
-
-## 4.4 Capacity Management ✅
-
-## Completed
-
-* Optional organization and unit capacity
 * Capacity configuration and updates
 * Direct member usage calculation
 * Child allocation calculation
-* Remaining capacity calculation
 * Parent capacity enforcement
 * Child over-allocation prevention
 * Invitation capacity enforcement
-* Transaction-safe invitation acceptance
 
 ## Capacity Formula
 
@@ -261,8 +199,6 @@ Allocated Capacity
 − Child Allocations
 ~~~
 
-## Endpoints
-
 ~~~http
 GET   /api/v1/organization/units/:unitId/capacity
 PATCH /api/v1/organization/units/:unitId/capacity
@@ -270,77 +206,39 @@ PATCH /api/v1/organization/units/:unitId/capacity
 
 ---
 
-## 4.5 Member Management ✅
+## 4.4 Member Management ✅
 
 ## Completed
 
-### Update Member Role
-
-* `ASSIGN_ROLE` permission validation
-* Hierarchy scope validation
-* Organization isolation
+* Organization member listing
+* Member role and unit retrieval
+* Role updates
+* Member movement
+* Member removal
 * Owner protection
-* Frontend integration
-
-~~~http
-PATCH /api/v1/organization/members/:memberId/role
-~~~
-
-### Move Member
-
-* Source and destination `MOVE_MEMBER` scope validation
-* Organization isolation
-* Owner protection
+* Permission and scope validation
 * Destination capacity validation
-* Same-unit movement rejection
-* Frontend integration
+* Permission revocation on removal
 
 ~~~http
-PATCH /api/v1/organization/members/:memberId/unit
-~~~
-
-### Remove Member
-
-* `REMOVE_MEMBER` permission validation
-* Hierarchy scope validation
-* Organization isolation
-* Owner protection
-* Active permission revocation
-* Organization membership removal
-* Frontend integration
-
-~~~http
+GET    /api/v1/organization/members
+PATCH  /api/v1/organization/members/:memberId/role
+PATCH  /api/v1/organization/members/:memberId/unit
 DELETE /api/v1/organization/members/:memberId
-~~~
-
-## Member Management Flow
-
-~~~text
-Select Member
-→ Validate Permission + Scope
-→ Validate Organization
-→ Protect OWNER
-→ Apply Operation
-→ Update UI
 ~~~
 
 ---
 
-## 4.6 Unit Reorganization ✅
+## 4.5 Unit Reorganization ✅
 
 ## Completed
 
-* Move units and subtrees
-* Change parent units
-* Organization isolation
+* Unit and subtree movement
 * Strict hierarchy validation
 * Circular reference protection
-* Source scope validation
-* Destination scope validation
+* Source and destination scope validation
 * Destination capacity validation
 * Same-parent movement prevention
-* Immediate hierarchy updates
-* Frontend integration
 
 ## Hierarchy Rules
 
@@ -351,81 +249,121 @@ GROUP      → TEAM
 COMPANY    → Cannot Move
 ~~~
 
-## Endpoint
-
 ~~~http
 PATCH /api/v1/organization/units/:unitId/move
 ~~~
 
-## Flow
+---
+
+## 4.6 Organization Synchronization ✅
+
+The organization uses revision-based stale-state detection instead of full-page refreshes or WebSockets.
+
+Each organization stores a monotonically increasing revision:
 
 ~~~text
-Select Unit
-→ Select New Parent
-→ Validate Organization
-→ Validate Hierarchy
-→ Prevent Circular Reference
-→ Validate Source MOVE_UNIT Scope
-→ Validate Destination MOVE_UNIT Scope
-→ Validate Destination Capacity
-→ Move Unit
-→ Update Hierarchy
+Organization
+└── revision
 ~~~
 
-## Tested
+Every successful organization-changing transaction increments the revision.
+## Remaining
 
-* Successful unit movement
-* Same-parent prevention
-* Hierarchy validation
-* Destination capacity rejection
-* Permission denial
-* Destination scope denial
+* Protect capacity-sensitive operations from concurrent mutations
+* Prevent parallel requests from validating against the same stale state
+* Add transaction conflict and retry handling where required
+
+## Covered Changes
+
+* Organization updates
+* Unit creation
+* Unit rename
+* Unit deletion
+* Unit movement
+* Capacity updates
+* Member role updates
+* Member movement
+* Member removal
+* Invitation acceptance
+
+Mutation and revision increment occur in the same database transaction.
+
+~~~text
+Organization Change
++
+Revision Increment
+→ Commit Together
+or
+→ Roll Back Together
+~~~
+
+## Endpoint
+
+~~~http
+GET /api/v1/organization/revision
+~~~
+
+## Synchronization Flow
+
+~~~text
+Frontend Loads Organization
+→ Store Current Revision
+→ Check Revision Periodically
+→ Check Again When Tab Becomes Visible
+
+Revision Unchanged
+→ No Action
+
+Revision Changed
+→ Show Updates Available
+→ Refresh Organization Data
+→ Update Local State
+→ Store Latest Revision
+~~~
+
+This provides lightweight multi-user change detection without WebSocket complexity.
 
 ---
 
 # Phase 5 — Document Management ⏳
 
-## Architecture Design
-
-Before implementation, the document storage and access architecture will be finalized.
+## Architecture
 
 ~~~text
 PostgreSQL + Prisma
 → Documents
 → Versions
 → Metadata
-→ Chunks
-→ Processing status
-→ Access policies
-→ Audit history
+→ Processing Status
+→ Access Policies
+→ Audit History
 
 Amazon S3
-→ Original files
-→ Versioned file objects
-→ Processed artifacts
+→ Original Files
+→ Versioned Objects
+→ Processed Artifacts
 
 Qdrant
-→ Embedding vectors
-→ Chunk and document references
-→ Filtered vector retrieval
+→ Embeddings
+→ Chunk References
+→ Filtered Vector Retrieval
 
 Redis + BullMQ
 → Caching
-→ Background document processing
+→ Background Processing
 ~~~
 
-## Planned Data Flow
+## Planned Lifecycle
 
 ~~~text
 Upload
 → Validate Access
 → Create Document Record
 → Store File in S3
-→ Create Document Version
-→ Queue Processing Job
+→ Create Version
+→ Queue Processing
 → Extract Text / OCR
 → Chunk Content
-→ Store Chunk Metadata
 → Generate Embeddings
 → Index in Qdrant
 ~~~
@@ -439,36 +377,25 @@ Upload
 * Permission-aware access
 * Time-based access policies
 * Soft delete and recovery
-* Download through authorized presigned URLs
+* Authorized downloads
 
-## Planned Access Model
+## Access Model
 
 ~~~text
 Organization Isolation
-→ Document Access Policy
-→ Hierarchy / User / Role Scope
+→ Access Policy
+→ Organization / Unit / User / Role
 → Time Validity
 → Retrieval-Time Validation
 ~~~
 
-Access policies will support:
-
-~~~text
-ORGANIZATION
-UNIT
-USER
-ROLE
-~~~
-
-Each policy can include:
+Policies may include:
 
 ~~~text
 validFrom
 validUntil
 revokedAt
 ~~~
-
-This supports permanent access, temporary restrictions, expiring access, and scheduled document release without moving files or rebuilding embeddings.
 
 ---
 
@@ -477,8 +404,7 @@ This supports permanent access, temporary restrictions, expiring access, and sch
 ## Phase 6 — Document Processing
 
 * Text extraction and OCR
-* Chunking
-* Content hashing
+* Chunking and content hashing
 * Incremental indexing
 * BullMQ workers
 
@@ -486,8 +412,7 @@ This supports permanent access, temporary restrictions, expiring access, and sch
 
 * Qdrant integration
 * Embeddings
-* Semantic search
-* Keyword search
+* Semantic and keyword search
 * Metadata filtering
 * Hybrid retrieval
 * Permission-aware retrieval
@@ -496,25 +421,21 @@ This supports permanent access, temporary restrictions, expiring access, and sch
 
 * Query processing
 * Parallel retrieval
-* Result merging
 * Reranking
 * Context validation
-* Answer generation
-* Citation generation
+* Answer and citation generation
 * Streaming
 
 ## Phase 9 — Reliability & Caching
 
 * Hallucination detection
 * Answer verification
-* Exact and semantic caching
 * Redis caching
 * Version-aware invalidation
 
 ## Phase 10 — Evaluation & Monitoring
 
-* Retrieval metrics
-* Generation metrics
+* Retrieval and generation metrics
 * Latency and throughput
 * Cache hit rate
 * Token and cost analysis

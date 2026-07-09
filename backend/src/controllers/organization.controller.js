@@ -14,7 +14,8 @@ import {
     updateMemberRole as updateMemberRoleService,
     moveMember as moveMemberService,
     removeMember as removeMemberService,
-    moveOrganizationUnit as moveOrganizationUnitService
+    moveOrganizationUnit as moveOrganizationUnitService,
+    getOrganizationRevision as getOrganizationRevisionService
 } from "../services/organization.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
@@ -240,5 +241,12 @@ export const moveOrganizationUnit = asyncHandler(async(req,res)=>{
             "Organization unit moved successfully",
             organizationUnit
         )
+    );
+});
+
+export const getOrganizationRevision = asyncHandler(async(req,res)=>{
+    const revision = await getOrganizationRevisionService(req.user.id);
+    return res.status(200).json(
+        new ApiResponse(200,"Organization revision fetched successfully", revision)
     );
 });

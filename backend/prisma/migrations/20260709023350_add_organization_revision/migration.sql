@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Organization" ADD COLUMN     "revision" INTEGER NOT NULL DEFAULT 1;

@@ -1,84 +1,111 @@
 # Enterprise Retrieval-Augmented Generation (RAG) Platform
 
-> A production-inspired enterprise RAG platform for securely ingesting, versioning, retrieving, and querying organizational knowledge. The system combines hierarchy-scoped authorization, permission-aware retrieval, document lifecycle management, configurable RAG pipelines, and measurable performance optimization.
+> A production-inspired enterprise RAG platform for securely ingesting, versioning, retrieving, and querying organizational knowledge using permission-aware retrieval, document lifecycle management, and configurable RAG pipelines.
 
 ---
 
-# Motivation
+# Overview
 
 Enterprise knowledge is distributed across financial reports, legal contracts, HR policies, technical documentation, research papers, and internal knowledge bases.
 
-Traditional AI assistants often:
+Traditional AI assistants can:
 
 * Hallucinate unsupported information
 * Ignore organizational access boundaries
 * Expose confidential documents
 * Fail to reflect document updates
-* Return answers without supporting evidence
+* Generate answers without supporting evidence
 
-This project addresses these problems by retrieving authorized, trusted information before generating responses.
+This platform addresses these problems by retrieving only authorized and relevant information before generating an answer.
+
+The primary rule of the system is:
+
+```text
+Unauthorized content must never reach the LLM.
+```
 
 ---
 
 # Core Objectives
 
-* Build a secure enterprise RAG platform
-* Support multi-organization knowledge isolation
-* Design modular RAG components without depending heavily on high-level frameworks
+* Build a secure multi-tenant enterprise RAG platform
+* Isolate knowledge between organizations
 * Enforce authorization before document content reaches the LLM
 * Preserve complete document and version history
-* Reduce hallucinations using retrieval and answer validation
-* Build scalable AI backend infrastructure
-* Measure every major optimization
+* Support permission-aware retrieval
+* Reduce hallucinations through retrieval and answer validation
+* Build modular and configurable RAG components
+* Improve performance using caching and background processing
+* Measure retrieval quality, generation quality, and system performance
 
 ---
 
-# Current Progress
+# High-Level Architecture
 
-~~~text
-Backend Foundation              ✅
-Authentication                  ✅
-Organization Management         ✅
-Organization Hierarchy          ✅
-Permission Engine               ✅
-Invitation Management           ✅
-Member Access                   ✅
-Capacity Management             ✅
-Member Management               ✅
-Unit Reorganization             ✅
+```text
+Frontend
+React + Vite
+        ↓
+Backend API
+Node.js + Express.js
+        ↓
+PostgreSQL + Prisma
+        ├── Organizations
+        ├── Users
+        ├── Permissions
+        ├── Documents
+        ├── Versions
+        ├── Access Policies
+        └── Chunk Metadata
 
-Document Management             ⏳
-Document Processing             ⏳
-Retrieval Infrastructure        ⏳
-RAG Pipeline                    ⏳
-Reliability and Caching         ⏳
-Evaluation and Monitoring       ⏳
-Deployment                      ⏳
-~~~
+Amazon S3
+        ├── Original Files
+        ├── Versioned Files
+        └── Processed Artifacts
+
+Redis + BullMQ
+        ├── Caching
+        └── Background Jobs
+
+FastAPI AI Service
+        ├── Text Extraction
+        ├── Chunking
+        ├── Embeddings
+        ├── Reranking
+        └── AI Processing
+
+Qdrant
+        └── Vector Retrieval
+
+LLM
+        └── Answer Generation and Verification
+```
 
 ---
 
 # Enterprise Organization Model
 
-The platform models organizations as hierarchical trees:
+Each organization is represented as a hierarchical tree:
 
-~~~text
+```text
 COMPANY
 └── DEPARTMENT
     └── TEAM
         └── GROUP
-~~~
+```
 
-Supported operations include:
+The hierarchy supports:
 
-* Organization creation and updates
+* Organization management
 * Department, team, and group management
 * Member invitations
-* Member role updates
+* Role management
 * Member movement between units
 * Member removal
 * Unit and subtree movement
-* Capacity allocation across the hierarchy
+* Capacity allocation
+
+This hierarchy is also used to determine where permissions are valid.
 
 ---
 
@@ -86,7 +113,7 @@ Supported operations include:
 
 The platform does not rely on roles alone.
 
-~~~text
+```text
 Effective Access
 =
 Permission
@@ -94,20 +121,20 @@ AND
 Hierarchy Scope
 AND
 Valid Delegation
-~~~
+```
 
 Roles classify members:
 
-~~~text
+```text
 OWNER
 ADMIN
 MANAGER
 MEMBER
-~~~
+```
 
-Atomic permissions control actions:
+Atomic permissions control individual operations:
 
-~~~text
+```text
 INVITE_MEMBER
 REMOVE_MEMBER
 UPDATE_MEMBER
@@ -118,81 +145,82 @@ CREATE_UNIT
 UPDATE_UNIT
 DELETE_UNIT
 MOVE_UNIT
-~~~
+```
 
-Each permission grant includes:
+Each permission grant contains:
 
-~~~text
+```text
 Permission
 → What action is allowed?
 
 Scope
-→ Where in the organization tree is it allowed?
+→ Where in the organization hierarchy is it allowed?
 
 Delegation
 → Who granted the authority?
 
 Can Delegate
-→ May the recipient grant it further?
-~~~
+→ Can the recipient grant the permission to others?
+```
 
 Example:
 
-~~~text
+```text
 Engineering Head
 └── MOVE_UNIT
     ├── Scope: Engineering
     └── Can Delegate: true
-~~~
+```
 
-The permission applies only to the selected hierarchy subtree.
+The permission is valid only inside the Engineering subtree.
 
 ---
 
 # Capacity Management
 
-Organization capacity flows through the hierarchy.
+Capacity controls how members and child units are distributed through the organization hierarchy.
 
-~~~text
+```text
 Remaining Capacity
 =
 Allocated Capacity
 − Direct Members
 − Direct Child Allocations
-~~~
+```
 
 Example:
 
-~~~text
+```text
 Engineering Capacity = 100
 
 ├── Direct Members = 10
 ├── Backend Allocation = 40
 ├── Frontend Allocation = 30
 └── Remaining Capacity = 20
-~~~
+```
 
-Capacity is validated during:
+Capacity is validated when:
 
-* Invitation acceptance
-* Capacity updates
-* Member movement
-* Unit movement
+* Accepting invitations
+* Updating unit capacity
+* Moving members
+* Moving units
+
+This prevents any operation from exceeding the capacity available in the hierarchy.
 
 ---
 
 # Document Architecture
 
-The document system separates application data, file storage, and vector retrieval.
+The document system separates application metadata, file storage, and vector retrieval.
 
-~~~text
+```text
 PostgreSQL + Prisma
-→ Documents
-→ Versions
-→ Metadata
+→ Document metadata
+→ Document versions
 → Access policies
 → Processing status
-→ Chunks
+→ Chunk metadata
 → Storage references
 → Vector references
 
@@ -209,75 +237,84 @@ Qdrant
 Redis + BullMQ
 → Caching
 → Background processing
-~~~
+```
+
+PostgreSQL remains the source of truth for authorization and document state.
+
+Amazon S3 stores files.
+
+Qdrant stores vectors for retrieval.
+
+Redis and BullMQ handle caching and asynchronous processing.
 
 ---
 
 # Document Lifecycle
 
-The platform preserves document history instead of overwriting files.
+Documents are versioned instead of overwritten.
 
-Planned lifecycle:
-
-~~~text
+```text
 Upload
 → Validate Access
 → Create Document
 → Store File in S3
 → Create Document Version
 → Queue Processing Job
-→ Extract Text / OCR
-→ Chunk Content
+→ Extract Text or OCR
+→ Create Chunks
 → Generate Embeddings
 → Index in Qdrant
-→ Mark READY
-~~~
+→ Mark Document READY
+```
 
-Features include:
+The document system supports:
 
 * Document upload
 * Metadata management
 * Automatic versioning
 * Processing status tracking
-* OCR support
+* OCR
 * Rollback
-* Soft delete and recovery
+* Soft deletion
+* Recovery
 * Authorized downloads using short-lived S3 presigned URLs
+
+Each update creates a new document version while preserving previous versions.
 
 ---
 
 # Permission-Aware Document Access
 
-Document access is separate from operational permissions.
+Operational permissions and document access are separate concepts.
 
-~~~text
+```text
 PermissionGrant
-→ May the user perform an operation?
+→ Can the user perform an operation?
 
 DocumentAccessPolicy
-→ May the user access this document?
-~~~
+→ Can the user access this document?
+```
 
-Access policies can target:
+Document access policies can target:
 
-~~~text
+```text
 ORGANIZATION
 UNIT
 USER
 ROLE
-~~~
+```
 
-Policies can be permanent or time-bound:
+Policies can also be time-bound:
 
-~~~text
+```text
 validFrom
 validUntil
 revokedAt
-~~~
+```
 
 Example:
 
-~~~text
+```text
 July 1 → July 15
 Finance only
 
@@ -286,17 +323,17 @@ Finance + Managers
 
 After August 1
 Entire organization
-~~~
+```
 
-Access changes do not require moving files or rebuilding embeddings.
+Changing document access does not require moving files or rebuilding embeddings.
 
-~~~text
+```text
 S3 File          → Unchanged
 Document Record  → Unchanged
 Chunks           → Unchanged
 Qdrant Vectors   → Unchanged
-Active Policy    → Changes with time
-~~~
+Active Policy    → Changes
+```
 
 PostgreSQL remains the authorization authority.
 
@@ -304,9 +341,9 @@ PostgreSQL remains the authorization authority.
 
 # Incremental Indexing
 
-When a document changes, the platform will avoid regenerating embeddings for unchanged content.
+When a document changes, the platform avoids regenerating embeddings for unchanged content.
 
-~~~text
+```text
 New Version
 → Extract Content
 → Create Chunks
@@ -315,13 +352,13 @@ New Version
 → Reuse Unchanged Chunks
 → Embed Only Changed Chunks
 → Update Qdrant
-~~~
+```
 
-Benefits:
+This provides:
 
 * Faster indexing
-* Lower embedding cost
-* Reduced duplicate processing
+* Lower embedding costs
+* Less duplicate processing
 * Faster document synchronization
 
 ---
@@ -330,7 +367,7 @@ Benefits:
 
 Every query passes through a permission-aware retrieval pipeline.
 
-~~~text
+```text
 User Query
       ↓
 Authentication
@@ -360,19 +397,19 @@ Answer Verification
 Citation Generation
       ↓
 Response
-~~~
+```
 
-The LLM must never receive unauthorized document content.
+Authorization is checked before retrieval and validated again before context reaches the LLM.
 
 ---
 
 # Qdrant Retrieval Model
 
-Qdrant stores embedding vectors and stable retrieval identifiers.
+Qdrant stores embedding vectors with stable identifiers.
 
 Example payload:
 
-~~~text
+```text
 {
     organizationId,
     documentId,
@@ -380,22 +417,24 @@ Example payload:
     chunkId,
     isCurrentVersion
 }
-~~~
+```
 
 Retrieval flow:
 
-~~~text
+```text
 User Query
 → Resolve Active Access in PostgreSQL
 → Determine Authorized Search Scope
 → Search Qdrant
 → Retrieve Candidate Chunks
 → Validate Authorization Again
-→ Rerank
+→ Rerank Results
 → Send Authorized Context to LLM
-~~~
+```
 
-Frequently changing access policies remain in PostgreSQL rather than being duplicated as the only authorization source across every vector.
+Frequently changing access policies remain in PostgreSQL instead of being treated as static vector metadata.
+
+This avoids rebuilding vectors whenever access rules change.
 
 ---
 
@@ -413,22 +452,24 @@ Techniques include:
 * Citation generation
 * Permission-aware context filtering
 
-If sufficient evidence cannot be retrieved, the system refuses to generate an unsupported answer.
+If sufficient evidence cannot be retrieved, the system should refuse to generate an unsupported answer.
 
 ---
 
 # Intelligent Query Caching
 
-The platform will use multiple cache layers:
+The platform uses multiple caching strategies:
 
-* Exact query cache
-* Semantic query cache
-* Redis response cache
+```text
+Exact Query Cache
+Semantic Query Cache
+Redis Response Cache
+```
 
-Before serving cached responses, the system validates:
+Before returning a cached response, the system validates:
 
 * Current user access
-* Document versions
+* Current document versions
 * Source chunk integrity
 * Confidence thresholds
 * Verification status
@@ -439,9 +480,9 @@ Only cache entries affected by changed documents or access conditions should be 
 
 # Configurable RAG Pipeline
 
-Major pipeline components can be enabled, disabled, or replaced through configuration.
+Major RAG components can be enabled, disabled, or replaced through configuration.
 
-~~~env
+```env
 # Retrieval
 RETRIEVAL_MODE=hybrid
 
@@ -468,46 +509,46 @@ METRICS_ENABLED=true
 # Models
 EMBEDDING_MODEL=bge-small-en
 LLM_PROVIDER=llama
-~~~
+```
 
-Configurable components include:
+The configurable pipeline includes:
 
-~~~text
+```text
 Retrieval
-→ Semantic
-→ Keyword
-→ Hybrid
+├── Semantic Search
+├── Keyword Search
+└── Hybrid Search
 
 Embeddings
-→ BGE
-→ E5
-→ MiniLM
+├── BGE
+├── E5
+└── MiniLM
 
 Query Processing
-→ Query Expansion
-→ Metadata Filtering
-→ Context Compression
+├── Query Expansion
+├── Metadata Filtering
+└── Context Compression
 
 Generation
-→ Multiple LLM Providers
-→ Streaming
-→ Citations
+├── Multiple LLM Providers
+├── Streaming
+└── Citations
 
 Reliability
-→ Hallucination Detection
-→ Answer Verification
+├── Hallucination Detection
+└── Answer Verification
 
 Performance
-→ Redis Caching
-→ Background Processing
-→ Incremental Indexing
-~~~
+├── Redis Caching
+├── Background Processing
+└── Incremental Indexing
+```
 
 ---
 
 # Performance Optimizations
 
-The project explores:
+The platform uses or explores:
 
 * Redis caching
 * BullMQ workers
@@ -521,11 +562,13 @@ The project explores:
 * Filtered vector retrieval
 * Version-aware cache invalidation
 
-Every major optimization should be benchmarked before and after implementation.
+Major optimizations should be benchmarked before and after implementation.
 
 ---
 
 # Evaluation Framework
+
+The system evaluates retrieval quality, generation quality, and performance.
 
 ## Retrieval Metrics
 
@@ -557,80 +600,36 @@ Every major optimization should be benchmarked before and after implementation.
 
 # Technology Stack
 
-## Frontend
+```text
+Frontend
+├── React
+├── Vite
+├── Axios
+└── CSS
 
-* React
-* Vite
-* Axios
-* CSS
+Backend
+├── Node.js
+└── Express.js
 
-## Backend
+Database
+├── PostgreSQL
+└── Prisma ORM
 
-* Node.js
-* Express.js
+File Storage
+└── Amazon S3
 
-## Database
+AI Services
+├── FastAPI
+├── Sentence Transformers
+└── Lightweight LLMs
 
-* PostgreSQL
-* Prisma ORM
+Vector Retrieval
+└── Qdrant
 
-## File Storage
-
-* Amazon S3
-
-## AI Services
-
-* FastAPI
-* Sentence Transformers
-* Lightweight LLMs
-
-## Retrieval Infrastructure
-
-* Qdrant
-
-## Background Processing and Caching
-
-* Redis
-* BullMQ
-
----
-
-# Development Roadmap
-
-~~~text
-Phase 1  → Backend Foundation                    ✅
-Phase 2  → Authentication                        ✅
-Phase 3  → Organization Management               ✅
-Phase 4  → Access and Member Management          ✅
-Phase 5  → Document Management                   ⏳
-Phase 6  → Document Processing                   ⏳
-Phase 7  → Retrieval Infrastructure              ⏳
-Phase 8  → RAG Pipeline                          ⏳
-Phase 9  → Reliability and Caching               ⏳
-Phase 10 → Evaluation and Monitoring             ⏳
-Phase 11 → Deployment                            ⏳
-~~~
-
----
-
-# Learning Outcomes
-
-This project provides practical experience with:
-
-* Retrieval-Augmented Generation
-* Enterprise backend development
-* Secure AI systems
-* Multi-tenant architecture
-* Hierarchy-scoped authorization
-* Document lifecycle management
-* Amazon S3 object storage
-* Vector databases
-* Distributed processing
-* Asynchronous programming
-* Event-driven architecture
-* Caching strategies
-* Performance optimization
-* AI evaluation and benchmarking
+Background Processing and Caching
+├── Redis
+└── BullMQ
+```
 
 ---
 
@@ -642,4 +641,6 @@ Every major engineering decision should answer:
 2. How does it improve the system?
 3. Can the improvement be measured?
 
-The objective is not to build another chatbot. The goal is to engineer a secure, scalable, explainable, and measurable enterprise knowledge retrieval platform.
+The goal is not to build another chatbot.
+
+The goal is to engineer a secure, scalable, explainable, permission-aware, and measurable enterprise knowledge retrieval platform.

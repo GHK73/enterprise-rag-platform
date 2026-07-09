@@ -1,6 +1,6 @@
 # RAG Database Schema
 
-Database design for the Enterprise Retrieval-Augmented Generation (RAG) Platform.
+Database architecture for the Enterprise Retrieval-Augmented Generation (RAG) Platform.
 
 > **Current Phase:** Phase 5 — Document Management Architecture
 
@@ -8,71 +8,56 @@ Database design for the Enterprise Retrieval-Augmented Generation (RAG) Platform
 
 # Overview
 
-| Item | Value |
+| Component | Technology |
 | --- | --- |
 | Database | PostgreSQL |
 | ORM | Prisma |
-| Connection | `DATABASE_URL` |
-| Schema | `backend/prisma/schema.prisma` |
 | File Storage | Amazon S3 |
 | Vector Storage | Qdrant |
-
-The database currently supports:
-
-* Authentication
-* Organizations and hierarchy
-* Internal roles
-* Scoped permissions
-* Permission delegation and revocation
-* Organization unit capacity
-* Invitations
-* Member management
-* Unit reorganization
-
-The next schema extension will support:
-
-* Documents
-* Document versions
-* Time-aware access policies
-* Processing status
-* Document chunks
-* S3 object references
-* Qdrant vector mappings
-
----
-
-# Core Architecture
+| Background Jobs | Redis + BullMQ |
 
 ~~~text
 PostgreSQL
 → Application source of truth
-→ Organizations
-→ Users
-→ Permissions
-→ Documents
-→ Versions
-→ Access policies
-→ Chunks
-→ Processing state
+→ Users and organizations
+→ Permissions and access policies
+→ Document metadata and chunks
 
 Amazon S3
 → Original files
-→ Versioned file objects
+→ Versioned objects
 → Processed artifacts
 
 Qdrant
 → Embedding vectors
 → Chunk references
-→ Filtered vector retrieval
+→ Filtered retrieval
 ~~~
 
-The database stores metadata and references. Large files and embedding vectors are not stored directly in PostgreSQL.
+Large files and embedding vectors are not stored directly in PostgreSQL.
 
 ---
 
-# Authorization Model
+# Current Architecture
 
-The platform uses scoped, delegated authorization:
+## Organization Hierarchy
+
+~~~text
+COMPANY → DEPARTMENT → TEAM → GROUP
+~~~
+
+Valid relationships:
+
+~~~text
+DEPARTMENT → COMPANY
+TEAM       → DEPARTMENT
+GROUP      → TEAM
+COMPANY    → No Parent
+~~~
+
+---
+
+## Authorization Model
 
 ~~~text
 Effective Access
@@ -88,121 +73,64 @@ The system separates:
 
 ~~~text
 Role
-→ Internal organizational classification
+→ Organizational classification
 
 Permission
-→ Action the user may perform
+→ Allowed operation
 
 Scope
-→ Organization subtree where the action applies
+→ Organization subtree
 
 Delegation
-→ Authority that granted the permission
+→ Authority to grant the permission
 ~~~
 
 Roles do not directly grant access.
 
-Example:
-
-~~~text
-User
-├── Role: MANAGER
-├── Unit: Backend
-└── Permission Grant
-      ├── Permission: INVITE_MEMBER
-      ├── Scope: Backend
-      ├── Granted By: Engineering Head
-      └── Can Delegate: true
-~~~
-
-The permission applies to `Backend` and its descendants, but not to parents, siblings, or other branches.
+A permission scoped to a unit applies to that unit and its descendants.
 
 ---
 
-# Organization Hierarchy
-
-~~~text
-COMPANY → DEPARTMENT → TEAM → GROUP
-~~~
-
-Valid parent relationships:
-
-~~~text
-DEPARTMENT → COMPANY
-TEAM       → DEPARTMENT
-GROUP      → TEAM
-COMPANY    → No Parent
-~~~
-
-Example:
-
-~~~text
-Company
-├── Engineering
-│   ├── Backend
-│   │   ├── API Group
-│   │   └── Platform Group
-│   └── Frontend
-├── HR
-└── Finance
-~~~
-
-A permission scoped to `Backend` applies to:
-
-~~~text
-Backend          ✅
-API Group        ✅
-Platform Group   ✅
-
-Engineering      ❌
-Frontend         ❌
-HR               ❌
-Finance          ❌
-~~~
-
----
-
-# Enums
+# Current Enums
 
 ## Role
 
-| Value | Description |
-| --- | --- |
-| `OWNER` | Organization owner |
-| `ADMIN` | Organization administrator |
-| `MANAGER` | Management-level member |
-| `MEMBER` | Standard member |
+~~~text
+OWNER
+ADMIN
+MANAGER
+MEMBER
+~~~
 
-`User.role` is optional until the user creates or joins an organization.
-
-Roles are stable internal identifiers. Actual access is controlled by permission grants.
+`User.role` remains `null` until the user creates or joins an organization.
 
 ---
 
 ## OrganizationUnitType
 
-| Value | Description |
-| --- | --- |
-| `COMPANY` | Root organization unit |
-| `DEPARTMENT` | Department |
-| `TEAM` | Team |
-| `GROUP` | Sub-team or group |
+~~~text
+COMPANY
+DEPARTMENT
+TEAM
+GROUP
+~~~
 
 ---
 
 ## Permission
 
-| Permission | Purpose |
-| --- | --- |
-| `INVITE_MEMBER` | Invite a user |
-| `REMOVE_MEMBER` | Remove a member |
-| `UPDATE_MEMBER` | Update member information |
-| `ASSIGN_ROLE` | Assign an internal role |
-| `MOVE_MEMBER` | Move a member between units |
-| `CREATE_UNIT` | Create organization units |
-| `UPDATE_UNIT` | Update organization units |
-| `DELETE_UNIT` | Delete organization units |
-| `MOVE_UNIT` | Move units between valid parents |
+~~~text
+INVITE_MEMBER
+REMOVE_MEMBER
+UPDATE_MEMBER
+ASSIGN_ROLE
+MOVE_MEMBER
+
+CREATE_UNIT
+UPDATE_UNIT
+DELETE_UNIT
+MOVE_UNIT
+~~~
 
 Future permissions will cover documents, retrieval, analytics, and administration.
 
@@ -210,16 +138,16 @@ Future permissions will cover documents, retrieval, analytics, and administratio
 
 ## InvitationStatus
 
-| Value | Description |
-| --- | --- |
-| `PENDING` | Waiting for acceptance |
-| `ACCEPTED` | Accepted |
-| `EXPIRED` | No longer valid |
-| `REVOKED` | Cancelled |
+~~~text
+PENDING
+ACCEPTED
+EXPIRED
+REVOKED
+~~~
 
 ---
 
-# Current Entity Relationships
+# Current Relationships
 
 ~~~text
 Organization
@@ -264,13 +192,14 @@ erDiagram
 
 Top-level tenant.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `String` | Primary key |
-| `name` | `String` | Organization name |
-| `description` | `String?` | Optional description |
-| `createdAt` | `DateTime` | Creation timestamp |
-| `updatedAt` | `DateTime` | Last update |
+~~~text
+id
+name
+description
+revision
+createdAt
+updatedAt
+~~~
 
 Relations:
 
@@ -278,22 +207,44 @@ Relations:
 * PermissionGrants
 * Invitations
 
+`revision` is a monotonically increasing number used for lightweight multi-user synchronization.
+
+Every successful organization-changing transaction increments it.
+
+~~~text
+Organization Change
++
+Revision Increment
+→ Commit Together
+or
+→ Roll Back Together
+~~~
+
+Covered changes include:
+
+* Organization updates
+* Unit creation, rename, movement, and deletion
+* Capacity updates
+* Member role updates
+* Member movement and removal
+* Invitation acceptance
+
 ---
 
 ## OrganizationUnit
 
-Represents a node in the organization hierarchy.
+Represents one node in the hierarchy.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `String` | Primary key |
-| `name` | `String` | Unit name |
-| `type` | `OrganizationUnitType` | Unit type |
-| `organizationId` | `String` | Organization |
-| `parentId` | `String?` | Parent unit |
-| `allocatedCapacity` | `Int?` | Capacity allocated to the subtree |
-| `createdAt` | `DateTime` | Creation timestamp |
-| `updatedAt` | `DateTime` | Last update |
+~~~text
+id
+name
+type
+organizationId
+parentId
+allocatedCapacity
+createdAt
+updatedAt
+~~~
 
 Relations:
 
@@ -305,8 +256,10 @@ Relations:
 
 Indexes:
 
-* `organizationId`
-* `parentId`
+~~~text
+organizationId
+parentId
+~~~
 
 ---
 
@@ -314,25 +267,18 @@ Indexes:
 
 Authenticated user with optional organization membership.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `String` | Primary key |
-| `fullName` | `String` | Full name |
-| `email` | `String` | Unique email |
-| `passwordHash` | `String` | Hashed password |
-| `role` | `Role?` | Internal role |
-| `isActive` | `Boolean` | Account status |
-| `isVerified` | `Boolean` | Verification status |
-| `unitId` | `String?` | Assigned unit |
-| `createdAt` | `DateTime` | Creation timestamp |
-| `updatedAt` | `DateTime` | Last update |
-
-Relations:
-
-* OrganizationUnit
-* Received PermissionGrants
-* Given PermissionGrants
-* Sent Invitations
+~~~text
+id
+fullName
+email
+passwordHash
+role
+isActive
+isVerified
+unitId
+createdAt
+updatedAt
+~~~
 
 A user outside an organization has:
 
@@ -345,28 +291,28 @@ unitId = null
 
 ## PermissionGrant
 
-Represents an atomic permission delegated within a hierarchy scope.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `String` | Primary key |
-| `permission` | `Permission` | Granted action |
-| `organizationId` | `String` | Organization |
-| `userId` | `String` | Receiving user |
-| `scopeUnitId` | `String` | Allowed subtree |
-| `grantedById` | `String` | Granting user |
-| `canDelegate` | `Boolean` | May delegate permission |
-| `isActive` | `Boolean` | Active status |
-| `revokedAt` | `DateTime?` | Revocation timestamp |
-| `createdAt` | `DateTime` | Creation timestamp |
-| `updatedAt` | `DateTime` | Last update |
-
-A permission is valid only when:
+Represents one delegated permission.
 
 ~~~text
-Grant Is Active
+id
+permission
+organizationId
+userId
+scopeUnitId
+grantedById
+canDelegate
+isActive
+revokedAt
+createdAt
+updatedAt
+~~~
+
+A grant is valid when:
+
+~~~text
+Active Grant
 → Organization Matches
-→ Target Is Inside Scope
+→ Target Inside Scope
 → ALLOW
 ~~~
 
@@ -380,7 +326,7 @@ Has Permission
 → Create Grant
 ~~~
 
-Historical grants are preserved using revoke + new grant.
+Historical grants are preserved through revocation rather than deletion.
 
 ---
 
@@ -388,36 +334,36 @@ Historical grants are preserved using revoke + new grant.
 
 Represents an invitation to join an organization.
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `String` | Primary key |
-| `email` | `String` | Invited email |
-| `organizationId` | `String` | Target organization |
-| `unitId` | `String` | Target unit |
-| `role` | `Role` | Role after acceptance |
-| `invitedById` | `String` | Inviting user |
-| `token` | `String` | Unique token |
-| `status` | `InvitationStatus` | Lifecycle state |
-| `expiresAt` | `DateTime` | Expiration |
-| `createdAt` | `DateTime` | Creation timestamp |
-| `updatedAt` | `DateTime` | Last update |
+~~~text
+id
+email
+organizationId
+unitId
+role
+invitedById
+token
+status
+expiresAt
+createdAt
+updatedAt
+~~~
 
-Invitation acceptance:
+Acceptance flow:
 
 ~~~text
 Validate Token
-→ Validate Email
-→ Validate Expiry
-→ Validate Unit Capacity
+→ Validate Email + Expiry
+→ Validate Capacity
 → Assign Unit + Role
 → Mark ACCEPTED
+→ Increment Organization Revision
 ~~~
 
-Permissions are granted separately.
+Permissions remain separate from membership.
 
 ---
 
-# Tree Capacity
+# Capacity Model
 
 Only `allocatedCapacity` is stored.
 
@@ -429,35 +375,24 @@ Allocated Capacity
 − Direct Child Allocations
 ~~~
 
-Example:
-
-~~~text
-Engineering Capacity = 100
-
-├── Direct Members = 10
-├── Backend Allocation = 40
-├── Frontend Allocation = 30
-└── Remaining Capacity = 20
-~~~
-
 Capacity flows downward:
 
 ~~~text
 COMPANY
-   ↓
+↓
 DEPARTMENT
-   ↓
+↓
 TEAM
-   ↓
+↓
 GROUP
 ~~~
 
-A child cannot receive more than the parent's available capacity.
+A child cannot receive more than its parent's available capacity.
 
 Capacity validation is applied during:
 
-* Invitation acceptance
 * Capacity updates
+* Invitation acceptance
 * Member movement
 * Unit movement
 
@@ -472,38 +407,27 @@ Update Role
 → ASSIGN_ROLE
 
 Move Member
-→ MOVE_MEMBER on source and destination scopes
+→ MOVE_MEMBER on source and destination
 
 Remove Member
 → REMOVE_MEMBER
 ~~~
 
-All operations validate:
-
-~~~text
-Organization Isolation
-→ Permission
-→ Hierarchy Scope
-→ OWNER Protection
-→ Operation-Specific Constraints
-~~~
+All operations validate organization isolation, permission scope, owner protection, and operation-specific constraints.
 
 Removing a member:
 
 ~~~text
-Validate REMOVE_MEMBER
-→ Validate Scope
-→ Protect OWNER
-→ Revoke Active Permission Grants
+Validate Permission
+→ Revoke Active Grants
 → Set role = null
 → Set unitId = null
+→ Increment Revision
 ~~~
 
 ---
 
 # Unit Reorganization
-
-Units can move between valid parents.
 
 ~~~text
 Select Unit
@@ -515,56 +439,72 @@ Select Unit
 → Validate Destination Scope
 → Validate Capacity
 → Update parentId
+→ Increment Revision
 ~~~
 
 Rules:
 
 ~~~text
-COMPANY
-→ Cannot Move
-
-DEPARTMENT
-→ COMPANY only
-
-TEAM
-→ DEPARTMENT only
-
-GROUP
-→ TEAM only
+DEPARTMENT → COMPANY
+TEAM       → DEPARTMENT
+GROUP      → TEAM
+COMPANY    → Cannot Move
 ~~~
 
-Permission delegation history is not rewritten when a unit moves.
+Permission history is not rewritten when a unit moves.
+
+---
+
+# Organization Synchronization
+
+The system uses revision-based stale-state detection.
+
+~~~text
+Frontend Loads Organization
+→ Store Revision
+
+Later
+→ Fetch Current Revision
+
+Same Revision
+→ No Action
+
+Different Revision
+→ Organization State Is Stale
+→ Fetch Latest Data
+~~~
+
+This avoids frequent full-data polling while supporting multi-user organization changes.
 
 ---
 
 # Phase 5 — Planned Document Architecture
 
-The document system will separate application metadata, file storage, and vector storage.
+The document system separates metadata, file storage, and vector storage.
 
 ~~~text
 PostgreSQL
-→ Document metadata
+→ Documents
 → Versions
-→ Access policies
-→ Processing status
+→ Access Policies
+→ Processing State
 → Chunks
-→ Storage references
-→ Vector references
+→ External Storage References
 
 Amazon S3
-→ Original files
-→ Versioned objects
-→ Processed artifacts
+→ Original Files
+→ Versioned Objects
+→ Processed Artifacts
 
 Qdrant
-→ Embedding vectors
-→ Chunk references
-→ Retrieval metadata
+→ Embeddings
+→ Chunk References
+→ Retrieval Metadata
 ~~~
 
 ---
 
-# Planned Document Relationships
+# Planned Relationships
 
 ~~~text
 Organization
@@ -576,8 +516,6 @@ Organization
       └── DocumentAccessPolicies
 ~~~
 
-Planned relationship model:
-
 ~~~mermaid
 erDiagram
     Organization ||--o{ Document : owns
@@ -587,28 +525,15 @@ erDiagram
     Document ||--o{ DocumentAccessPolicy : controls
 
     DocumentVersion ||--o{ DocumentChunk : contains
-
-    DocumentChunk ||--o| QdrantPoint : maps
 ~~~
 
-`QdrantPoint` is a conceptual external mapping, not necessarily a PostgreSQL model.
+Qdrant points are external vector records, not necessarily PostgreSQL models.
 
 ---
 
 # Planned Document Model
 
-Represents the logical document across all versions.
-
-Planned responsibilities:
-
-* Organization ownership
-* Display metadata
-* Current version reference
-* Lifecycle status
-* Soft deletion
-* Access policies
-
-Expected fields:
+Represents one logical document across all versions.
 
 ~~~text
 id
@@ -623,15 +548,22 @@ createdAt
 updatedAt
 ~~~
 
-The `Document` record does not store the actual file.
+Responsibilities:
+
+* Organization ownership
+* Display metadata
+* Current version reference
+* Lifecycle state
+* Soft deletion
+* Access policies
+
+The actual file is not stored in the database.
 
 ---
 
 # Planned DocumentVersion Model
 
 Represents one immutable application-level version.
-
-Expected fields:
 
 ~~~text
 id
@@ -653,12 +585,9 @@ createdById
 createdAt
 ~~~
 
-Application versioning and S3 versioning solve different problems:
-
 ~~~text
 DocumentVersion
-→ Business history
-→ Processing history
+→ Business and processing history
 → Chunk ownership
 → Embedding ownership
 → Rollback
@@ -668,15 +597,11 @@ S3 Versioning
 → Object recovery
 ~~~
 
-The application will maintain its own version records even if S3 versioning is enabled.
+Application versions remain separate from S3 object versioning.
 
 ---
 
-# Planned S3 Storage Model
-
-S3 stores file objects, not access-control truth.
-
-Recommended object key structure:
+# Planned S3 Storage
 
 ~~~text
 organizations/
@@ -690,21 +615,15 @@ organizations/
                     └── ocr.json
 ~~~
 
-PostgreSQL stores the S3 object key:
-
-~~~text
-organizations/{organizationId}/documents/{documentId}/versions/{versionId}/original
-~~~
-
-The database should not store permanent public URLs.
+PostgreSQL stores object keys, not permanent public URLs.
 
 Download flow:
 
 ~~~text
-User Requests Download
+Request Download
 → Authenticate
-→ Validate Active Document Access
-→ Generate Short-Lived S3 Presigned URL
+→ Validate Document Access
+→ Generate Short-Lived Presigned URL
 → Download
 ~~~
 
@@ -712,21 +631,19 @@ The S3 bucket remains private.
 
 ---
 
-# Planned Document Access Model
+# Planned Document Access
 
-Document access is separate from organizational operation permissions.
-
-The system must answer two different questions:
+Document access is separate from organization operation permissions.
 
 ~~~text
 PermissionGrant
-→ May this user perform an operation?
+→ May the user perform an operation?
 
 DocumentAccessPolicy
-→ May this user access this document?
+→ May the user access this document?
 ~~~
 
-Planned access subjects:
+Subjects:
 
 ~~~text
 ORGANIZATION
@@ -735,7 +652,7 @@ USER
 ROLE
 ~~~
 
-Planned access permissions:
+Permissions:
 
 ~~~text
 VIEW
@@ -745,15 +662,13 @@ DELETE
 MANAGE_ACCESS
 ~~~
 
-Access policies may be permanent or time-bound.
-
-Expected fields:
+Expected policy fields:
 
 ~~~text
 id
 documentId
-
 subjectType
+
 unitId
 userId
 role
@@ -771,7 +686,7 @@ createdAt
 updatedAt
 ~~~
 
-An access policy is valid when:
+A policy is active when:
 
 ~~~text
 isActive = true
@@ -783,102 +698,37 @@ AND (
 )
 ~~~
 
----
-
-# Temporary and Scheduled Access
-
-Access changes do not move or duplicate document data.
-
-Example:
-
-~~~text
-July 1 → July 15
-Finance only
-
-July 15 → August 1
-Finance + Managers
-
-After August 1
-Entire Organization
-~~~
-
-This is represented using separate policies:
-
-~~~text
-Policy A
-Subject    = Finance Unit
-Valid From = July 1
-Valid Until = July 15
-
-Policy B
-Subject    = MANAGER Role
-Valid From = July 15
-Valid Until = August 1
-
-Policy C
-Subject    = ORGANIZATION
-Valid From = August 1
-Valid Until = null
-~~~
-
-At the transition time:
-
-~~~text
-S3 File          → Unchanged
-Document Record  → Unchanged
-Chunks           → Unchanged
-Qdrant Vectors   → Unchanged
-Active Policy    → Changes Automatically
-~~~
-
-PostgreSQL remains the authorization authority.
+Time-based policies allow temporary access and scheduled document release without moving files or rebuilding embeddings.
 
 ---
 
 # Planned DocumentChunk Model
 
-Represents one retrievable text segment from a document version.
-
-Expected fields:
+Represents one retrievable text segment.
 
 ~~~text
 id
 documentId
 versionId
-
 chunkIndex
 content
 contentHash
 tokenCount
-
 qdrantPointId
-
 createdAt
 ~~~
 
-PostgreSQL stores:
+PostgreSQL stores chunk content and relationships.
 
-* Chunk text
-* Chunk order
-* Content hash
-* Document and version relationships
-* Qdrant point mapping
-
-Qdrant stores:
-
-* Embedding vector
-* Retrieval metadata
+Qdrant stores embedding vectors and retrieval metadata.
 
 ---
 
 # Planned Qdrant Mapping
 
-Each Qdrant point will contain a vector and stable identifiers.
+Each vector contains stable identifiers:
 
 ~~~text
-Vector
-
-Payload:
 {
     organizationId,
     documentId,
@@ -888,44 +738,41 @@ Payload:
 }
 ~~~
 
-Frequently changing ACL lists should not be copied as the only authorization source into every vector.
+Frequently changing access lists will not be treated as the only authorization source inside Qdrant.
 
 Retrieval flow:
 
 ~~~text
 User Query
-→ Resolve Active Access in PostgreSQL
+→ Resolve Access in PostgreSQL
 → Determine Authorized Documents
 → Search Qdrant with Filters
-→ Return Candidate Chunks
-→ Final Authorization Validation
+→ Validate Authorization Again
 → Rerank
 → Send Authorized Context to LLM
 ~~~
 
-The LLM must never receive unauthorized document content.
+Unauthorized content must never reach the LLM.
 
 ---
 
-# Planned Document Processing Lifecycle
+# Planned Processing Lifecycle
 
 ~~~text
 Upload Requested
-→ Validate User Permission
-→ Create Document
-→ Create DocumentVersion
-→ Upload File to S3
+→ Validate Permission
+→ Create Document + Version
+→ Upload to S3
 → Mark QUEUED
 → Add BullMQ Job
 → Extract Text / OCR
-→ Chunk Content
-→ Store Chunks
+→ Create Chunks
 → Generate Embeddings
 → Index in Qdrant
 → Mark READY
 ~~~
 
-Planned statuses:
+Statuses:
 
 ~~~text
 UPLOADING
@@ -937,40 +784,17 @@ FAILED
 
 ---
 
-# Referential Integrity
-
-Current relationships:
-
-| Relationship | On Delete |
-| --- | --- |
-| OrganizationUnit → Organization | Cascade |
-| OrganizationUnit → Parent Unit | Cascade |
-| User → OrganizationUnit | Restrict |
-| PermissionGrant → Organization | Cascade |
-| PermissionGrant → Receiving User | Cascade |
-| PermissionGrant → Scope Unit | Cascade |
-| PermissionGrant → Granting User | Restrict |
-| Invitation → Organization | Cascade |
-| Invitation → OrganizationUnit | Cascade |
-| Invitation → Inviting User | Restrict |
-
-Document referential rules will be finalized before updating `schema.prisma`.
-
----
-
 # Current Status
 
 | Component | Status |
 | --- | --- |
 | PostgreSQL and Prisma | ✅ |
-| Authentication schema | ✅ |
-| Organization schema | ✅ |
-| Hierarchy schema | ✅ |
-| Permission schema | ✅ |
-| Invitation schema | ✅ |
-| Capacity foundation | ✅ |
-| Member management support | ✅ |
-| Unit reorganization support | ✅ |
+| Authentication | ✅ |
+| Organization hierarchy | ✅ |
+| Permissions and invitations | ✅ |
+| Capacity and member management | ✅ |
+| Unit reorganization | ✅ |
+| Organization synchronization | ✅ |
 | Document architecture | ⏳ |
 | Document schema | ⏳ |
 | S3 integration | ⏳ |
@@ -987,11 +811,11 @@ Document Model
 → DocumentVersion Model
 → DocumentAccessPolicy Model
 → DocumentChunk Model
-→ S3 Storage Mapping
+→ S3 Mapping
 → Qdrant Mapping
 → Processing Lifecycle
 → Referential Integrity
 → Update schema.prisma
 ~~~
 
-No Prisma document models should be added until these relationships and lifecycle rules are finalized.
+No Prisma document models should be added until the relationships and lifecycle rules are finalized.

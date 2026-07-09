@@ -15,7 +15,8 @@ import {
     updateMemberRole,
     moveMember,
     removeMember,
-    moveOrganizationUnit
+    moveOrganizationUnit,
+    getOrganizationRevision
 } from "../controllers/organization.controller.js";
 import authenticate from "../middleware/auth.middleware.js";
 
@@ -24,6 +25,12 @@ const router = Router();
 router.get("/",authenticate,getOrganization);
 router.post("/",authenticate,createOrganization);
 router.patch("/",authenticate,updateOrganization);
+
+router.get(
+    "/revision",
+    authenticate,
+    getOrganizationRevision
+);
 
 router.get(
     "/units",

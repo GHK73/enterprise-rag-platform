@@ -46,6 +46,8 @@ model Organization {
   name        String
   description String?
 
+  revision Int @default(1)
+
   units            OrganizationUnit[]
   permissionGrants PermissionGrant[]
 

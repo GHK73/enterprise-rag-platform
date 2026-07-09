@@ -338,6 +338,11 @@ export const acceptInvitation = async(userId,token)=>{
                 status: "ACCEPTED"
             }
         });
+
+        await incrementOrganizationRevision(
+            invitation.organizationId,
+            tx
+        );
     
         return updatedUser;
     });

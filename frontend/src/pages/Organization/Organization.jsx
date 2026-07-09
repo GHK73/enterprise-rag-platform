@@ -1,13 +1,18 @@
-import {useEffect,useState} from "react";
+import {useEffect,useMemo,useState} from "react";
 import api from "../../api/axios";
 import "./Organization.css";
 
 function Organization(){
     const [organization,setOrganization] = useState(null);
     const [organizationUnits,setOrganizationUnits] = useState([]);
+    const [organizationMembers,setOrganizationMembers] = useState([]);
     const [loading,setLoading] = useState(true);
     const [error,setError] = useState("");
     const [message,setMessage] = useState("");
+
+    const [selectedUnitId,setSelectedUnitId] = useState(null);
+    const [expandedUnitIds,setExpandedUnitIds] = useState([]);
+    const [memberSearch,setMemberSearch] = useState("");
 
     const [name,setName] = useState("");
     const [parentId,setParentId] = useState("");
@@ -28,14 +33,18 @@ function Organization(){
     const [allocatedCapacity,setAllocatedCapacity] = useState("");
     const [updatingCapacity,setUpdatingCapacity] = useState(false);
 
-    const [organizationMembers,setOrganizationMembers] = useState([]);
     const [editingMemberId,setEditingMemberId] = useState(null);
     const [editingRole,setEditingRole] = useState("");
     const [updatingMemberRole,setUpdatingMemberRole] = useState(false);
+
     const [movingMemberId,setMovingMemberId] = useState(null);
     const [destinationUnitId,setDestinationUnitId] = useState("");
     const [movingMember,setMovingMember] = useState(false);
+
     const [removingMemberId,setRemovingMemberId] = useState(null);
+    const [organizationRevision,setOrganizationRevision] = useState(null);
+    const [latestOrganizationRevision,setLatestOrganizationRevision] = useState(null);
+    const [checkingRevision,setCheckingRevision] = useState(false);
 
     useEffect(()=>{
         const fetchOrganizationData = async()=>{
@@ -43,16 +52,47 @@ function Organization(){
                 const [
                     organizationResponse,
                     unitsResponse,
-                    membersResponse
+                    membersResponse,
+                    revisionResponse
                 ] = await Promise.all([
                     api.get("/organization"),
                     api.get("/organization/units"),
-                    api.get("/organization/members")
+                    api.get("/organization/members"),
+                    api.get("/organization/revision")
                 ]);
-
-                setOrganization(organizationResponse.data.data);
-                setOrganizationUnits(unitsResponse.data.data);
-                setOrganizationMembers(membersResponse.data.data);
+    
+                const organizationData =
+                    organizationResponse.data.data;
+    
+                const unitsData =
+                    unitsResponse.data.data;
+    
+                const membersData =
+                    membersResponse.data.data;
+    
+                const revisionData =
+                    revisionResponse.data.data;
+    
+                setOrganization(organizationData);
+                setOrganizationUnits(unitsData);
+                setOrganizationMembers(membersData);
+    
+                setOrganizationRevision(
+                    revisionData.revision
+                );
+    
+                setLatestOrganizationRevision(
+                    revisionData.revision
+                );
+    
+                const rootUnit = unitsData.find(
+                    (unit)=>unit.type === "COMPANY"
+                );
+    
+                if(rootUnit){
+                    setSelectedUnitId(rootUnit.id);
+                    setExpandedUnitIds([rootUnit.id]);
+                }
             }
             catch(error){
                 setError(
@@ -64,9 +104,150 @@ function Organization(){
                 setLoading(false);
             }
         };
-
+    
         fetchOrganizationData();
     },[]);
+
+    const handleCheckRevision = async()=>{
+        try{
+            setCheckingRevision(true);
+            setError("");
+    
+            const response = await api.get(
+                "/organization/revision"
+            );
+    
+            setLatestOrganizationRevision(
+                response.data.data.revision
+            );
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to check organization updates"
+            );
+        }
+        finally{
+            setCheckingRevision(false);
+        }
+    };
+
+    useEffect(()=>{
+        const checkForOrganizationUpdates = async()=>{
+            if(document.visibilityState !== "visible"){
+                return;
+            }
+    
+            try{
+                const response = await api.get(
+                    "/organization/revision"
+                );
+    
+                setLatestOrganizationRevision(
+                    response.data.data.revision
+                );
+            }
+            catch(error){
+                console.error(
+                    "Failed to check organization revision",
+                    error
+                );
+            }
+        };
+    
+        const handleVisibilityChange = ()=>{
+            if(document.visibilityState === "visible"){
+                checkForOrganizationUpdates();
+            }
+        };
+    
+        const intervalId = setInterval(
+            checkForOrganizationUpdates,
+            60000
+        );
+    
+        document.addEventListener(
+            "visibilitychange",
+            handleVisibilityChange
+        );
+    
+        return ()=>{
+            clearInterval(intervalId);
+    
+            document.removeEventListener(
+                "visibilitychange",
+                handleVisibilityChange
+            );
+        };
+    },[]);
+
+    const handleRefreshOrganizationChanges = async()=>{
+        try{
+            setError("");
+    
+            const [
+                organizationResponse,
+                unitsResponse,
+                membersResponse,
+                revisionResponse
+            ] = await Promise.all([
+                api.get("/organization"),
+                api.get("/organization/units"),
+                api.get("/organization/members"),
+                api.get("/organization/revision")
+            ]);
+    
+            const organizationData =
+                organizationResponse.data.data;
+    
+            const unitsData =
+                unitsResponse.data.data;
+    
+            const membersData =
+                membersResponse.data.data;
+    
+            const revisionData =
+                revisionResponse.data.data;
+    
+            setOrganization(organizationData);
+            setOrganizationUnits(unitsData);
+            setOrganizationMembers(membersData);
+    
+            setOrganizationRevision(
+                revisionData.revision
+            );
+    
+            setLatestOrganizationRevision(
+                revisionData.revision
+            );
+    
+            const selectedUnitStillExists =
+                unitsData.some(
+                    (unit)=>unit.id === selectedUnitId
+                );
+    
+            if(!selectedUnitStillExists){
+                const rootUnit = unitsData.find(
+                    (unit)=>unit.type === "COMPANY"
+                );
+    
+                setSelectedUnitId(
+                    rootUnit?.id || null
+                );
+            }
+    
+            setCapacityData({});
+            setMessage(
+                "Organization changes refreshed successfully"
+            );
+        }
+        catch(error){
+            setError(
+                error.response?.data?.message ||
+                "Failed to refresh organization changes"
+            );
+        }
+    };
 
     const getChildType = (parentType)=>{
         const hierarchy = {
@@ -86,6 +267,108 @@ function Organization(){
         };
 
         return hierarchy[unitType];
+    };
+
+    const unitsByParent = useMemo(()=>{
+        const unitMap = {};
+
+        organizationUnits.forEach((unit)=>{
+            const key = unit.parentId || "ROOT";
+
+            if(!unitMap[key]){
+                unitMap[key] = [];
+            }
+
+            unitMap[key].push(unit);
+        });
+
+        return unitMap;
+    },[organizationUnits]);
+
+    const rootUnit = useMemo(
+        ()=>organizationUnits.find(
+            (unit)=>unit.type === "COMPANY"
+        ),
+        [organizationUnits]
+    );
+
+    const selectedUnit = useMemo(
+        ()=>organizationUnits.find(
+            (unit)=>unit.id === selectedUnitId
+        ),
+        [organizationUnits,selectedUnitId]
+    );
+
+    const selectedUnitMembers = useMemo(
+        ()=>organizationMembers.filter(
+            (member)=>member.unitId === selectedUnitId
+        ),
+        [organizationMembers,selectedUnitId]
+    );
+
+    const filteredSelectedUnitMembers = useMemo(()=>{
+        const searchValue = memberSearch
+            .trim()
+            .toLowerCase();
+
+        if(!searchValue){
+            return selectedUnitMembers;
+        }
+
+        return selectedUnitMembers.filter((member)=>
+            member.fullName
+                .toLowerCase()
+                .includes(searchValue) ||
+            member.email
+                .toLowerCase()
+                .includes(searchValue)
+        );
+    },[selectedUnitMembers,memberSearch]);
+
+    const availableParentUnits = useMemo(
+        ()=>organizationUnits.filter(
+            (unit)=>unit.type !== "GROUP"
+        ),
+        [organizationUnits]
+    );
+
+    const selectedParentUnit = organizationUnits.find(
+        (unit)=>unit.id === parentId
+    );
+
+    const childType = selectedParentUnit
+        ? getChildType(selectedParentUnit.type)
+        : null;
+
+    const handleToggleUnit = (unitId)=>{
+        setExpandedUnitIds((currentIds)=>
+            currentIds.includes(unitId)
+                ? currentIds.filter((id)=>id !== unitId)
+                : [...currentIds,unitId]
+        );
+    };
+
+    const handleSelectUnit = (unit)=>{
+        setSelectedUnitId(unit.id);
+        setMemberSearch("");
+
+        setEditingUnitId(null);
+        setEditingName("");
+
+        setMovingUnitId(null);
+        setDestinationParentId("");
+
+        setEditingCapacityId(null);
+        setAllocatedCapacity("");
+
+        setEditingMemberId(null);
+        setEditingRole("");
+
+        setMovingMemberId(null);
+        setDestinationUnitId("");
+
+        setError("");
+        setMessage("");
     };
 
     const handleCreateUnit = async(e)=>{
@@ -121,11 +404,21 @@ function Organization(){
                 }
             );
 
+            const createdUnit = response.data.data;
+
             setOrganizationUnits((currentUnits)=>[
                 ...currentUnits,
-                response.data.data
+                createdUnit
             ]);
 
+            setExpandedUnitIds((currentIds)=>
+                currentIds.includes(parentUnit.id)
+                    ? currentIds
+                    : [...currentIds,parentUnit.id]
+            );
+
+            setSelectedUnitId(createdUnit.id);
+            setMemberSearch("");
             setName("");
             setParentId("");
             setMessage(`${type} created successfully`);
@@ -144,8 +437,10 @@ function Organization(){
     const handleEditUnit = (unit)=>{
         setEditingUnitId(unit.id);
         setEditingName(unit.name);
+
         setMovingUnitId(null);
         setDestinationParentId("");
+
         setError("");
         setMessage("");
     };
@@ -180,7 +475,10 @@ function Organization(){
 
             setEditingUnitId(null);
             setEditingName("");
-            setMessage("Organization unit updated successfully");
+
+            setMessage(
+                "Organization unit updated successfully"
+            );
         }
         catch(error){
             setError(
@@ -196,8 +494,10 @@ function Organization(){
     const handleMoveUnit = (unit)=>{
         setMovingUnitId(unit.id);
         setDestinationParentId("");
+
         setEditingUnitId(null);
         setEditingName("");
+
         setError("");
         setMessage("");
     };
@@ -230,10 +530,19 @@ function Organization(){
                 )
             );
 
+            setExpandedUnitIds((currentIds)=>
+                currentIds.includes(destinationParentId)
+                    ? currentIds
+                    : [...currentIds,destinationParentId]
+            );
+
             setMovingUnitId(null);
             setDestinationParentId("");
             setCapacityData({});
-            setMessage("Organization unit moved successfully");
+
+            setMessage(
+                "Organization unit moved successfully"
+            );
         }
         catch(error){
             setError(
@@ -266,11 +575,36 @@ function Organization(){
 
             setOrganizationUnits((currentUnits)=>
                 currentUnits.filter(
-                    (currentUnit)=>currentUnit.id !== unit.id
+                    (currentUnit)=>
+                        currentUnit.id !== unit.id
                 )
             );
 
-            setMessage("Organization unit deleted successfully");
+            setExpandedUnitIds((currentIds)=>
+                currentIds.filter(
+                    (id)=>id !== unit.id
+                )
+            );
+
+            setCapacityData((currentCapacity)=>{
+                const updatedCapacity = {
+                    ...currentCapacity
+                };
+
+                delete updatedCapacity[unit.id];
+
+                return updatedCapacity;
+            });
+
+            setSelectedUnitId(
+                unit.parentId || rootUnit?.id || null
+            );
+
+            setMemberSearch("");
+
+            setMessage(
+                "Organization unit deleted successfully"
+            );
         }
         catch(error){
             setError(
@@ -284,6 +618,10 @@ function Organization(){
     };
 
     const handleViewCapacity = async(unitId)=>{
+        if(capacityData[unitId]){
+            return;
+        }
+
         try{
             setLoadingCapacityId(unitId);
             setError("");
@@ -313,11 +651,18 @@ function Organization(){
         const unitCapacity = capacityData[unit.id];
 
         setEditingCapacityId(unit.id);
+
         setAllocatedCapacity(
             unitCapacity?.allocatedCapacity ?? ""
         );
+
         setError("");
         setMessage("");
+    };
+
+    const handleCancelCapacity = ()=>{
+        setEditingCapacityId(null);
+        setAllocatedCapacity("");
     };
 
     const handleUpdateCapacity = async(e,unitId)=>{
@@ -331,7 +676,8 @@ function Organization(){
             await api.patch(
                 `/organization/units/${unitId}/capacity`,
                 {
-                    allocatedCapacity:Number(allocatedCapacity)
+                    allocatedCapacity:
+                        Number(allocatedCapacity)
                 }
             );
 
@@ -346,6 +692,7 @@ function Organization(){
 
             setEditingCapacityId(null);
             setAllocatedCapacity("");
+
             setMessage(
                 "Organization unit capacity updated successfully"
             );
@@ -364,8 +711,10 @@ function Organization(){
     const handleEditMemberRole = (member)=>{
         setEditingMemberId(member.id);
         setEditingRole(member.role);
+
         setMovingMemberId(null);
         setDestinationUnitId("");
+
         setError("");
         setMessage("");
     };
@@ -400,7 +749,10 @@ function Organization(){
 
             setEditingMemberId(null);
             setEditingRole("");
-            setMessage("Member role updated successfully");
+
+            setMessage(
+                "Member role updated successfully"
+            );
         }
         catch(error){
             setError(
@@ -416,8 +768,10 @@ function Organization(){
     const handleMoveMember = (member)=>{
         setMovingMemberId(member.id);
         setDestinationUnitId("");
+
         setEditingMemberId(null);
         setEditingRole("");
+
         setError("");
         setMessage("");
     };
@@ -452,7 +806,10 @@ function Organization(){
 
             setMovingMemberId(null);
             setDestinationUnitId("");
-            setMessage("Member moved successfully");
+
+            setMessage(
+                "Member moved successfully"
+            );
         }
         catch(error){
             setError(
@@ -490,7 +847,9 @@ function Organization(){
                 )
             );
 
-            setMessage("Member removed successfully");
+            setMessage(
+                "Member removed successfully"
+            );
         }
         catch(error){
             setError(
@@ -503,306 +862,95 @@ function Organization(){
         }
     };
 
-    const renderOrganizationUnit = (unit)=>{
-        const childUnits = organizationUnits.filter(
-            (childUnit)=>childUnit.parentId === unit.id
-        );
+    const renderOrganizationUnit = (unit,depth=0)=>{
+        const childUnits =
+            unitsByParent[unit.id] || [];
 
-        const isEditing = editingUnitId === unit.id;
-        const isMovingUnit = movingUnitId === unit.id;
-        const unitCapacity = capacityData[unit.id];
-        const isEditingCapacity =
-            editingCapacityId === unit.id;
+        const hasChildren =
+            childUnits.length > 0;
 
-        const validParentType =
-            getValidParentType(unit.type);
+        const isExpanded =
+            expandedUnitIds.includes(unit.id);
 
-        const validDestinationUnits =
-            organizationUnits.filter(
-                (destinationUnit)=>
-                    destinationUnit.type === validParentType &&
-                    destinationUnit.id !== unit.parentId
-            );
+        const isSelected =
+            selectedUnitId === unit.id;
 
         return (
             <div
-                className="organization-unit-tree"
+                className="organization-tree-branch"
                 key={unit.id}
             >
-                <article className="organization-unit-card">
-                    <div className="organization-unit-icon">
-                        {unit.name.charAt(0).toUpperCase()}
-                    </div>
+                <div
+                    className={
+                        `organization-tree-row ${
+                            isSelected
+                                ? "organization-tree-row-selected"
+                                : ""
+                        }`
+                    }
+                    style={{
+                        "--organization-tree-depth":depth
+                    }}
+                >
+                    <button
+                        className="organization-tree-toggle"
+                        type="button"
+                        onClick={()=>
+                            hasChildren &&
+                            handleToggleUnit(unit.id)
+                        }
+                        disabled={!hasChildren}
+                        aria-label={
+                            isExpanded
+                                ? "Collapse unit"
+                                : "Expand unit"
+                        }
+                    >
+                        {hasChildren
+                            ? isExpanded
+                                ? "−"
+                                : "+"
+                            : "·"
+                        }
+                    </button>
 
-                    <div className="organization-unit-content">
-                        {isEditing ? (
-                            <form
-                                className="organization-unit-edit-form"
-                                onSubmit={(e)=>
-                                    handleUpdateUnit(e,unit.id)
-                                }
-                            >
-                                <input
-                                    type="text"
-                                    value={editingName}
-                                    onChange={(e)=>
-                                        setEditingName(e.target.value)
-                                    }
-                                    required
-                                    autoFocus
-                                />
+                    <button
+                        className="organization-tree-select"
+                        type="button"
+                        onClick={()=>
+                            handleSelectUnit(unit)
+                        }
+                    >
+                        <span className="organization-tree-icon">
+                            {unit.name
+                                .charAt(0)
+                                .toUpperCase()
+                            }
+                        </span>
 
-                                <button
-                                    type="submit"
-                                    disabled={updating}
-                                >
-                                    {updating
-                                        ? "Saving..."
-                                        : "Save"
-                                    }
-                                </button>
+                        <span className="organization-tree-content">
+                            <strong>
+                                {unit.name}
+                            </strong>
 
-                                <button
-                                    type="button"
-                                    onClick={handleCancelEdit}
-                                    disabled={updating}
-                                >
-                                    Cancel
-                                </button>
-                            </form>
-                        ) : isMovingUnit ? (
-                            <form
-                                className="organization-unit-move-form"
-                                onSubmit={(e)=>
-                                    handleUpdateUnitParent(
-                                        e,
-                                        unit.id
-                                    )
-                                }
-                            >
-                                <select
-                                    value={destinationParentId}
-                                    onChange={(e)=>
-                                        setDestinationParentId(
-                                            e.target.value
-                                        )
-                                    }
-                                    required
-                                    autoFocus
-                                >
-                                    <option value="">
-                                        Select new parent
-                                    </option>
+                            <small>
+                                {unit.type}
+                            </small>
+                        </span>
+                    </button>
 
-                                    {validDestinationUnits.map(
-                                        (destinationUnit)=>(
-                                            <option
-                                                key={destinationUnit.id}
-                                                value={destinationUnit.id}
-                                            >
-                                                {destinationUnit.name}
-                                                {" "}
-                                                ({destinationUnit.type})
-                                            </option>
-                                        )
-                                    )}
-                                </select>
+                    <span className="organization-tree-count">
+                        {childUnits.length}
+                    </span>
+                </div>
 
-                                <button
-                                    type="submit"
-                                    disabled={movingUnit}
-                                >
-                                    {movingUnit
-                                        ? "Moving..."
-                                        : "Move"
-                                    }
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={handleCancelMoveUnit}
-                                    disabled={movingUnit}
-                                >
-                                    Cancel
-                                </button>
-                            </form>
-                        ) : (
-                            <>
-                                <h3>{unit.name}</h3>
-
-                                <span className="organization-unit-type">
-                                    {unit.type}
-                                </span>
-                            </>
-                        )}
-                    </div>
-
-                    {!isEditing && !isMovingUnit && (
-                        <div className="organization-unit-actions">
-                            <button
-                                className="organization-unit-capacity-button"
-                                type="button"
-                                onClick={()=>
-                                    handleViewCapacity(unit.id)
-                                }
-                                disabled={
-                                    loadingCapacityId === unit.id
-                                }
-                            >
-                                {loadingCapacityId === unit.id
-                                    ? "Loading..."
-                                    : "Capacity"
-                                }
-                            </button>
-
-                            {unit.type !== "COMPANY" && (
-                                <>
-                                    <button
-                                        className="organization-unit-edit-button"
-                                        type="button"
-                                        onClick={()=>
-                                            handleEditUnit(unit)
-                                        }
-                                        disabled={
-                                            deletingUnitId === unit.id
-                                        }
-                                    >
-                                        Edit
-                                    </button>
-
-                                    <button
-                                        className="organization-unit-move-button"
-                                        type="button"
-                                        onClick={()=>
-                                            handleMoveUnit(unit)
-                                        }
-                                        disabled={
-                                            deletingUnitId === unit.id
-                                        }
-                                    >
-                                        Move Unit
-                                    </button>
-
-                                    <button
-                                        className="organization-unit-delete-button"
-                                        type="button"
-                                        onClick={()=>
-                                            handleDeleteUnit(unit)
-                                        }
-                                        disabled={
-                                            deletingUnitId === unit.id
-                                        }
-                                    >
-                                        {deletingUnitId === unit.id
-                                            ? "Deleting..."
-                                            : "Delete"
-                                        }
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    )}
-                </article>
-
-                {unitCapacity && (
-                    <div className="organization-unit-capacity">
-                        {isEditingCapacity ? (
-                            <form
-                                className="organization-capacity-form"
-                                onSubmit={(e)=>
-                                    handleUpdateCapacity(e,unit.id)
-                                }
-                            >
-                                <input
-                                    type="number"
-                                    min="1"
-                                    value={allocatedCapacity}
-                                    onChange={(e)=>
-                                        setAllocatedCapacity(
-                                            e.target.value
-                                        )
-                                    }
-                                    placeholder="Enter capacity"
-                                    required
-                                />
-
-                                <button
-                                    type="submit"
-                                    disabled={updatingCapacity}
-                                >
-                                    {updatingCapacity
-                                        ? "Saving..."
-                                        : "Save"
-                                    }
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={()=>{
-                                        setEditingCapacityId(null);
-                                        setAllocatedCapacity("");
-                                    }}
-                                    disabled={updatingCapacity}
-                                >
-                                    Cancel
-                                </button>
-                            </form>
-                        ) : (
-                            <>
-                                <div>
-                                    <span>Allocated</span>
-
-                                    <strong>
-                                        {unitCapacity.allocatedCapacity
-                                            ?? "Not set"
-                                        }
-                                    </strong>
-                                </div>
-
-                                <div>
-                                    <span>Direct Members</span>
-
-                                    <strong>
-                                        {unitCapacity.directMembers}
-                                    </strong>
-                                </div>
-
-                                <div>
-                                    <span>Child Allocations</span>
-
-                                    <strong>
-                                        {unitCapacity.childAllocations}
-                                    </strong>
-                                </div>
-
-                                <div>
-                                    <span>Remaining</span>
-
-                                    <strong>
-                                        {unitCapacity.remainingCapacity
-                                            ?? "Not set"
-                                        }
-                                    </strong>
-                                </div>
-
-                                <button
-                                    className="organization-capacity-edit-button"
-                                    type="button"
-                                    onClick={()=>
-                                        handleEditCapacity(unit)
-                                    }
-                                >
-                                    Set / Update
-                                </button>
-                            </>
-                        )}
-                    </div>
-                )}
-
-                {childUnits.length > 0 && (
-                    <div className="organization-unit-children">
+                {hasChildren && isExpanded && (
+                    <div className="organization-tree-children">
                         {childUnits.map((childUnit)=>
-                            renderOrganizationUnit(childUnit)
+                            renderOrganizationUnit(
+                                childUnit,
+                                depth + 1
+                            )
                         )}
                     </div>
                 )}
@@ -810,22 +958,30 @@ function Organization(){
         );
     };
 
-    const rootUnit = organizationUnits.find(
-        (unit)=>unit.type === "COMPANY"
-    );
+    const selectedUnitCapacity =
+        selectedUnit
+            ? capacityData[selectedUnit.id]
+            : null;
 
-    const availableParentUnits = organizationUnits.filter(
-        (unit)=>unit.type !== "GROUP"
-    );
+    const validParentType =
+        selectedUnit
+            ? getValidParentType(selectedUnit.type)
+            : null;
 
-    const selectedParentUnit = organizationUnits.find(
-        (unit)=>unit.id === parentId
-    );
-
-    const childType = selectedParentUnit
-        ? getChildType(selectedParentUnit.type)
-        : null;
-
+    const validDestinationUnits =
+        selectedUnit
+            ? organizationUnits.filter(
+                (destinationUnit)=>
+                    destinationUnit.type ===
+                        validParentType &&
+                    destinationUnit.id !==
+                        selectedUnit.parentId
+            )
+            : [];
+    const hasOrganizationUpdates =
+    organizationRevision !== null &&
+    latestOrganizationRevision !== null &&
+    latestOrganizationRevision >organizationRevision;       
     if(loading){
         return (
             <div className="organization-state">
@@ -853,32 +1009,80 @@ function Organization(){
                     <h1>{organization.name}</h1>
 
                     <p className="organization-description">
-                        {organization.description || "No description"}
+                        {organization.description ||
+                            "No description"
+                        }
                     </p>
                 </header>
 
+                {message && (
+                    <p className="organization-success">
+                        {message}
+                    </p>
+                )}
+
+                {error && (
+                    <p className="organization-form-error">
+                        {error}
+                    </p>
+                )}
+
                 <section className="organization-section">
-                    <div className="organization-section-header">
+                <div className="organization-section-header">
                         <div>
-                            <h2>Organization Structure</h2>
+                            <h2>
+                                Organization Structure
+                            </h2>
 
                             <p>
-                                Create, update, reorganize, and manage
-                                departments, teams, and groups.
+                                Browse the hierarchy and select
+                                a unit to manage it.
                             </p>
                         </div>
+
+                        <button
+                            type="button"
+                            className="organization-check-updates-button"
+                            onClick={handleCheckRevision}
+                            disabled={checkingRevision}
+                        >
+                            {checkingRevision
+                                ? "Checking..."
+                                : "Check Updates"
+                            }
+                        </button>
                     </div>
+                    {hasOrganizationUpdates && (
+                        <div className="organization-updates-available">
+                            <div>
+                                <strong>
+                                    Organization updates available
+                                </strong>
 
-                    {message && (
-                        <p className="organization-success">
-                            {message}
-                        </p>
-                    )}
+                                <p>
+                                    Another user has changed the
+                                    organization since this page
+                                    was loaded.
+                                </p>
+                            </div>
 
-                    {error && (
-                        <p className="organization-form-error">
-                            {error}
-                        </p>
+                            <div className="organization-updates-actions">
+                                <span>
+                                    Revision {organizationRevision}
+                                    {" → "}
+                                    {latestOrganizationRevision}
+                                </span>
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        handleRefreshOrganizationChanges
+                                    }
+                                >
+                                    Refresh Changes
+                                </button>
+                            </div>
+                        </div>
                     )}
 
                     <form
@@ -902,14 +1106,18 @@ function Organization(){
                                     Select parent unit
                                 </option>
 
-                                {availableParentUnits.map((unit)=>(
-                                    <option
-                                        key={unit.id}
-                                        value={unit.id}
-                                    >
-                                        {unit.name} ({unit.type})
-                                    </option>
-                                ))}
+                                {availableParentUnits.map(
+                                    (unit)=>(
+                                        <option
+                                            key={unit.id}
+                                            value={unit.id}
+                                        >
+                                            {unit.name}
+                                            {" "}
+                                            ({unit.type})
+                                        </option>
+                                    )
+                                )}
                             </select>
                         </div>
 
@@ -936,7 +1144,9 @@ function Organization(){
                         <button
                             className="organization-create-button"
                             type="submit"
-                            disabled={creating || !childType}
+                            disabled={
+                                creating || !childType
+                            }
                         >
                             {creating
                                 ? "Creating..."
@@ -947,108 +1157,92 @@ function Organization(){
                         </button>
                     </form>
 
-                    <div className="organization-units">
-                        {rootUnit
-                            ? renderOrganizationUnit(rootUnit)
-                            : (
-                                <p className="organization-form-error">
-                                    Company unit not found
-                                </p>
-                            )
-                        }
-                    </div>
-                </section>
+                    <div className="organization-workspace">
+                        <div className="organization-tree-panel">
+                            <div className="organization-panel-heading">
+                                <div>
+                                    <h3>Hierarchy</h3>
 
-                <section className="organization-section">
-                    <div className="organization-section-header">
-                        <div>
-                            <h2>Member Management</h2>
+                                    <p>
+                                        {organizationUnits.length}
+                                        {" "}
+                                        units
+                                    </p>
+                                </div>
+                            </div>
 
-                            <p>
-                                View organization members, update their
-                                roles, move them between units, and
-                                remove them from the organization.
-                            </p>
+                            <div className="organization-tree">
+                                {rootUnit
+                                    ? renderOrganizationUnit(
+                                        rootUnit
+                                    )
+                                    : (
+                                        <p className="organization-form-error">
+                                            Company unit not found
+                                        </p>
+                                    )
+                                }
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="organization-members">
-                        {organizationMembers.map((member)=>{
-                            const isEditingMember =
-                                editingMemberId === member.id;
-
-                            const isMovingMember =
-                                movingMemberId === member.id;
-
-                            return (
-                                <article
-                                    className="organization-member-card"
-                                    key={member.id}
-                                >
-                                    <div className="organization-member-info">
-                                        <div className="organization-member-icon">
-                                            {member.fullName
+                        <div className="organization-details-panel">
+                            {selectedUnit ? (
+                                <>
+                                    <div className="organization-selected-header">
+                                        <div className="organization-selected-icon">
+                                            {selectedUnit.name
                                                 .charAt(0)
                                                 .toUpperCase()
                                             }
                                         </div>
 
                                         <div>
-                                            <h3>{member.fullName}</h3>
-
-                                            <p>{member.email}</p>
-
                                             <span>
-                                                {member.unit?.name
-                                                    || "No unit"
-                                                }
-                                                {" · "}
-                                                {member.unit?.type
-                                                    || "No unit type"
-                                                }
+                                                {selectedUnit.type}
                                             </span>
+
+                                            <h3>
+                                                {selectedUnit.name}
+                                            </h3>
+
+                                            <p>
+                                                {
+                                                    selectedUnitMembers.length
+                                                }
+                                                {" "}
+                                                direct members
+                                            </p>
                                         </div>
                                     </div>
 
-                                    {isEditingMember ? (
+                                    {editingUnitId ===
+                                    selectedUnit.id ? (
                                         <form
-                                            className="organization-member-role-form"
+                                            className="organization-unit-edit-form"
                                             onSubmit={(e)=>
-                                                handleUpdateMemberRole(
+                                                handleUpdateUnit(
                                                     e,
-                                                    member.id
+                                                    selectedUnit.id
                                                 )
                                             }
                                         >
-                                            <select
-                                                value={editingRole}
+                                            <input
+                                                type="text"
+                                                value={editingName}
                                                 onChange={(e)=>
-                                                    setEditingRole(
+                                                    setEditingName(
                                                         e.target.value
                                                     )
                                                 }
                                                 required
-                                            >
-                                                <option value="ADMIN">
-                                                    ADMIN
-                                                </option>
-
-                                                <option value="MANAGER">
-                                                    MANAGER
-                                                </option>
-
-                                                <option value="MEMBER">
-                                                    MEMBER
-                                                </option>
-                                            </select>
+                                                autoFocus
+                                            />
 
                                             <button
                                                 type="submit"
-                                                disabled={
-                                                    updatingMemberRole
-                                                }
+                                                disabled={updating}
                                             >
-                                                {updatingMemberRole
+                                                {updating
                                                     ? "Saving..."
                                                     : "Save"
                                                 }
@@ -1057,61 +1251,68 @@ function Organization(){
                                             <button
                                                 type="button"
                                                 onClick={
-                                                    handleCancelMemberRole
+                                                    handleCancelEdit
                                                 }
-                                                disabled={
-                                                    updatingMemberRole
-                                                }
+                                                disabled={updating}
                                             >
                                                 Cancel
                                             </button>
                                         </form>
-                                    ) : isMovingMember ? (
+                                    ) : movingUnitId ===
+                                    selectedUnit.id ? (
                                         <form
-                                            className="organization-member-move-form"
+                                            className="organization-unit-move-form"
                                             onSubmit={(e)=>
-                                                handleUpdateMemberUnit(
+                                                handleUpdateUnitParent(
                                                     e,
-                                                    member.id
+                                                    selectedUnit.id
                                                 )
                                             }
                                         >
                                             <select
-                                                value={destinationUnitId}
+                                                value={
+                                                    destinationParentId
+                                                }
                                                 onChange={(e)=>
-                                                    setDestinationUnitId(
+                                                    setDestinationParentId(
                                                         e.target.value
                                                     )
                                                 }
                                                 required
                                             >
                                                 <option value="">
-                                                    Select destination unit
+                                                    Select new parent
                                                 </option>
 
-                                                {organizationUnits
-                                                    .filter((unit)=>
-                                                        unit.id !==
-                                                        member.unitId
-                                                    )
-                                                    .map((unit)=>(
+                                                {validDestinationUnits.map(
+                                                    (destinationUnit)=>(
                                                         <option
-                                                            key={unit.id}
-                                                            value={unit.id}
+                                                            key={
+                                                                destinationUnit.id
+                                                            }
+                                                            value={
+                                                                destinationUnit.id
+                                                            }
                                                         >
-                                                            {unit.name}
+                                                            {
+                                                                destinationUnit.name
+                                                            }
                                                             {" "}
-                                                            ({unit.type})
+                                                            (
+                                                            {
+                                                                destinationUnit.type
+                                                            }
+                                                            )
                                                         </option>
-                                                    ))
-                                                }
+                                                    )
+                                                )}
                                             </select>
 
                                             <button
                                                 type="submit"
-                                                disabled={movingMember}
+                                                disabled={movingUnit}
                                             >
-                                                {movingMember
+                                                {movingUnit
                                                     ? "Moving..."
                                                     : "Move"
                                                 }
@@ -1120,82 +1321,567 @@ function Organization(){
                                             <button
                                                 type="button"
                                                 onClick={
-                                                    handleCancelMoveMember
+                                                    handleCancelMoveUnit
                                                 }
-                                                disabled={movingMember}
+                                                disabled={movingUnit}
                                             >
                                                 Cancel
                                             </button>
                                         </form>
                                     ) : (
-                                        <div className="organization-member-actions">
-                                            <div className="organization-member-role">
-                                                <span>
-                                                    {member.role}
-                                                </span>
+                                        <div className="organization-selected-actions">
+                                            <button
+                                                type="button"
+                                                onClick={()=>
+                                                    handleViewCapacity(
+                                                        selectedUnit.id
+                                                    )
+                                                }
+                                                disabled={
+                                                    loadingCapacityId ===
+                                                    selectedUnit.id
+                                                }
+                                            >
+                                                {loadingCapacityId ===
+                                                selectedUnit.id
+                                                    ? "Loading..."
+                                                    : "Capacity"
+                                                }
+                                            </button>
 
-                                                {member.role !== "OWNER" && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={()=>
-                                                            handleEditMemberRole(
-                                                                member
-                                                            )
-                                                        }
-                                                        disabled={
-                                                            removingMemberId ===
-                                                            member.id
-                                                        }
-                                                    >
-                                                        Change Role
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {member.role !== "OWNER" && (
+                                            {selectedUnit.type !==
+                                            "COMPANY" && (
                                                 <>
                                                     <button
-                                                        className="organization-member-move-button"
                                                         type="button"
                                                         onClick={()=>
-                                                            handleMoveMember(
-                                                                member
+                                                            handleEditUnit(
+                                                                selectedUnit
                                                             )
                                                         }
-                                                        disabled={
-                                                            removingMemberId ===
-                                                            member.id
-                                                        }
                                                     >
-                                                        Move Member
+                                                        Rename
                                                     </button>
 
                                                     <button
-                                                        className="organization-member-remove-button"
                                                         type="button"
                                                         onClick={()=>
-                                                            handleRemoveMember(
-                                                                member
+                                                            handleMoveUnit(
+                                                                selectedUnit
+                                                            )
+                                                        }
+                                                    >
+                                                        Move
+                                                    </button>
+
+                                                    <button
+                                                        className="organization-danger-button"
+                                                        type="button"
+                                                        onClick={()=>
+                                                            handleDeleteUnit(
+                                                                selectedUnit
                                                             )
                                                         }
                                                         disabled={
-                                                            removingMemberId ===
-                                                            member.id
+                                                            deletingUnitId ===
+                                                            selectedUnit.id
                                                         }
                                                     >
-                                                        {removingMemberId ===
-                                                        member.id
-                                                            ? "Removing..."
-                                                            : "Remove Member"
+                                                        {deletingUnitId ===
+                                                        selectedUnit.id
+                                                            ? "Deleting..."
+                                                            : "Delete"
                                                         }
                                                     </button>
                                                 </>
                                             )}
                                         </div>
                                     )}
-                                </article>
-                            );
-                        })}
+
+                                    {selectedUnitCapacity && (
+                                        <div className="organization-capacity-panel">
+                                            <div className="organization-capacity-header">
+                                                <h4>
+                                                    Capacity
+                                                </h4>
+
+                                                {editingCapacityId !==
+                                                selectedUnit.id && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={()=>
+                                                            handleEditCapacity(
+                                                                selectedUnit
+                                                            )
+                                                        }
+                                                    >
+                                                        Set / Update
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {editingCapacityId ===
+                                            selectedUnit.id ? (
+                                                <form
+                                                    className="organization-capacity-form"
+                                                    onSubmit={(e)=>
+                                                        handleUpdateCapacity(
+                                                            e,
+                                                            selectedUnit.id
+                                                        )
+                                                    }
+                                                >
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={
+                                                            allocatedCapacity
+                                                        }
+                                                        onChange={(e)=>
+                                                            setAllocatedCapacity(
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                        placeholder="Enter capacity"
+                                                        required
+                                                    />
+
+                                                    <button
+                                                        type="submit"
+                                                        disabled={
+                                                            updatingCapacity
+                                                        }
+                                                    >
+                                                        {updatingCapacity
+                                                            ? "Saving..."
+                                                            : "Save"
+                                                        }
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={
+                                                            handleCancelCapacity
+                                                        }
+                                                        disabled={
+                                                            updatingCapacity
+                                                        }
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </form>
+                                            ) : (
+                                                <div className="organization-capacity-grid">
+                                                    <div>
+                                                        <span>
+                                                            Allocated
+                                                        </span>
+
+                                                        <strong>
+                                                            {
+                                                                selectedUnitCapacity
+                                                                    .allocatedCapacity
+                                                                ?? "Not set"
+                                                            }
+                                                        </strong>
+                                                    </div>
+
+                                                    <div>
+                                                        <span>
+                                                            Direct Members
+                                                        </span>
+
+                                                        <strong>
+                                                            {
+                                                                selectedUnitCapacity
+                                                                    .directMembers
+                                                            }
+                                                        </strong>
+                                                    </div>
+
+                                                    <div>
+                                                        <span>
+                                                            Child Allocations
+                                                        </span>
+
+                                                        <strong>
+                                                            {
+                                                                selectedUnitCapacity
+                                                                    .childAllocations
+                                                            }
+                                                        </strong>
+                                                    </div>
+
+                                                    <div>
+                                                        <span>
+                                                            Remaining
+                                                        </span>
+
+                                                        <strong>
+                                                            {
+                                                                selectedUnitCapacity
+                                                                    .remainingCapacity
+                                                                ?? "Not set"
+                                                            }
+                                                        </strong>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="organization-unit-summary">
+                                        <div>
+                                            <span>
+                                                Child Units
+                                            </span>
+
+                                            <strong>
+                                                {
+                                                    (
+                                                        unitsByParent[
+                                                            selectedUnit.id
+                                                        ] || []
+                                                    ).length
+                                                }
+                                            </strong>
+                                        </div>
+
+                                        <div>
+                                            <span>
+                                                Direct Members
+                                            </span>
+
+                                            <strong>
+                                                {
+                                                    selectedUnitMembers.length
+                                                }
+                                            </strong>
+                                        </div>
+                                    </div>
+
+                                    <div className="organization-unit-members">
+                                        <div className="organization-unit-members-header">
+                                            <div>
+                                                <h4>
+                                                    Direct Members
+                                                </h4>
+
+                                                <p>
+                                                    Manage members assigned
+                                                    directly to this unit.
+                                                </p>
+                                            </div>
+
+                                            <span>
+                                                {
+                                                    selectedUnitMembers.length
+                                                }
+                                            </span>
+                                        </div>
+
+                                        {selectedUnitMembers.length > 0 && (
+                                            <div className="organization-member-search">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Search members by name or email"
+                                                    value={memberSearch}
+                                                    onChange={(e)=>
+                                                        setMemberSearch(
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="organization-members">
+                                            {filteredSelectedUnitMembers.length >
+                                            0 ? (
+                                                filteredSelectedUnitMembers.map(
+                                                    (member)=>{
+                                                        const isEditingMember =
+                                                            editingMemberId ===
+                                                            member.id;
+
+                                                        const isMovingMember =
+                                                            movingMemberId ===
+                                                            member.id;
+
+                                                        return (
+                                                            <article
+                                                                className="organization-member-card"
+                                                                key={member.id}
+                                                            >
+                                                                <div className="organization-member-info">
+                                                                    <div className="organization-member-icon">
+                                                                        {member.fullName
+                                                                            .charAt(0)
+                                                                            .toUpperCase()
+                                                                        }
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <h3>
+                                                                            {
+                                                                                member.fullName
+                                                                            }
+                                                                        </h3>
+
+                                                                        <p>
+                                                                            {
+                                                                                member.email
+                                                                            }
+                                                                        </p>
+
+                                                                        <span>
+                                                                            {
+                                                                                member.role
+                                                                            }
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {isEditingMember ? (
+                                                                    <form
+                                                                        className="organization-member-role-form"
+                                                                        onSubmit={(e)=>
+                                                                            handleUpdateMemberRole(
+                                                                                e,
+                                                                                member.id
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <select
+                                                                            value={
+                                                                                editingRole
+                                                                            }
+                                                                            onChange={(e)=>
+                                                                                setEditingRole(
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
+                                                                            required
+                                                                        >
+                                                                            <option value="ADMIN">
+                                                                                ADMIN
+                                                                            </option>
+
+                                                                            <option value="MANAGER">
+                                                                                MANAGER
+                                                                            </option>
+
+                                                                            <option value="MEMBER">
+                                                                                MEMBER
+                                                                            </option>
+                                                                        </select>
+
+                                                                        <button
+                                                                            type="submit"
+                                                                            disabled={
+                                                                                updatingMemberRole
+                                                                            }
+                                                                        >
+                                                                            {updatingMemberRole
+                                                                                ? "Saving..."
+                                                                                : "Save"
+                                                                            }
+                                                                        </button>
+
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={
+                                                                                handleCancelMemberRole
+                                                                            }
+                                                                            disabled={
+                                                                                updatingMemberRole
+                                                                            }
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </form>
+                                                                ) : isMovingMember ? (
+                                                                    <form
+                                                                        className="organization-member-move-form"
+                                                                        onSubmit={(e)=>
+                                                                            handleUpdateMemberUnit(
+                                                                                e,
+                                                                                member.id
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <select
+                                                                            value={
+                                                                                destinationUnitId
+                                                                            }
+                                                                            onChange={(e)=>
+                                                                                setDestinationUnitId(
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
+                                                                            required
+                                                                        >
+                                                                            <option value="">
+                                                                                Select destination unit
+                                                                            </option>
+
+                                                                            {organizationUnits
+                                                                                .filter(
+                                                                                    (unit)=>
+                                                                                        unit.id !==
+                                                                                        member.unitId
+                                                                                )
+                                                                                .map(
+                                                                                    (unit)=>(
+                                                                                        <option
+                                                                                            key={
+                                                                                                unit.id
+                                                                                            }
+                                                                                            value={
+                                                                                                unit.id
+                                                                                            }
+                                                                                        >
+                                                                                            {
+                                                                                                unit.name
+                                                                                            }
+                                                                                            {" "}
+                                                                                            (
+                                                                                            {
+                                                                                                unit.type
+                                                                                            }
+                                                                                            )
+                                                                                        </option>
+                                                                                    )
+                                                                                )
+                                                                            }
+                                                                        </select>
+
+                                                                        <button
+                                                                            type="submit"
+                                                                            disabled={
+                                                                                movingMember
+                                                                            }
+                                                                        >
+                                                                            {movingMember
+                                                                                ? "Moving..."
+                                                                                : "Move"
+                                                                            }
+                                                                        </button>
+
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={
+                                                                                handleCancelMoveMember
+                                                                            }
+                                                                            disabled={
+                                                                                movingMember
+                                                                            }
+                                                                        >
+                                                                            Cancel
+                                                                        </button>
+                                                                    </form>
+                                                                ) : (
+                                                                    <div className="organization-member-actions">
+                                                                        <span className="organization-member-role-badge">
+                                                                            {
+                                                                                member.role
+                                                                            }
+                                                                        </span>
+
+                                                                        {member.role !==
+                                                                        "OWNER" && (
+                                                                            <>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={()=>
+                                                                                        handleEditMemberRole(
+                                                                                            member
+                                                                                        )
+                                                                                    }
+                                                                                    disabled={
+                                                                                        removingMemberId ===
+                                                                                        member.id
+                                                                                    }
+                                                                                >
+                                                                                    Role
+                                                                                </button>
+
+                                                                                <button
+                                                                                    className="organization-member-move-button"
+                                                                                    type="button"
+                                                                                    onClick={()=>
+                                                                                        handleMoveMember(
+                                                                                            member
+                                                                                        )
+                                                                                    }
+                                                                                    disabled={
+                                                                                        removingMemberId ===
+                                                                                        member.id
+                                                                                    }
+                                                                                >
+                                                                                    Move
+                                                                                </button>
+
+                                                                                <button
+                                                                                    className="organization-member-remove-button"
+                                                                                    type="button"
+                                                                                    onClick={()=>
+                                                                                        handleRemoveMember(
+                                                                                            member
+                                                                                        )
+                                                                                    }
+                                                                                    disabled={
+                                                                                        removingMemberId ===
+                                                                                        member.id
+                                                                                    }
+                                                                                >
+                                                                                    {removingMemberId ===
+                                                                                    member.id
+                                                                                        ? "Removing..."
+                                                                                        : "Remove"
+                                                                                    }
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </article>
+                                                        );
+                                                    }
+                                                )
+                                            ) : (
+                                                <div className="organization-members-empty">
+                                                    <h4>
+                                                        {memberSearch
+                                                            ? "No members found"
+                                                            : "No direct members"
+                                                        }
+                                                    </h4>
+
+                                                    <p>
+                                                        {memberSearch
+                                                            ? "No member matches your search."
+                                                            : "No members are directly assigned to this unit."
+                                                        }
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="organization-empty-panel">
+                                    <h3>
+                                        Select a unit
+                                    </h3>
+
+                                    <p>
+                                        Choose a unit from the hierarchy
+                                        to manage it.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </section>
             </div>

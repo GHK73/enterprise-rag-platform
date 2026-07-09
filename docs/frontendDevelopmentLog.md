@@ -13,13 +13,9 @@ Implementation progress for the Enterprise RAG Platform frontend.
 | Frontend Foundation | ✅ |
 | Authentication | ✅ |
 | Organization Management | ✅ |
-| Organization Hierarchy | ✅ |
-| Permission Management UI | ✅ |
-| Invitation UI | ✅ |
-| Member Access | ✅ |
-| Capacity Management UI | ✅ |
-| Member Management UI | ✅ |
-| Unit Reorganization UI | ✅ |
+| Access & Member Management | ✅ |
+| Dynamic Organization Workspace | ✅ |
+| Organization Synchronization | ✅ |
 | Document Management UI | ⏳ |
 
 ---
@@ -30,10 +26,9 @@ Implementation progress for the Enterprise RAG Platform frontend.
 
 * React + Vite setup
 * React Router DOM and Axios
-* Global theme and responsive styling
+* Global responsive styling
 * Application routing
-* `PublicLayout`
-* Responsive authentication-aware Navbar
+* Public layout and Navbar
 * Home page
 
 ---
@@ -44,14 +39,12 @@ Implementation progress for the Enterprise RAG Platform frontend.
 
 * Login and Register pages
 * Reusable Axios instance
-* JWT storage and protected request attachment
+* JWT storage and protected requests
 * Authentication Context
-* Session verification with `GET /auth/me`
+* Session verification
 * Invalid token cleanup
 * Public and protected route guards
 * Authentication-aware Navbar and logout
-
-## Flow
 
 ~~~text
 Login
@@ -68,18 +61,13 @@ Login
 ## Completed
 
 * Organization creation and update
-* Optional capacity during creation
-* Session refresh after organization creation
 * Dedicated `/organization` page
-* Organization details retrieval
+* Organization and member retrieval
 * Recursive hierarchy rendering
-* Department, team, and group creation
-* Dynamic child type selection
-* Valid parent filtering
-* Inline unit rename
-* Safe leaf unit deletion
-* Live state updates
+* Unit creation, rename, movement, and deletion
+* Dynamic child and parent selection
 * Root `COMPANY` protection
+* Immediate local state updates
 * Responsive UI
 
 ## Hierarchy
@@ -88,78 +76,36 @@ Login
 COMPANY → DEPARTMENT → TEAM → GROUP
 ~~~
 
-## Endpoints Integrated
-
-~~~http
-POST   /api/v1/organization
-GET    /api/v1/organization
-PATCH  /api/v1/organization
-
-GET    /api/v1/organization/units
-POST   /api/v1/organization/units
-PATCH  /api/v1/organization/units/:unitId
-DELETE /api/v1/organization/units/:unitId
-
-GET    /api/v1/organization/members
-~~~
-
 ---
 
-# Phase 4 — Access & Member Management UI ✅
+# Phase 4 — Access & Organization Administration UI ✅
 
-The frontend exposes organization and authorization operations while the backend remains the final authority for permission, scope, hierarchy, and capacity validation.
-
----
-
-## 4.1 Permission Management UI ✅
-
-## Completed
+## 4.1 Permission Management ✅
 
 * Dedicated `/permissions` page
-* Current user permission retrieval
-* Organization member selection
-* Permission and scope selection
+* Member, permission, and scope selection
 * Delegation configuration
-* Permission grants
+* Permission grants and revocation
 * Permission history
 * Active and revoked states
-* Permission revocation
 * Immediate UI updates
-
-## Flow
-
-~~~text
-Select Member
-→ Select Permission + Scope
-→ Configure Delegation
-→ Grant / Revoke
-→ UI Updates
-~~~
 
 ---
 
-## 4.2 Invitation Management UI ✅
-
-## Completed
+## 4.2 Invitation Management ✅
 
 * Invitation creation
-* Email input
 * Unit and role selection
 * Received invitation retrieval
 * Invitation acceptance
-* Session refresh after acceptance
-* Capacity error display
-* Organization access after joining
-
-## Flow
+* Session refresh after joining
+* Capacity and validation errors
 
 ~~~text
 Invite Member
 → Select Unit + Role
-→ Create Invitation
-→ Invited User Logs In
-→ Accept
-→ Backend Validates Capacity
+→ User Accepts Invitation
+→ Backend Validates Access + Capacity
 → Refresh Session
 → Organization Access
 ~~~
@@ -168,123 +114,90 @@ External email delivery is not implemented yet.
 
 ---
 
-## 4.3 Member Access ✅
+## 4.3 Capacity Management ✅
 
-## Completed
-
-* Organization member retrieval
-* Member name, email, role, and unit display
-* Member selection for permission management
-* Permission history display
-* Active and revoked permission visibility
-
----
-
-## 4.4 Capacity Management UI ✅
-
-## Completed
-
-* Capacity controls on the Organization page
-* Capacity retrieval for all unit types
+* Capacity controls for all unit types
 * Allocated capacity display
-* Direct member usage display
-* Child allocation display
-* Remaining capacity display
-* Initial capacity setup
-* Capacity updates
-* Parent allocation validation errors
-* Automatic refresh after updates
-* Invitation capacity errors
-* Responsive UI
-
-## Endpoints Integrated
-
-~~~http
-GET   /api/v1/organization/units/:unitId/capacity
-PATCH /api/v1/organization/units/:unitId/capacity
-~~~
-
-## Capacity View
+* Direct member usage
+* Child allocation usage
+* Remaining capacity
+* Capacity setup and updates
+* Validation error display
+* Automatic local refresh
 
 ~~~text
+Remaining Capacity
+=
 Allocated Capacity
 − Direct Members
 − Child Allocations
-=
-Remaining Capacity
 ~~~
 
 ---
 
-## 4.5 Member Management UI ✅
+## 4.4 Member Management ✅
 
-## Completed
-
-### Update Member Role
-
-* Inline role editing
-* `ADMIN`, `MANAGER`, and `MEMBER` selection
+* Direct members shown inside the selected unit
+* Member search
+* Inline role updates
+* Member movement
+* Member removal
 * Owner protection
-* Permission and scope error display
-* Immediate state updates
-
-~~~http
-PATCH /api/v1/organization/members/:memberId/role
-~~~
-
-### Move Member
-
-* Destination unit selection
-* Current unit exclusion
-* Owner protection
-* Capacity error display
-* Permission and scope error display
-* Immediate unit updates
-
-~~~http
-PATCH /api/v1/organization/members/:memberId/unit
-~~~
-
-### Remove Member
-
-* Remove Member action
-* Confirmation before removal
-* Owner protection
-* Permission and scope error display
-* Immediate removal from member list
-
-~~~http
-DELETE /api/v1/organization/members/:memberId
-~~~
-
-## Member Management Flow
+* Capacity and permission error display
+* Immediate local state updates
 
 ~~~text
-Select Member
-→ Choose Operation
-→ Backend Validates Permission + Scope
-→ Apply Operation
-→ UI Updates Immediately
+Select Unit
+→ View Direct Members
+→ Update Role / Move / Remove
+→ Backend Validates Operation
+→ Update Local State
 ~~~
 
 ---
 
-## 4.6 Unit Reorganization UI ✅
+## 4.5 Dynamic Organization Workspace ✅
+
+The Organization page was redesigned to support large and changing organization structures.
 
 ## Completed
 
-* Move Unit action
-* Destination parent selection
-* Valid parent type filtering
-* Current parent exclusion
-* Root `COMPANY` movement protection
-* Hierarchy validation error display
-* Capacity conflict display
-* Permission and scope error display
-* Immediate recursive hierarchy updates
-* Responsive move controls
+* Collapsible hierarchy tree
+* Expand and collapse branches
+* Selected-unit details panel
+* Direct members scoped to the selected unit
+* Member search
+* Sticky hierarchy panel on larger screens
+* Bounded hierarchy scrolling
+* Local state updates without page refresh
+* Selected-unit preservation after data refresh
+* Root fallback when the selected unit no longer exists
 
-## Hierarchy Rules
+## Workspace
+
+~~~text
+Organization Structure
+├── Collapsible Hierarchy
+│   └── Select Unit
+│
+└── Selected Unit Panel
+    ├── Unit Actions
+    ├── Capacity
+    ├── Unit Summary
+    └── Direct Members
+~~~
+
+This prevents the page from continuously growing as the organization gains more branches and members.
+
+---
+
+## 4.6 Unit Reorganization ✅
+
+* Move units and subtrees
+* Valid destination filtering
+* Root movement protection
+* Hierarchy and capacity error display
+* Immediate recursive hierarchy updates
 
 ~~~text
 DEPARTMENT → COMPANY
@@ -293,85 +206,123 @@ GROUP      → TEAM
 COMPANY    → Cannot Move
 ~~~
 
-## Endpoint Integrated
+---
 
-~~~http
-PATCH /api/v1/organization/units/:unitId/move
+## 4.7 Organization Synchronization ⏳
+
+Revision-based multi-user change detection is implemented and working.
+
+## Completed
+
+* Store the loaded organization revision
+* Manual update checks
+* Automatic checks every 60 seconds
+* Skip checks while the tab is hidden
+* Check immediately when the tab becomes visible
+* Detect stale organization state
+* Show an update notification
+* Refresh data without browser reload
+* Preserve the selected unit when possible
+
+## Remaining
+
+* Prevent stale data from being accepted with a newer revision
+* Synchronize revision after changes made by the current tab
+* Add loading protection for repeated refresh requests
+
+## Current Flow
+
+~~~text
+Load Organization
+→ Store Revision
+→ Check Latest Revision
+→ Detect Change
+→ Show Updates Available
+→ Refresh Organization State
 ~~~
+
+## Next Fixes
+
+~~~text
+Consistent Snapshot Refresh
+→ Local Mutation Revision Sync
+→ Refresh Loading Protection
+→ Organization Synchronization Complete
+~~~
+
+## Completed
+
+* Store the revision loaded with organization data
+* Manually check for updates
+* Automatically check every 60 seconds
+* Skip background checks while the tab is hidden
+* Check immediately when the tab becomes visible
+* Detect stale organization state
+* Show an update notification
+* Refresh organization data without browser reload
+* Preserve the selected unit when possible
+* Fall back to the root unit when necessary
 
 ## Flow
 
 ~~~text
-Select Unit
-→ Move Unit
-→ Select Valid Destination Parent
-→ Backend Validates Organization
-→ Validate Hierarchy + Scope + Capacity
-→ Move Unit
-→ Hierarchy Updates Immediately
+Load Organization
+→ Store Current Revision
+
+Check Latest Revision
+→ Same Revision
+   → No Action
+
+→ New Revision
+   → Show Updates Available
+   → Refresh Changes
+   → Update React State
+   → Store Latest Revision
 ~~~
 
-## Tested
-
-* Successful unit movement
-* Same-parent prevention
-* Destination type filtering
-* Destination capacity rejection
-* Permission denial
-* Destination scope denial
+This provides lightweight multi-user synchronization without WebSockets or full-page refreshes.
 
 ---
 
 # Phase 5 — Document Management UI ⏳
 
-The frontend document workflow will be implemented after the backend document architecture and storage model are finalized.
+The document interface will be implemented after the backend document architecture is finalized.
 
 ## Planned Features
 
-* Dedicated document library
-* Document upload
-* Upload progress and validation
-* Metadata display
-* Processing status
+* Document library
+* Upload and validation
+* Upload progress
+* Metadata and processing status
 * Document details
 * Version history
-* New version upload
-* Rollback
+* New version upload and rollback
 * Soft delete and recovery
 * Authorized download
 * Access policy management
 * Temporary and scheduled access
 
-## Planned Upload Flow
+## Planned Flow
 
 ~~~text
 Select File
 → Enter Metadata
-→ Configure Access Policy
+→ Configure Access
 → Upload
-→ Backend Stores File in S3
-→ Processing Status Updates
-→ Document Appears in Library
+→ Processing
+→ Document Library
 ~~~
 
-## Planned Access Configuration
+## Access Subjects
 
 ~~~text
-Access Subject
-→ ORGANIZATION
-→ UNIT
-→ USER
-→ ROLE
-
-Access Period
-→ Starts At
-→ Ends At
-→ Permanent or Temporary
+ORGANIZATION
+UNIT
+USER
+ROLE
 ~~~
 
-The frontend will configure access policies, while the backend remains responsible for authorization enforcement.
-
-## Planned Document Statuses
+## Document Statuses
 
 ~~~text
 UPLOADING
@@ -383,14 +334,13 @@ FAILED
 
 ---
 
-# Future Frontend Phases
+# Future Phases
 
 ## Phase 6 — Document Processing UI
 
 * Processing progress
 * Extraction and OCR status
-* Chunking status
-* Indexing status
+* Chunking and indexing status
 * Failed job retry
 
 ## Phase 7 — Retrieval Interface
@@ -405,8 +355,7 @@ FAILED
 
 * Search history
 * Retrieval metrics
-* Latency metrics
-* Cache performance
+* Latency and cache metrics
 * Citation accuracy
 * Usage analytics
 
@@ -414,8 +363,7 @@ FAILED
 
 * Organization settings
 * Permission configuration
-* Model settings
-* Retrieval settings
+* Model and retrieval settings
 * Cache settings
 
 ## Phase 10 — Final UI Polish
@@ -435,15 +383,9 @@ FAILED
 frontend/
 └── src/
     ├── api/
-    │   └── axios.js
     ├── components/
-    │   ├── Navbar/
-    │   ├── ProtectedRoute/
-    │   └── PublicRoute/
     ├── context/
-    │   └── AuthContext.jsx
     ├── layouts/
-    │   └── PublicLayout.jsx
     ├── pages/
     │   ├── CreateOrganization/
     │   ├── Dashboard/
@@ -466,11 +408,7 @@ frontend/
 Phase 5 — Document Management
 
 Finalize Backend Document Architecture
-→ Design PostgreSQL Models
-→ Design S3 Storage Structure
-→ Design Access Policies
-→ Design Qdrant Mapping
-→ Implement Backend
+→ Implement Document Backend
 → Build Document Management UI
 → Test Complete Document Lifecycle
 ~~~

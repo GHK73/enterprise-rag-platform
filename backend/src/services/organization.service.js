@@ -123,38 +123,54 @@ export const getOrganization = async(userId)=>{
 
 export const updateOrganization = async(userId, organizationData)=>{
     const {name, description} = organizationData;
+
     const user = await prisma.user.findUnique({
         where:{
-            id:userId 
+            id:userId
         },
         include:{
-            unit:true 
+            unit:true
         }
     });
+
     if(!user){
         throw new ApiError(404,"User not Found");
     }
+
     if(!user.unitId || !user.unit){
         throw new ApiError(
             404,
             "User does not belong to an organization"
         );
     }
+
     if(user.role !== "OWNER" && user.role !== "ADMIN"){
         throw new ApiError(
             403,
             "You do not have permission to update this organization"
         );
     }
-    const organization = await prisma.organization.update({
-        where:{
-            id: user.unit.organizationId 
-        },
-        data:{
-            name,
-            description 
-        }
+
+    const organization = await prisma.$transaction(async(tx)=>{
+        const updatedOrganization =
+            await tx.organization.update({
+                where:{
+                    id:user.unit.organizationId
+                },
+                data:{
+                    name,
+                    description
+                }
+            });
+
+        await incrementOrganizationRevision(
+            user.unit.organizationId,
+            tx
+        );
+
+        return updatedOrganization;
     });
+
     return organization;
 };
 
@@ -163,10 +179,10 @@ export const createOrganizationUnit = async(userId, unitData)=>{
 
     const user = await prisma.user.findUnique({
         where:{
-            id: userId
+            id:userId
         },
         include:{
-            unit: true
+            unit:true
         }
     });
 
@@ -190,7 +206,7 @@ export const createOrganizationUnit = async(userId, unitData)=>{
 
     const parentUnit = await prisma.organizationUnit.findUnique({
         where:{
-            id: parentId
+            id:parentId
         }
     });
 
@@ -222,9 +238,9 @@ export const createOrganizationUnit = async(userId, unitData)=>{
     }
 
     const validHierarchy = {
-        COMPANY: "DEPARTMENT",
-        DEPARTMENT: "TEAM",
-        TEAM: "GROUP"
+        COMPANY:"DEPARTMENT",
+        DEPARTMENT:"TEAM",
+        TEAM:"GROUP"
     };
 
     if(validHierarchy[parentUnit.type] !== type){
@@ -234,13 +250,23 @@ export const createOrganizationUnit = async(userId, unitData)=>{
         );
     }
 
-    const organizationUnit = await prisma.organizationUnit.create({
-        data:{
-            name,
-            type,
-            organizationId: user.unit.organizationId,
-            parentId
-        }
+    const organizationUnit = await prisma.$transaction(async(tx)=>{
+        const createdOrganizationUnit =
+            await tx.organizationUnit.create({
+                data:{
+                    name,
+                    type,
+                    organizationId:user.unit.organizationId,
+                    parentId
+                }
+            });
+
+        await incrementOrganizationRevision(
+            user.unit.organizationId,
+            tx
+        );
+
+        return createdOrganizationUnit;
     });
 
     return organizationUnit;
@@ -278,17 +304,19 @@ export const getOrganizationUnits = async(userId) =>{
 export const updateOrganizationUnit = async(
     userId,
     unitId,
-    unitData 
+    unitData
 )=>{
     const {name} = unitData;
+
     const user = await prisma.user.findUnique({
         where:{
-            id:userId 
+            id:userId
         },
         include:{
-            unit: true 
+            unit:true
         }
     });
+
     if(!user){
         throw new ApiError(404,"User not Found");
     }
@@ -299,104 +327,138 @@ export const updateOrganizationUnit = async(
             "User does not belong to an organization"
         );
     }
+
     if(user.role !== "OWNER" && user.role !== "ADMIN"){
         throw new ApiError(
             403,
             "You do not have permission to update organization units"
         );
     }
+
     const organizationUnit = await prisma.organizationUnit.findUnique({
         where:{
-            id:unitId 
+            id:unitId
         }
     });
+
     if(!organizationUnit){
         throw new ApiError(
             404,
             "Organization unit not Found"
         );
     }
+
     if(organizationUnit.organizationId !== user.unit.organizationId){
         throw new ApiError(
             403,
             "Organization unit does not belong to your organization"
         );
     }
-    const updatedOrganizationUnit = await prisma.organizationUnit.update({
-        where:{
-            id:unitId 
-        },
-        data:{
-            name 
-        }
-    });
+
+    const updatedOrganizationUnit =
+        await prisma.$transaction(async(tx)=>{
+            const updatedUnit =
+                await tx.organizationUnit.update({
+                    where:{
+                        id:unitId
+                    },
+                    data:{
+                        name
+                    }
+                });
+
+            await incrementOrganizationRevision(
+                user.unit.organizationId,
+                tx
+            );
+
+            return updatedUnit;
+        });
+
     return updatedOrganizationUnit;
-}
+};
 
 export const deleteOrganizationUnit = async(userId,unitId)=>{
     const user = await prisma.user.findUnique({
         where:{
-            id:userId 
+            id:userId
         },
         include:{
-            unit: true 
+            unit:true
         }
     });
+
     if(!user){
         throw new ApiError(404,"User not Found");
     }
+
     if(!user.unitId || !user.unit){
         throw new ApiError(
             404,
             "User does not belong to an organization"
         );
     }
+
     if(user.role !== "OWNER" && user.role !== "ADMIN"){
         throw new ApiError(
             403,
             "You do not have permission to delete organization units"
         );
     }
+
     const organizationUnit = await prisma.organizationUnit.findUnique({
         where:{
-            id:unitId 
+            id:unitId
         },
         include:{
-            children: true,
-            users: true 
+            children:true,
+            users:true
         }
     });
+
     if(!organizationUnit){
         throw new ApiError(
             404,
             "Organization unit not Found"
         );
     }
+
     if(organizationUnit.organizationId !== user.unit.organizationId){
         throw new ApiError(
             403,
             "Organization unit does not belong to your organization"
         );
     }
+
     if(organizationUnit.type === "COMPANY"){
         throw new ApiError(
             400,
             "COMPANY organization unit cannot be deleted"
         );
     }
+
     if(organizationUnit.children.length > 0){
         throw new ApiError(
             400,
             "Organization unit with child units cannot be deleted"
         );
     }
-    await prisma.organizationUnit.delete({
-        where:{
-            id:unitId 
-        }
+
+    await prisma.$transaction(async(tx)=>{
+        await tx.organizationUnit.delete({
+            where:{
+                id:unitId
+            }
+        });
+
+        await incrementOrganizationRevision(
+            user.unit.organizationId,
+            tx
+        );
     });
+
     return organizationUnit;
-}
+};
 
 export const getOrganizationMembers = async(userId)=>{
     const user = await prisma.user.findUnique({
@@ -596,11 +658,27 @@ export const updateUnitCapacity = async(userId, unitId, capacityData)=>{
             );
         }
     }
-   const updatedOrganizationUnit = await prisma.organizationUnit.update({
-    where:{id: unitId},
-    data:{allocatedCapacity} 
-   });
-   return updatedOrganizationUnit;
+    const updatedOrganizationUnit =
+        await prisma.$transaction(async(tx)=>{
+            const updatedUnit =
+                await tx.organizationUnit.update({
+                    where:{
+                        id:unitId
+                    },
+                    data:{
+                        allocatedCapacity
+                    }
+                });
+
+            await incrementOrganizationRevision(
+                user.unit.organizationId,
+                tx
+            );
+
+            return updatedUnit;
+        });
+
+    return updatedOrganizationUnit;
 };
 
 export const updateMemberRole = async(userId,memberId,memberData)=>{
@@ -643,24 +721,40 @@ export const updateMemberRole = async(userId,memberId,memberData)=>{
         throw new ApiError(403,"You do not have permission to assign roles to this member");
     }
 
-    const updatedMember = await prisma.user.update({
-        where:{id: memberId},
-        data:{role},
-        select:{
-            id: true,
-            fullName: true,
-            email: true,
-            role: true,
-            unitId: true,
-            unit:{
-                select:{
-                    id: true,
-                    name: true,
-                    type: true 
-                }
-            }
-        }
-    });
+    const updatedMember =
+        await prisma.$transaction(async(tx)=>{
+            const updatedUser =
+                await tx.user.update({
+                    where:{
+                        id:memberId
+                    },
+                    data:{
+                        role
+                    },
+                    select:{
+                        id:true,
+                        fullName:true,
+                        email:true,
+                        role:true,
+                        unitId:true,
+                        unit:{
+                            select:{
+                                id:true,
+                                name:true,
+                                type:true
+                            }
+                        }
+                    }
+                });
+
+            await incrementOrganizationRevision(
+                user.unit.organizationId,
+                tx
+            );
+
+            return updatedUser;
+        });
+
     return updatedMember;
 }
 
@@ -816,28 +910,39 @@ export const moveMember = async(userId,memberId,memberData)=>{
         );
     }
 
-    const updatedMember = await prisma.user.update({
-        where:{
-            id: memberId
-        },
-        data:{
-            unitId
-        },
-        select:{
-            id: true,
-            fullName: true,
-            email: true,
-            role: true,
-            unitId: true,
-            unit:{
-                select:{
-                    id: true,
-                    name: true,
-                    type: true
-                }
-            }
-        }
-    });
+    const updatedMember =
+        await prisma.$transaction(async(tx)=>{
+            const updatedUser =
+                await tx.user.update({
+                    where:{
+                        id:memberId
+                    },
+                    data:{
+                        unitId
+                    },
+                    select:{
+                        id:true,
+                        fullName:true,
+                        email:true,
+                        role:true,
+                        unitId:true,
+                        unit:{
+                            select:{
+                                id:true,
+                                name:true,
+                                type:true
+                            }
+                        }
+                    }
+                });
+
+            await incrementOrganizationRevision(
+                user.unit.organizationId,
+                tx
+            );
+
+            return updatedUser;
+        });
 
     return updatedMember;
 };
@@ -913,9 +1018,11 @@ export const removeMember = async(userId, memberId)=>{
                 revokedAt:new Date()
             }
         });
-
-        return tx.user.update({
-            where:{id:memberId},
+    
+        const updatedMember = await tx.user.update({
+            where:{
+                id:memberId
+            },
             data:{
                 role:null,
                 unitId:null
@@ -928,6 +1035,13 @@ export const removeMember = async(userId, memberId)=>{
                 unitId:true
             }
         });
+    
+        await incrementOrganizationRevision(
+            user.unit.organizationId,
+            tx
+        );
+    
+        return updatedMember;
     });
 
     return removedMember;
@@ -1132,14 +1246,61 @@ export const moveOrganizationUnit = async(
     }
 
     const updatedOrganizationUnit =
-        await prisma.organizationUnit.update({
-            where:{
-                id:unitId
-            },
-            data:{
-                parentId
-            }
+        await prisma.$transaction(async(tx)=>{
+            const updatedUnit =
+                await tx.organizationUnit.update({
+                    where:{
+                        id:unitId
+                    },
+                    data:{
+                        parentId
+                    }
+                });
+
+            await incrementOrganizationRevision(
+                user.unit.organizationId,
+                tx
+            );
+
+            return updatedUnit;
         });
 
     return updatedOrganizationUnit;
+};
+
+export const getOrganizationRevision = async(userId)=>{
+    const user = await prisma.user.findUnique({
+        where:{id: userId},
+        include:{unit: true}
+    });
+
+    if(!user){
+        throw new ApiError(404,"User not Found");
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(404,"User does not belong to an organization");
+    }
+
+    const organization = await prisma.organization.findUnique({
+        where:{id: user.unit.organizationId},
+        select:{revision: true}
+    });
+
+    if(!organization){
+        throw new ApiError(404,"Organization not Found");
+    }
+
+    return {revision: organization.revision};
+};
+
+export const incrementOrganizationRevision = async(organizationId, tx=prisma)=>{
+    const organization = await tx.organization.update({
+        where:{id: organizationId},
+        data:{
+            revision:{increment:1}
+        },
+        select:{revision: true}
+    });
+    return organization.revision;
 };
