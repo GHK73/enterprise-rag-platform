@@ -7,6 +7,26 @@ import {
     isUnitInsideScope
 } from "./permission.service.js";
 
+const runSerializableTransaction = async(transactionFunction, maxRetries=3)=>{
+    let attempt = 0;
+    while(attempt < maxRetries){
+        try{
+            return await prisma.$transaction(
+                transactionFunction,{
+                    isolationLevel: "Serializable"
+                }
+            );
+        }
+        catch(error){
+            if(error.code === "P2034" && attemp<maxRetries -1){
+                attempt++;
+                continue;
+            }
+            throw error;
+        }
+    }
+};
+
 export const createOrganization = async(userId, organizationData)=>{
     const {name, description, allocatedCapacity} = organizationData;
 
@@ -561,124 +581,186 @@ export const getUnitCapacity = async(userId,unitId)=>{
     };
 };
 
-export const updateUnitCapacity = async(userId, unitId, capacityData)=>{
+export const updateUnitCapacity = async(
+    userId,
+    unitId,
+    capacityData
+)=>{
     const {allocatedCapacity} = capacityData;
-    if(!Number.isInteger(allocatedCapacity) || allocatedCapacity <=0){
-        throw new ApiError(400,"Allocated capacity must be a positive integer");
+
+    if(
+        !Number.isInteger(allocatedCapacity) ||
+        allocatedCapacity <= 0
+    ){
+        throw new ApiError(
+            400,
+            "Allocated capacity must be a positive integer"
+        );
     }
+
     const user = await prisma.user.findUnique({
-        where:{id:userId},
-        include:{unit:true}
-    });
-    if(!user){
-        throw new ApiError(404,"User not Found");
-    }
-    if(!user.unitId || !user.unit){
-        throw new ApiError(404,"User does not belong to an Organization");
-    }
-    const organizationUnit = await prisma.organizationUnit.findUnique({
-        where:{id:unitId},
+        where:{
+            id:userId
+        },
         include:{
-            _count:{
-                select:{
-                    users: true
-                }
-            },
-            children:{
-                select:{
-                    allocatedCapacity: true
-                }
-            },
-            parent:{
+            unit:true
+        }
+    });
+
+    if(!user){
+        throw new ApiError(
+            404,
+            "User not Found"
+        );
+    }
+
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            404,
+            "User does not belong to an Organization"
+        );
+    }
+
+    const organizationId =
+        user.unit.organizationId;
+
+    return runSerializableTransaction(async(tx)=>{
+        const organizationUnit =
+            await tx.organizationUnit.findUnique({
+                where:{
+                    id:unitId
+                },
                 include:{
                     _count:{
                         select:{
-                            users: true
+                            users:true
                         }
                     },
                     children:{
                         select:{
-                            id: true,
-                            allocatedCapacity: true
+                            allocatedCapacity:true
+                        }
+                    },
+                    parent:{
+                        include:{
+                            _count:{
+                                select:{
+                                    users:true
+                                }
+                            },
+                            children:{
+                                select:{
+                                    id:true,
+                                    allocatedCapacity:true
+                                }
+                            }
                         }
                     }
                 }
+            });
+
+        if(!organizationUnit){
+            throw new ApiError(
+                404,
+                "Organization unit not Found"
+            );
+        }
+
+        if(
+            organizationUnit.organizationId !==
+            organizationId
+        ){
+            throw new ApiError(
+                403,
+                "Organization unit does not belong to your organization"
+            );
+        }
+
+        const directMembers =
+            organizationUnit._count.users;
+
+        const childAllocations =
+            organizationUnit.children.reduce(
+                (total,child)=>{
+                    return total +
+                        (child.allocatedCapacity || 0);
+                },
+                0
+            );
+
+        const usedCapacity =
+            directMembers + childAllocations;
+
+        if(allocatedCapacity < usedCapacity){
+            throw new ApiError(
+                400,
+                `Allocated capacity cannot be less than current usage of ${usedCapacity}`
+            );
+        }
+
+        if(organizationUnit.parent){
+            const parentUnit =
+                organizationUnit.parent;
+
+            if(parentUnit.allocatedCapacity === null){
+                throw new ApiError(
+                    400,
+                    "Parent unit capacity must be configured first"
+                );
+            }
+
+            const siblingAllocations =
+                parentUnit.children.reduce(
+                    (total,child)=>{
+                        if(
+                            child.id ===
+                            organizationUnit.id
+                        ){
+                            return total;
+                        }
+
+                        return total +
+                            (child.allocatedCapacity || 0);
+                    },
+                    0
+                );
+
+            const parentDirectMembers =
+                parentUnit._count.users;
+
+            const parentAvailableCapacity =
+                parentUnit.allocatedCapacity -
+                parentDirectMembers -
+                siblingAllocations;
+
+            if(
+                allocatedCapacity >
+                parentAvailableCapacity
+            ){
+                throw new ApiError(
+                    400,
+                    `Allocated capacity cannot exceed parent available capacity of ${parentAvailableCapacity}`
+                );
             }
         }
-    });
-    if(!organizationUnit){
-        throw new ApiError(404,"Organization unit not Found");
-    }
-    if(organizationUnit.organizationId !== user.unit.organizationId){
-        throw new ApiError(403,"Organization unit does not belong to your organization");
-    }
-    const directMembers = organizationUnit._count.users;
-    const childAllocations = organizationUnit.children.reduce((total,child)=>{
-        return total+(child.allocatedCapacity || 0);
-    },
-    0 
-   );
-   const usedCapacity = directMembers + childAllocations;
-   if(allocatedCapacity < usedCapacity){
-    throw new ApiError(400,`Allocated capacity cannot be less than current usage of ${usedCapacity}`);
-   }
-   if(organizationUnit.parent){
-        const parentUnit = organizationUnit.parent;
 
-        if(parentUnit.allocatedCapacity === null){
-            throw new ApiError(
-                400,
-                "Parent unit capacity must be configured first"
-            );
-        }
-
-        const siblingAllocations = parentUnit.children.reduce(
-            (total, child)=>{
-                if(child.id === organizationUnit.id){
-                    return total;
+        const updatedUnit =
+            await tx.organizationUnit.update({
+                where:{
+                    id:unitId
+                },
+                data:{
+                    allocatedCapacity
                 }
+            });
 
-                return total + (child.allocatedCapacity || 0);
-            },
-            0
+        await incrementOrganizationRevision(
+            organizationId,
+            tx
         );
 
-        const parentDirectMembers =
-            parentUnit._count.users;
-
-        const parentAvailableCapacity =
-            parentUnit.allocatedCapacity -
-            parentDirectMembers -
-            siblingAllocations;
-
-        if(allocatedCapacity > parentAvailableCapacity){
-            throw new ApiError(
-                400,
-                `Allocated capacity cannot exceed parent available capacity of ${parentAvailableCapacity}`
-            );
-        }
-    }
-    const updatedOrganizationUnit =
-        await prisma.$transaction(async(tx)=>{
-            const updatedUnit =
-                await tx.organizationUnit.update({
-                    where:{
-                        id:unitId
-                    },
-                    data:{
-                        allocatedCapacity
-                    }
-                });
-
-            await incrementOrganizationRevision(
-                user.unit.organizationId,
-                tx
-            );
-
-            return updatedUnit;
-        });
-
-    return updatedOrganizationUnit;
+        return updatedUnit;
+    });
 };
 
 export const updateMemberRole = async(userId,memberId,memberData)=>{
@@ -758,24 +840,34 @@ export const updateMemberRole = async(userId,memberId,memberData)=>{
     return updatedMember;
 }
 
-export const moveMember = async(userId,memberId,memberData)=>{
+export const moveMember = async(
+    userId,
+    memberId,
+    memberData
+)=>{
     const {unitId} = memberData;
 
     if(!unitId){
-        throw new ApiError(400,"Destination organization unit is required");
+        throw new ApiError(
+            400,
+            "Destination organization unit is required"
+        );
     }
 
     const user = await prisma.user.findUnique({
         where:{
-            id: userId
+            id:userId
         },
         include:{
-            unit: true
+            unit:true
         }
     });
 
     if(!user){
-        throw new ApiError(404,"User not Found");
+        throw new ApiError(
+            404,
+            "User not Found"
+        );
     }
 
     if(!user.unitId || !user.unit){
@@ -787,10 +879,10 @@ export const moveMember = async(userId,memberId,memberData)=>{
 
     const member = await prisma.user.findUnique({
         where:{
-            id: memberId
+            id:memberId
         },
         include:{
-            unit: true
+            unit:true
         }
     });
 
@@ -832,30 +924,6 @@ export const moveMember = async(userId,memberId,memberData)=>{
         );
     }
 
-    const destinationUnit =await prisma.organizationUnit.findUnique({
-            where:{id: unitId},
-            include:{
-                _count:{
-                    select:{
-                        users: true
-                    }
-                },
-                children:{
-                    select:{
-                        allocatedCapacity: true
-                    }
-                }
-            }
-        });
-
-    if(!destinationUnit){
-        throw new ApiError(404,"Destination organization unit not Found");
-    }
-
-    if(destinationUnit.organizationId !== user.unit.organizationId){
-        throw new ApiError(403,"Destination unit does not belong to your organization");
-    }
-
     const canMoveMember = await hasPermission(
         userId,
         "MOVE_MEMBER",
@@ -863,7 +931,10 @@ export const moveMember = async(userId,memberId,memberData)=>{
     );
 
     if(!canMoveMember){
-        throw new ApiError(403,"You do not have permission to move this member");
+        throw new ApiError(
+            403,
+            "You do not have permission to move this member"
+        );
     }
 
     const canMoveToDestination = await hasPermission(
@@ -879,72 +950,153 @@ export const moveMember = async(userId,memberId,memberData)=>{
         );
     }
 
-    if(destinationUnit.allocatedCapacity === null){
-        throw new ApiError(
-            400,
-            "Destination unit capacity must be configured first"
-        );
-    }
+    const organizationId =
+        user.unit.organizationId;
 
-    const directMembers =
-        destinationUnit._count.users;
+    return runSerializableTransaction(async(tx)=>{
+        const currentMember =
+            await tx.user.findUnique({
+                where:{
+                    id:memberId
+                },
+                include:{
+                    unit:true
+                }
+            });
 
-    const childAllocations =
-        destinationUnit.children.reduce(
-            (total,child)=>{
-                return total +
-                    (child.allocatedCapacity || 0);
-            },
-            0
-        );
+        if(
+            !currentMember ||
+            !currentMember.unitId ||
+            !currentMember.unit
+        ){
+            throw new ApiError(
+                409,
+                "Member state changed. Please try again"
+            );
+        }
 
-    const remainingCapacity =
-        destinationUnit.allocatedCapacity -
-        directMembers -
-        childAllocations;
+        if(
+            currentMember.unit.organizationId !==
+            organizationId
+        ){
+            throw new ApiError(
+                403,
+                "Member does not belong to your organization"
+            );
+        }
 
-    if(remainingCapacity <= 0){
-        throw new ApiError(
-            400,
-            "Destination organization unit has no remaining capacity"
-        );
-    }
+        if(currentMember.role === "OWNER"){
+            throw new ApiError(
+                403,
+                "Organization owner cannot be moved"
+            );
+        }
 
-    const updatedMember =
-        await prisma.$transaction(async(tx)=>{
-            const updatedUser =
-                await tx.user.update({
-                    where:{
-                        id:memberId
+        if(currentMember.unitId === unitId){
+            throw new ApiError(
+                400,
+                "Member already belongs to this organization unit"
+            );
+        }
+
+        const destinationUnit =
+            await tx.organizationUnit.findUnique({
+                where:{
+                    id:unitId
+                },
+                include:{
+                    _count:{
+                        select:{
+                            users:true
+                        }
                     },
-                    data:{
-                        unitId
-                    },
-                    select:{
-                        id:true,
-                        fullName:true,
-                        email:true,
-                        role:true,
-                        unitId:true,
-                        unit:{
-                            select:{
-                                id:true,
-                                name:true,
-                                type:true
-                            }
+                    children:{
+                        select:{
+                            allocatedCapacity:true
                         }
                     }
-                });
+                }
+            });
 
-            await incrementOrganizationRevision(
-                user.unit.organizationId,
-                tx
+        if(!destinationUnit){
+            throw new ApiError(
+                404,
+                "Destination organization unit not Found"
+            );
+        }
+
+        if(
+            destinationUnit.organizationId !==
+            organizationId
+        ){
+            throw new ApiError(
+                403,
+                "Destination unit does not belong to your organization"
+            );
+        }
+
+        if(destinationUnit.allocatedCapacity === null){
+            throw new ApiError(
+                400,
+                "Destination unit capacity must be configured first"
+            );
+        }
+
+        const directMembers =
+            destinationUnit._count.users;
+
+        const childAllocations =
+            destinationUnit.children.reduce(
+                (total,child)=>{
+                    return total +
+                        (child.allocatedCapacity || 0);
+                },
+                0
             );
 
-            return updatedUser;
-        });
+        const remainingCapacity =
+            destinationUnit.allocatedCapacity -
+            directMembers -
+            childAllocations;
 
-    return updatedMember;
+        if(remainingCapacity <= 0){
+            throw new ApiError(
+                400,
+                "Destination organization unit has no remaining capacity"
+            );
+        }
+
+        const updatedUser =
+            await tx.user.update({
+                where:{
+                    id:memberId
+                },
+                data:{
+                    unitId
+                },
+                select:{
+                    id:true,
+                    fullName:true,
+                    email:true,
+                    role:true,
+                    unitId:true,
+                    unit:{
+                        select:{
+                            id:true,
+                            name:true,
+                            type:true
+                        }
+                    }
+                }
+            });
+
+        await incrementOrganizationRevision(
+            organizationId,
+            tx
+        );
+
+        return updatedUser;
+    });
 };
 
 export const removeMember = async(userId, memberId)=>{
@@ -1071,7 +1223,10 @@ export const moveOrganizationUnit = async(
     });
 
     if(!user){
-        throw new ApiError(404,"User not Found");
+        throw new ApiError(
+            404,
+            "User not Found"
+        );
     }
 
     if(!user.unitId || !user.unit){
@@ -1119,72 +1274,6 @@ export const moveOrganizationUnit = async(
         );
     }
 
-    const destinationUnit =
-        await prisma.organizationUnit.findUnique({
-            where:{
-                id:parentId
-            },
-            include:{
-                _count:{
-                    select:{
-                        users:true
-                    }
-                },
-                children:{
-                    select:{
-                        id:true,
-                        allocatedCapacity:true
-                    }
-                }
-            }
-        });
-
-    if(!destinationUnit){
-        throw new ApiError(
-            404,
-            "Destination organization unit not Found"
-        );
-    }
-
-    if(
-        destinationUnit.organizationId !==
-        user.unit.organizationId
-    ){
-        throw new ApiError(
-            403,
-            "Destination unit does not belong to your organization"
-        );
-    }
-
-    const validParents = {
-        DEPARTMENT:"COMPANY",
-        TEAM:"DEPARTMENT",
-        GROUP:"TEAM"
-    };
-
-    if(
-        validParents[organizationUnit.type] !==
-        destinationUnit.type
-    ){
-        throw new ApiError(
-            400,
-            `${organizationUnit.type} cannot be moved under ${destinationUnit.type}`
-        );
-    }
-
-    const destinationInsideSubtree =
-        await isUnitInsideScope(
-            organizationUnit.id,
-            destinationUnit.id
-        );
-
-    if(destinationInsideSubtree){
-        throw new ApiError(
-            400,
-            "Organization unit cannot be moved inside its own subtree"
-        );
-    }
-
     const canMoveUnit = await hasPermission(
         userId,
         "MOVE_UNIT",
@@ -1201,7 +1290,7 @@ export const moveOrganizationUnit = async(
     const canMoveToDestination = await hasPermission(
         userId,
         "MOVE_UNIT",
-        destinationUnit.id
+        parentId
     );
 
     if(!canMoveToDestination){
@@ -1211,61 +1300,169 @@ export const moveOrganizationUnit = async(
         );
     }
 
-    if(destinationUnit.allocatedCapacity === null){
-        throw new ApiError(
-            400,
-            "Destination unit capacity must be configured first"
-        );
-    }
+    const organizationId =
+        user.unit.organizationId;
 
-    const directMembers =
-        destinationUnit._count.users;
+    return runSerializableTransaction(async(tx)=>{
+        const currentUnit =
+            await tx.organizationUnit.findUnique({
+                where:{
+                    id:unitId
+                }
+            });
 
-    const childAllocations =
-        destinationUnit.children.reduce(
-            (total,child)=>{
-                return total +
-                    (child.allocatedCapacity || 0);
-            },
-            0
-        );
+        if(!currentUnit){
+            throw new ApiError(
+                404,
+                "Organization unit not Found"
+            );
+        }
 
-    const destinationAvailableCapacity =
-        destinationUnit.allocatedCapacity -
-        directMembers -
-        childAllocations;
+        if(
+            currentUnit.organizationId !==
+            organizationId
+        ){
+            throw new ApiError(
+                403,
+                "Organization unit does not belong to your organization"
+            );
+        }
 
-    const requiredCapacity =
-        organizationUnit.allocatedCapacity || 0;
+        if(currentUnit.type === "COMPANY"){
+            throw new ApiError(
+                400,
+                "COMPANY organization unit cannot be moved"
+            );
+        }
 
-    if(requiredCapacity > destinationAvailableCapacity){
-        throw new ApiError(
-            400,
-            `Destination unit has only ${destinationAvailableCapacity} available capacity`
-        );
-    }
+        if(currentUnit.parentId === parentId){
+            throw new ApiError(
+                400,
+                "Organization unit already belongs to this parent"
+            );
+        }
 
-    const updatedOrganizationUnit =
-        await prisma.$transaction(async(tx)=>{
-            const updatedUnit =
-                await tx.organizationUnit.update({
-                    where:{
-                        id:unitId
+        const destinationUnit =
+            await tx.organizationUnit.findUnique({
+                where:{
+                    id:parentId
+                },
+                include:{
+                    _count:{
+                        select:{
+                            users:true
+                        }
                     },
-                    data:{
-                        parentId
+                    children:{
+                        select:{
+                            id:true,
+                            allocatedCapacity:true
+                        }
                     }
-                });
+                }
+            });
 
-            await incrementOrganizationRevision(
-                user.unit.organizationId,
+        if(!destinationUnit){
+            throw new ApiError(
+                404,
+                "Destination organization unit not Found"
+            );
+        }
+
+        if(
+            destinationUnit.organizationId !==
+            organizationId
+        ){
+            throw new ApiError(
+                403,
+                "Destination unit does not belong to your organization"
+            );
+        }
+
+        const validParents = {
+            DEPARTMENT:"COMPANY",
+            TEAM:"DEPARTMENT",
+            GROUP:"TEAM"
+        };
+
+        if(
+            validParents[currentUnit.type] !==
+            destinationUnit.type
+        ){
+            throw new ApiError(
+                400,
+                `${currentUnit.type} cannot be moved under ${destinationUnit.type}`
+            );
+        }
+
+        const destinationInsideSubtree =
+            await isUnitInsideScope(
+                currentUnit.id,
+                destinationUnit.id,
                 tx
             );
 
-            return updatedUnit;
-        });
+        if(destinationInsideSubtree){
+            throw new ApiError(
+                400,
+                "Organization unit cannot be moved inside its own subtree"
+            );
+        }
 
-    return updatedOrganizationUnit;
+        if(destinationUnit.allocatedCapacity === null){
+            throw new ApiError(
+                400,
+                "Destination unit capacity must be configured first"
+            );
+        }
+
+        const directMembers =
+            destinationUnit._count.users;
+
+        const childAllocations =
+            destinationUnit.children.reduce(
+                (total,child)=>{
+                    return total +
+                        (child.allocatedCapacity || 0);
+                },
+                0
+            );
+
+        const destinationAvailableCapacity =
+            destinationUnit.allocatedCapacity -
+            directMembers -
+            childAllocations;
+
+        const requiredCapacity =
+            currentUnit.allocatedCapacity || 0;
+
+        if(
+            requiredCapacity >
+            destinationAvailableCapacity
+        ){
+            throw new ApiError(
+                400,
+                `Destination unit has only ${destinationAvailableCapacity} available capacity`
+            );
+        }
+
+        const updatedUnit =
+            await tx.organizationUnit.update({
+                where:{
+                    id:unitId
+                },
+                data:{
+                    parentId
+                }
+            });
+
+        await incrementOrganizationRevision(
+            organizationId,
+            tx
+        );
+
+        return updatedUnit;
+    });
 };
 
 export const getOrganizationRevision = async(userId)=>{

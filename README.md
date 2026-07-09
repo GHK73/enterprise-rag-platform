@@ -1,6 +1,6 @@
 # Enterprise Retrieval-Augmented Generation (RAG) Platform
 
-> A production-inspired enterprise RAG platform for securely ingesting, versioning, retrieving, and querying organizational knowledge using permission-aware retrieval, document lifecycle management, and configurable RAG pipelines.
+> A production-inspired platform for securely managing and querying organizational knowledge using permission-aware retrieval and Retrieval-Augmented Generation.
 
 ---
 
@@ -8,639 +8,264 @@
 
 Enterprise knowledge is distributed across financial reports, legal contracts, HR policies, technical documentation, research papers, and internal knowledge bases.
 
-Traditional AI assistants can:
+General-purpose AI assistants can produce unsupported answers, expose information without respecting organizational boundaries, and fail to reflect changing documents.
 
-* Hallucinate unsupported information
-* Ignore organizational access boundaries
-* Expose confidential documents
-* Fail to reflect document updates
-* Generate answers without supporting evidence
+This project is designed around one core rule:
 
-This platform addresses these problems by retrieving only authorized and relevant information before generating an answer.
-
-The primary rule of the system is:
-
-```text
+~~~text
 Unauthorized content must never reach the LLM.
-```
+~~~
+
+The platform combines enterprise organization management, document lifecycle management, access control, retrieval infrastructure, and AI generation into one system.
 
 ---
 
-# Core Objectives
+# What the Platform Does
 
-* Build a secure multi-tenant enterprise RAG platform
-* Isolate knowledge between organizations
-* Enforce authorization before document content reaches the LLM
-* Preserve complete document and version history
-* Support permission-aware retrieval
-* Reduce hallucinations through retrieval and answer validation
-* Build modular and configurable RAG components
-* Improve performance using caching and background processing
-* Measure retrieval quality, generation quality, and system performance
+Organizations can:
+
+* Create and manage an isolated enterprise workspace
+* Structure members into departments, teams, and groups
+* Delegate permissions within specific hierarchy scopes
+* Manage members, invitations, and organizational changes
+* Upload and version enterprise documents
+* Control who can access each document
+* Process and index organizational knowledge
+* Search authorized content using hybrid retrieval
+* Generate grounded answers with source citations
+
+---
+
+# System Flow
+
+~~~text
+Organization Setup
+→ Member and Permission Management
+→ Document Upload
+→ Access Configuration
+→ Document Processing
+→ Knowledge Indexing
+→ Permission-Aware Retrieval
+→ Grounded Answer Generation
+→ Citations and Verification
+~~~
+
+The organization and authorization layer determines what a user is allowed to access before enterprise knowledge is used for retrieval or generation.
 
 ---
 
 # High-Level Architecture
 
-```text
-Frontend
-React + Vite
+~~~text
+React Frontend
         ↓
-Backend API
-Node.js + Express.js
+Node.js + Express API
         ↓
 PostgreSQL + Prisma
-        ├── Organizations
-        ├── Users
+        ├── Organizations and Users
         ├── Permissions
-        ├── Documents
-        ├── Versions
-        ├── Access Policies
-        └── Chunk Metadata
+        ├── Documents and Versions
+        └── Access Policies
 
 Amazon S3
-        ├── Original Files
-        ├── Versioned Files
-        └── Processed Artifacts
+        └── File Storage
 
 Redis + BullMQ
         ├── Caching
         └── Background Jobs
 
 FastAPI AI Service
-        ├── Text Extraction
+        ├── Document Processing
         ├── Chunking
         ├── Embeddings
-        ├── Reranking
-        └── AI Processing
+        └── Reranking
 
 Qdrant
         └── Vector Retrieval
 
 LLM
-        └── Answer Generation and Verification
-```
+        └── Grounded Answer Generation
+~~~
+
+Each component has a separate responsibility:
+
+* **PostgreSQL** is the source of truth for application state and authorization.
+* **Amazon S3** stores original and versioned files.
+* **Redis and BullMQ** support caching and asynchronous processing.
+* **FastAPI** handles AI and document-processing workloads.
+* **Qdrant** stores vectors for semantic retrieval.
+* **The LLM** receives only authorized and validated context.
 
 ---
 
-# Enterprise Organization Model
+# Enterprise Organization and Access
 
-Each organization is represented as a hierarchical tree:
+Each organization has an isolated hierarchical workspace:
 
-```text
+~~~text
 COMPANY
 └── DEPARTMENT
     └── TEAM
         └── GROUP
-```
+~~~
 
-The hierarchy supports:
+The platform supports:
 
-* Organization management
-* Department, team, and group management
-* Member invitations
-* Role management
-* Member movement between units
-* Member removal
-* Unit and subtree movement
-* Capacity allocation
+* Organization and unit management
+* Member invitations and onboarding
+* Member movement and removal
+* Unit and subtree reorganization
+* Capacity management
+* Scoped permission delegation
 
-This hierarchy is also used to determine where permissions are valid.
+Authorization is not based on roles alone.
 
----
-
-# Authorization Model
-
-The platform does not rely on roles alone.
-
-```text
-Effective Access
+~~~text
+Effective Authority
 =
 Permission
-AND
++
 Hierarchy Scope
-AND
-Valid Delegation
-```
++
+Delegation Authority
+~~~
 
-Roles classify members:
+This allows users to receive specific administrative authority only within the parts of the organization they are responsible for.
 
-```text
-OWNER
-ADMIN
-MANAGER
-MEMBER
-```
-
-Atomic permissions control individual operations:
-
-```text
-INVITE_MEMBER
-REMOVE_MEMBER
-UPDATE_MEMBER
-ASSIGN_ROLE
-MOVE_MEMBER
-
-CREATE_UNIT
-UPDATE_UNIT
-DELETE_UNIT
-MOVE_UNIT
-```
-
-Each permission grant contains:
-
-```text
-Permission
-→ What action is allowed?
-
-Scope
-→ Where in the organization hierarchy is it allowed?
-
-Delegation
-→ Who granted the authority?
-
-Can Delegate
-→ Can the recipient grant the permission to others?
-```
-
-Example:
-
-```text
-Engineering Head
-└── MOVE_UNIT
-    ├── Scope: Engineering
-    └── Can Delegate: true
-```
-
-The permission is valid only inside the Engineering subtree.
+The platform also protects shared organization state using transaction-safe mutations, conflict handling, and revision-based multi-user synchronization.
 
 ---
 
-# Capacity Management
+# Document and Knowledge Lifecycle
 
-Capacity controls how members and child units are distributed through the organization hierarchy.
+Documents are planned to move through the following lifecycle:
 
-```text
-Remaining Capacity
-=
-Allocated Capacity
-− Direct Members
-− Direct Child Allocations
-```
-
-Example:
-
-```text
-Engineering Capacity = 100
-
-├── Direct Members = 10
-├── Backend Allocation = 40
-├── Frontend Allocation = 30
-└── Remaining Capacity = 20
-```
-
-Capacity is validated when:
-
-* Accepting invitations
-* Updating unit capacity
-* Moving members
-* Moving units
-
-This prevents any operation from exceeding the capacity available in the hierarchy.
-
----
-
-# Document Architecture
-
-The document system separates application metadata, file storage, and vector retrieval.
-
-```text
-PostgreSQL + Prisma
-→ Document metadata
-→ Document versions
-→ Access policies
-→ Processing status
-→ Chunk metadata
-→ Storage references
-→ Vector references
-
-Amazon S3
-→ Original files
-→ Versioned file objects
-→ Processed artifacts
-
-Qdrant
-→ Embedding vectors
-→ Chunk references
-→ Filtered vector retrieval
-
-Redis + BullMQ
-→ Caching
-→ Background processing
-```
-
-PostgreSQL remains the source of truth for authorization and document state.
-
-Amazon S3 stores files.
-
-Qdrant stores vectors for retrieval.
-
-Redis and BullMQ handle caching and asynchronous processing.
-
----
-
-# Document Lifecycle
-
-Documents are versioned instead of overwritten.
-
-```text
+~~~text
 Upload
 → Validate Access
-→ Create Document
-→ Store File in S3
-→ Create Document Version
-→ Queue Processing Job
-→ Extract Text or OCR
-→ Create Chunks
-→ Generate Embeddings
-→ Index in Qdrant
-→ Mark Document READY
-```
-
-The document system supports:
-
-* Document upload
-* Metadata management
-* Automatic versioning
-* Processing status tracking
-* OCR
-* Rollback
-* Soft deletion
-* Recovery
-* Authorized downloads using short-lived S3 presigned URLs
-
-Each update creates a new document version while preserving previous versions.
-
----
-
-# Permission-Aware Document Access
-
-Operational permissions and document access are separate concepts.
-
-```text
-PermissionGrant
-→ Can the user perform an operation?
-
-DocumentAccessPolicy
-→ Can the user access this document?
-```
-
-Document access policies can target:
-
-```text
-ORGANIZATION
-UNIT
-USER
-ROLE
-```
-
-Policies can also be time-bound:
-
-```text
-validFrom
-validUntil
-revokedAt
-```
-
-Example:
-
-```text
-July 1 → July 15
-Finance only
-
-July 15 → August 1
-Finance + Managers
-
-After August 1
-Entire organization
-```
-
-Changing document access does not require moving files or rebuilding embeddings.
-
-```text
-S3 File          → Unchanged
-Document Record  → Unchanged
-Chunks           → Unchanged
-Qdrant Vectors   → Unchanged
-Active Policy    → Changes
-```
-
-PostgreSQL remains the authorization authority.
-
----
-
-# Incremental Indexing
-
-When a document changes, the platform avoids regenerating embeddings for unchanged content.
-
-```text
-New Version
+→ Store File
+→ Create Version
+→ Queue Processing
 → Extract Content
 → Create Chunks
-→ Calculate Content Hashes
-→ Compare With Previous Version
-→ Reuse Unchanged Chunks
-→ Embed Only Changed Chunks
-→ Update Qdrant
-```
+→ Generate Embeddings
+→ Index for Retrieval
+→ Mark Ready
+~~~
 
-This provides:
+Documents are versioned instead of overwritten so previous states can be preserved and recovered.
 
-* Faster indexing
-* Lower embedding costs
-* Less duplicate processing
-* Faster document synchronization
+Document access is separate from administrative permissions and may be assigned to:
+
+~~~text
+Organization
+Unit
+User
+Role
+~~~
+
+Access policies can also support temporary and scheduled access.
 
 ---
 
-# Secure Retrieval Pipeline
+# Secure Retrieval and RAG
 
-Every query passes through a permission-aware retrieval pipeline.
+A user query will pass through a permission-aware retrieval pipeline:
 
-```text
+~~~text
 User Query
-      ↓
-Authentication
-      ↓
-Resolve Active Document Access
-      ↓
-Query Processing
-      ↓
-┌────────────────┬────────────────┐
-│                │                │
-Semantic Search  Keyword Search   Metadata Filters
-│                │                │
-└────────────────┴────────────────┘
-      ↓
-Merge Results
-      ↓
-Final Authorization Validation
-      ↓
-Reranking
-      ↓
-Context Validation
-      ↓
-Answer Generation
-      ↓
-Answer Verification
-      ↓
-Citation Generation
-      ↓
-Response
-```
+→ Authentication
+→ Resolve Authorized Documents
+→ Semantic + Keyword Retrieval
+→ Metadata Filtering
+→ Authorization Validation
+→ Reranking
+→ Context Validation
+→ Answer Generation
+→ Verification
+→ Citations
+~~~
 
-Authorization is checked before retrieval and validated again before context reaches the LLM.
+Authorization is enforced before retrieval and validated again before retrieved content reaches the LLM.
+
+If sufficient supporting evidence is unavailable, the system should avoid generating an unsupported answer.
 
 ---
 
-# Qdrant Retrieval Model
+# Key Engineering Goals
 
-Qdrant stores embedding vectors with stable identifiers.
+The project focuses on:
 
-Example payload:
-
-```text
-{
-    organizationId,
-    documentId,
-    versionId,
-    chunkId,
-    isCurrentVersion
-}
-```
-
-Retrieval flow:
-
-```text
-User Query
-→ Resolve Active Access in PostgreSQL
-→ Determine Authorized Search Scope
-→ Search Qdrant
-→ Retrieve Candidate Chunks
-→ Validate Authorization Again
-→ Rerank Results
-→ Send Authorized Context to LLM
-```
-
-Frequently changing access policies remain in PostgreSQL instead of being treated as static vector metadata.
-
-This avoids rebuilding vectors whenever access rules change.
-
----
-
-# Hallucination Reduction
-
-The platform prioritizes supported answers over uncertain generation.
-
-Techniques include:
-
-* Hybrid retrieval
-* Context validation
-* Confidence thresholds
-* Retrieval verification
-* Answer verification
-* Citation generation
-* Permission-aware context filtering
-
-If sufficient evidence cannot be retrieved, the system should refuse to generate an unsupported answer.
-
----
-
-# Intelligent Query Caching
-
-The platform uses multiple caching strategies:
-
-```text
-Exact Query Cache
-Semantic Query Cache
-Redis Response Cache
-```
-
-Before returning a cached response, the system validates:
-
-* Current user access
-* Current document versions
-* Source chunk integrity
-* Confidence thresholds
-* Verification status
-
-Only cache entries affected by changed documents or access conditions should be invalidated.
-
----
-
-# Configurable RAG Pipeline
-
-Major RAG components can be enabled, disabled, or replaced through configuration.
-
-```env
-# Retrieval
-RETRIEVAL_MODE=hybrid
-
-# Caching
-REDIS_ENABLED=true
-QUERY_CACHE_ENABLED=true
-SEMANTIC_CACHE_ENABLED=true
-
-# AI Pipeline
-RERANKER_ENABLED=true
-QUERY_EXPANSION_ENABLED=false
-HALLUCINATION_CHECK_ENABLED=true
-CITATION_GENERATION_ENABLED=true
-
-# Document Processing
-INCREMENTAL_INDEXING_ENABLED=true
-OCR_ENABLED=false
-STREAMING_ENABLED=true
-
-# Monitoring
-AUDIT_LOGGING_ENABLED=true
-METRICS_ENABLED=true
-
-# Models
-EMBEDDING_MODEL=bge-small-en
-LLM_PROVIDER=llama
-```
-
-The configurable pipeline includes:
-
-```text
-Retrieval
-├── Semantic Search
-├── Keyword Search
-└── Hybrid Search
-
-Embeddings
-├── BGE
-├── E5
-└── MiniLM
-
-Query Processing
-├── Query Expansion
-├── Metadata Filtering
-└── Context Compression
-
-Generation
-├── Multiple LLM Providers
-├── Streaming
-└── Citations
-
-Reliability
-├── Hallucination Detection
-└── Answer Verification
-
-Performance
-├── Redis Caching
-├── Background Processing
-└── Incremental Indexing
-```
-
----
-
-# Performance Optimizations
-
-The platform uses or explores:
-
-* Redis caching
-* BullMQ workers
-* Background processing
-* Parallel retrieval
-* `Promise.all()`
-* `Promise.allSettled()`
-* Event-driven architecture
-* Streaming responses
-* Incremental embedding updates
-* Filtered vector retrieval
-* Version-aware cache invalidation
-
-Major optimizations should be benchmarked before and after implementation.
-
----
-
-# Evaluation Framework
-
-The system evaluates retrieval quality, generation quality, and performance.
-
-## Retrieval Metrics
-
-* Recall@K
-* Precision@K
-* Mean Reciprocal Rank (MRR)
-* Hit Rate
-* Normalized Discounted Cumulative Gain (NDCG)
-
-## Generation Metrics
-
-* Faithfulness
-* Answer relevancy
-* Hallucination rate
-* Citation accuracy
-
-## Performance Metrics
-
-* Average response time
-* Retrieval latency
-* Embedding latency
-* LLM latency
-* Cache hit rate
-* Throughput
-* Token usage
-* Cost reduction
+* Multi-tenant organization isolation
+* Hierarchical and delegated authorization
+* Concurrency-safe state mutations
+* Multi-user state synchronization
+* Secure document lifecycle management
+* Permission-aware retrieval
+* Incremental document indexing
+* Hybrid search and reranking
+* Grounded answers with citations
+* Hallucination reduction
+* Version-aware caching
+* Measurable retrieval and generation quality
 
 ---
 
 # Technology Stack
 
-```text
+~~~text
 Frontend
-├── React
-├── Vite
-├── Axios
-└── CSS
+└── React + Vite
 
-Backend
-├── Node.js
-└── Express.js
+Backend API
+└── Node.js + Express.js
 
 Database
-├── PostgreSQL
-└── Prisma ORM
+└── PostgreSQL + Prisma
 
 File Storage
 └── Amazon S3
 
-AI Services
-├── FastAPI
-├── Sentence Transformers
-└── Lightweight LLMs
+AI Service
+└── FastAPI + Sentence Transformers
 
-Vector Retrieval
+Vector Database
 └── Qdrant
 
-Background Processing and Caching
-├── Redis
-└── BullMQ
-```
+Caching and Background Jobs
+└── Redis + BullMQ
+~~~
+---
+
+# Project Documentation
+
+Detailed implementation decisions and development progress are maintained separately:
+
+~~~text
+README.md
+→ Overall project understanding
+
+Backend Development Log
+→ Backend implementation progress
+
+Frontend Development Log
+→ Frontend implementation progress
+
+docs/DATABASE.md
+→ Database models and design decisions
+~~~
 
 ---
 
-# Project Philosophy
-
-Every major engineering decision should answer:
-
-1. Why is this needed?
-2. How does it improve the system?
-3. Can the improvement be measured?
+# Project Goal
 
 The goal is not to build another chatbot.
 
-The goal is to engineer a secure, scalable, explainable, permission-aware, and measurable enterprise knowledge retrieval platform.
+The goal is to engineer a secure enterprise knowledge platform where organizational access rules, document state, retrieval quality, and generated answers work together as one system.
+
+~~~text
+Authorized Knowledge
+→ Relevant Retrieval
+→ Validated Context
+→ Grounded Answer
+~~~

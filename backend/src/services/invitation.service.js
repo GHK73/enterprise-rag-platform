@@ -201,141 +201,152 @@ export const getInvitations = async(userId)=>{
     return invitations;
 };
 
-export const acceptInvitation = async(userId,token)=>{
-    const user = await prisma.user.findUnique({
-        where:{
-            id: userId
-        }
-    });
-
-    if(!user){
-        throw new ApiError(404,"User not Found");
-    }
-
-    if(user.unitId){
-        throw new ApiError(
-            400,
-            "User already belongs to an organization"
-        );
-    }
-
-    const invitation = await prisma.invitation.findUnique({
-        where:{
-            token
-        },
-        include:{
-            unit: true
-        }
-    });
-
-    if(!invitation){
-        throw new ApiError(
-            404,
-            "Invitation not Found"
-        );
-    }
-
-    if(invitation.status !== "PENDING"){
-        throw new ApiError(
-            400,
-            "Invitation is no longer active"
-        );
-    }
-
-    if(invitation.expiresAt <= new Date()){
-        await prisma.invitation.update({
+export const acceptInvitation = async(
+    userId,
+    token
+)=>{
+    return runSerializableTransaction(async(tx)=>{
+        const user = await tx.user.findUnique({
             where:{
-                id: invitation.id
-            },
-            data:{
-                status: "EXPIRED"
+                id:userId
             }
         });
 
-        throw new ApiError(
-            400,
-            "Invitation has expired"
-        );
-    }
+        if(!user){
+            throw new ApiError(
+                404,
+                "User not Found"
+            );
+        }
 
-    if(
-        invitation.email.toLowerCase() !==
-        user.email.toLowerCase()
-    ){
-        throw new ApiError(
-            403,
-            "Invitation does not belong to this user"
-        );
-    }
+        if(user.unitId){
+            throw new ApiError(
+                400,
+                "User already belongs to an organization"
+            );
+        }
 
-    const result = await prisma.$transaction(async(tx)=>{
-        const unit = await tx.organizationUnit.findUnique({
-            where:{
-                id: invitation.unitId
-            },
-            include:{
-                _count:{
-                    select:{
-                        users: true
-                    }
+        const invitation =
+            await tx.invitation.findUnique({
+                where:{
+                    token
                 },
-                children:{
-                    select:{
-                        allocatedCapacity: true
+                include:{
+                    unit:true
+                }
+            });
+
+        if(!invitation){
+            throw new ApiError(
+                404,
+                "Invitation not Found"
+            );
+        }
+
+        if(invitation.status !== "PENDING"){
+            throw new ApiError(
+                400,
+                "Invitation is no longer active"
+            );
+        }
+
+        if(invitation.expiresAt <= new Date()){
+            await tx.invitation.update({
+                where:{
+                    id:invitation.id
+                },
+                data:{
+                    status:"EXPIRED"
+                }
+            });
+
+            throw new ApiError(
+                400,
+                "Invitation has expired"
+            );
+        }
+
+        if(
+            invitation.email.toLowerCase() !==
+            user.email.toLowerCase()
+        ){
+            throw new ApiError(
+                403,
+                "Invitation does not belong to this user"
+            );
+        }
+
+        const unit =
+            await tx.organizationUnit.findUnique({
+                where:{
+                    id:invitation.unitId
+                },
+                include:{
+                    _count:{
+                        select:{
+                            users:true
+                        }
+                    },
+                    children:{
+                        select:{
+                            allocatedCapacity:true
+                        }
                     }
                 }
-            }
-        });
-    
+            });
+
         if(!unit){
             throw new ApiError(
                 404,
                 "Organization unit not Found"
             );
         }
-    
+
         if(unit.allocatedCapacity === null){
             throw new ApiError(
                 400,
                 "Unit capacity has not been configured"
             );
         }
-    
-        const childAllocations = unit.children.reduce(
-            (total, child)=>{
-                return total + (child.allocatedCapacity || 0);
-            },
-            0
-        );
-    
+
+        const childAllocations =
+            unit.children.reduce(
+                (total,child)=>{
+                    return total +
+                        (child.allocatedCapacity || 0);
+                },
+                0
+            );
+
         const remainingCapacity =
             unit.allocatedCapacity -
             unit._count.users -
             childAllocations;
-    
+
         if(remainingCapacity <= 0){
             throw new ApiError(
                 400,
                 "Organization unit has reached its capacity"
             );
         }
-    
-        const updatedUser = await tx.user.update({
-            where:{
-                id: userId
-            },
-            data:{
-                unitId: invitation.unitId,
-                role: invitation.role
-            }
-        });
-    
+
+        const updatedUser =
+            await tx.user.update({
+                where:{
+                    id:userId
+                },
+                data:{
+                    unitId:invitation.unitId,
+                    role:invitation.role
+                }
+            });
+
         await tx.invitation.update({
             where:{
-                id: invitation.id
+                id:invitation.id
             },
             data:{
-                status: "ACCEPTED"
+                status:"ACCEPTED"
             }
         });
 
@@ -343,11 +354,9 @@ export const acceptInvitation = async(userId,token)=>{
             invitation.organizationId,
             tx
         );
-    
+
         return updatedUser;
     });
-
-    return result;
 };
 
 export const revokeInvitation = async(

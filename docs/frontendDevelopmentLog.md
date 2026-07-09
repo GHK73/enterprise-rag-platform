@@ -12,9 +12,9 @@ Implementation progress for the Enterprise RAG Platform frontend.
 | --- | --- |
 | Frontend Foundation | ✅ |
 | Authentication | ✅ |
+| Dashboard | ✅ |
 | Organization Management | ✅ |
-| Access & Member Management | ✅ |
-| Dynamic Organization Workspace | ✅ |
+| Access & Administration UI | ✅ |
 | Organization Synchronization | ✅ |
 | Document Management UI | ⏳ |
 
@@ -26,10 +26,10 @@ Implementation progress for the Enterprise RAG Platform frontend.
 
 * React + Vite setup
 * React Router DOM and Axios
-* Global responsive styling
+* Global responsive styling and color system
 * Application routing
-* Public layout and Navbar
-* Home page
+* Public layout and responsive Navbar
+* Home page with lightweight CSS background effects
 
 ---
 
@@ -40,8 +40,7 @@ Implementation progress for the Enterprise RAG Platform frontend.
 * Login and Register pages
 * Reusable Axios instance
 * JWT storage and protected requests
-* Authentication Context
-* Session verification
+* Authentication Context and session verification
 * Invalid token cleanup
 * Public and protected route guards
 * Authentication-aware Navbar and logout
@@ -56,14 +55,28 @@ Login
 
 ---
 
-# Phase 3 — Organization Management ✅
+# Phase 3 — Dashboard & Organization Management ✅
+
+## 3.1 Dashboard ✅
 
 ## Completed
 
-* Organization creation and update
-* Dedicated `/organization` page
-* Organization and member retrieval
-* Recursive hierarchy rendering
+* Organization overview
+* Current organization revision
+* Total unit and member summaries
+* Department, team, and group breakdown
+* Quick navigation to organization, permissions, and invitations
+* Responsive dashboard layout
+
+---
+
+## 3.2 Organization Management ✅
+
+## Completed
+
+* Organization creation
+* Dedicated `/organization` workspace
+* Organization, unit, and member retrieval
 * Unit creation, rename, movement, and deletion
 * Dynamic child and parent selection
 * Root `COMPANY` protection
@@ -101,15 +114,6 @@ COMPANY → DEPARTMENT → TEAM → GROUP
 * Session refresh after joining
 * Capacity and validation errors
 
-~~~text
-Invite Member
-→ Select Unit + Role
-→ User Accepts Invitation
-→ Backend Validates Access + Capacity
-→ Refresh Session
-→ Organization Access
-~~~
-
 External email delivery is not implemented yet.
 
 ---
@@ -118,8 +122,7 @@ External email delivery is not implemented yet.
 
 * Capacity controls for all unit types
 * Allocated capacity display
-* Direct member usage
-* Child allocation usage
+* Direct member and child allocation usage
 * Remaining capacity
 * Capacity setup and updates
 * Validation error display
@@ -137,40 +140,30 @@ Allocated Capacity
 
 ## 4.4 Member Management ✅
 
-* Direct members shown inside the selected unit
+* Direct members scoped to the selected unit
 * Member search
 * Inline role updates
-* Member movement
-* Member removal
+* Member movement and removal
 * Owner protection
 * Capacity and permission error display
 * Immediate local state updates
-
-~~~text
-Select Unit
-→ View Direct Members
-→ Update Role / Move / Remove
-→ Backend Validates Operation
-→ Update Local State
-~~~
 
 ---
 
 ## 4.5 Dynamic Organization Workspace ✅
 
-The Organization page was redesigned to support large and changing organization structures.
+The Organization page supports large and changing organization structures.
 
 ## Completed
 
-* Collapsible hierarchy tree
+* Collapsible recursive hierarchy tree
 * Expand and collapse branches
 * Selected-unit details panel
-* Direct members scoped to the selected unit
-* Member search
+* Direct member scoping and search
 * Sticky hierarchy panel on larger screens
 * Bounded hierarchy scrolling
 * Local state updates without page refresh
-* Selected-unit preservation after data refresh
+* Selected-unit preservation after refresh
 * Root fallback when the selected unit no longer exists
 
 ## Workspace
@@ -187,13 +180,11 @@ Organization Structure
     └── Direct Members
 ~~~
 
-This prevents the page from continuously growing as the organization gains more branches and members.
-
 ---
 
 ## 4.6 Unit Reorganization ✅
 
-* Move units and subtrees
+* Unit and subtree movement
 * Valid destination filtering
 * Root movement protection
 * Hierarchy and capacity error display
@@ -208,79 +199,61 @@ COMPANY    → Cannot Move
 
 ---
 
-## 4.7 Organization Synchronization ⏳
+## 4.7 Organization Synchronization ✅
 
-Revision-based multi-user change detection is implemented and working.
+Revision-based multi-user change detection provides synchronization without WebSockets or full-page reloads.
 
 ## Completed
 
-* Store the loaded organization revision
+* Store loaded organization revision
 * Manual update checks
 * Automatic checks every 60 seconds
 * Skip checks while the tab is hidden
 * Check immediately when the tab becomes visible
 * Detect stale organization state
-* Show an update notification
-* Refresh data without browser reload
-* Preserve the selected unit when possible
-
-## Remaining
-
-* Prevent stale data from being accepted with a newer revision
-* Synchronize revision after changes made by the current tab
-* Add loading protection for repeated refresh requests
-
-## Current Flow
-
-~~~text
-Load Organization
-→ Store Revision
-→ Check Latest Revision
-→ Detect Change
-→ Show Updates Available
-→ Refresh Organization State
-~~~
-
-## Next Fixes
-
-~~~text
-Consistent Snapshot Refresh
-→ Local Mutation Revision Sync
-→ Refresh Loading Protection
-→ Organization Synchronization Complete
-~~~
-
-## Completed
-
-* Store the revision loaded with organization data
-* Manually check for updates
-* Automatically check every 60 seconds
-* Skip background checks while the tab is hidden
-* Check immediately when the tab becomes visible
-* Detect stale organization state
-* Show an update notification
-* Refresh organization data without browser reload
-* Preserve the selected unit when possible
+* Show update notifications
+* Consistent snapshot refresh using before/after revision validation
+* Reject mixed snapshots when the revision changes during refresh
+* Synchronize revision after local mutations
+* Prevent false update notifications for the current tab
+* Protect against repeated concurrent refresh requests
+* Preserve the selected unit after refresh
 * Fall back to the root unit when necessary
 
 ## Flow
 
 ~~~text
 Load Organization
-→ Store Current Revision
+→ Store Revision
+→ Check Latest Revision
 
-Check Latest Revision
-→ Same Revision
-   → No Action
+Same Revision
+→ No Action
 
-→ New Revision
-   → Show Updates Available
-   → Refresh Changes
-   → Update React State
-   → Store Latest Revision
+New Revision
+→ Show Updates Available
+→ Read Revision Before Refresh
+→ Fetch Organization State
+→ Read Revision After Refresh
+
+Revisions Match
+→ Accept Snapshot
+→ Update React State
+
+Revisions Differ
+→ Reject Snapshot
+→ Refresh Again
 ~~~
 
-This provides lightweight multi-user synchronization without WebSockets or full-page refreshes.
+## Local Mutation Flow
+
+~~~text
+Organization Mutation
+→ Backend Increments Revision
+→ Update Local React State
+→ Fetch Latest Revision
+→ Synchronize Local Revision
+~~~
 
 ---
 
@@ -294,8 +267,7 @@ The document interface will be implemented after the backend document architectu
 * Upload and validation
 * Upload progress
 * Metadata and processing status
-* Document details
-* Version history
+* Document details and version history
 * New version upload and rollback
 * Soft delete and recovery
 * Authorized download
@@ -347,8 +319,7 @@ FAILED
 
 * Query interface
 * Streaming responses
-* Retrieved context
-* Source citations
+* Retrieved context and source citations
 * Confidence and refusal states
 
 ## Phase 8 — Search & Analytics

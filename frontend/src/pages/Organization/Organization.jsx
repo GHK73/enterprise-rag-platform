@@ -42,9 +42,11 @@ function Organization(){
     const [movingMember,setMovingMember] = useState(false);
 
     const [removingMemberId,setRemovingMemberId] = useState(null);
+
     const [organizationRevision,setOrganizationRevision] = useState(null);
     const [latestOrganizationRevision,setLatestOrganizationRevision] = useState(null);
     const [checkingRevision,setCheckingRevision] = useState(false);
+    const [refreshingOrganization,setRefreshingOrganization] = useState(false);
 
     useEffect(()=>{
         const fetchOrganizationData = async()=>{
@@ -60,35 +62,35 @@ function Organization(){
                     api.get("/organization/members"),
                     api.get("/organization/revision")
                 ]);
-    
+
                 const organizationData =
                     organizationResponse.data.data;
-    
+
                 const unitsData =
                     unitsResponse.data.data;
-    
+
                 const membersData =
                     membersResponse.data.data;
-    
+
                 const revisionData =
                     revisionResponse.data.data;
-    
+
                 setOrganization(organizationData);
                 setOrganizationUnits(unitsData);
                 setOrganizationMembers(membersData);
-    
+
                 setOrganizationRevision(
                     revisionData.revision
                 );
-    
+
                 setLatestOrganizationRevision(
                     revisionData.revision
                 );
-    
+
                 const rootUnit = unitsData.find(
                     (unit)=>unit.type === "COMPANY"
                 );
-    
+
                 if(rootUnit){
                     setSelectedUnitId(rootUnit.id);
                     setExpandedUnitIds([rootUnit.id]);
@@ -104,7 +106,7 @@ function Organization(){
                 setLoading(false);
             }
         };
-    
+
         fetchOrganizationData();
     },[]);
 
@@ -112,11 +114,11 @@ function Organization(){
         try{
             setCheckingRevision(true);
             setError("");
-    
+
             const response = await api.get(
                 "/organization/revision"
             );
-    
+
             setLatestOrganizationRevision(
                 response.data.data.revision
             );
@@ -132,17 +134,29 @@ function Organization(){
         }
     };
 
+    const syncOrganizationRevision = async()=>{
+        const response = await api.get(
+            "/organization/revision"
+        );
+
+        const revision =
+            response.data.data.revision;
+
+        setOrganizationRevision(revision);
+        setLatestOrganizationRevision(revision);
+    };
+
     useEffect(()=>{
         const checkForOrganizationUpdates = async()=>{
             if(document.visibilityState !== "visible"){
                 return;
             }
-    
+
             try{
                 const response = await api.get(
                     "/organization/revision"
                 );
-    
+
                 setLatestOrganizationRevision(
                     response.data.data.revision
                 );
@@ -154,26 +168,26 @@ function Organization(){
                 );
             }
         };
-    
+
         const handleVisibilityChange = ()=>{
             if(document.visibilityState === "visible"){
                 checkForOrganizationUpdates();
             }
         };
-    
+
         const intervalId = setInterval(
             checkForOrganizationUpdates,
             60000
         );
-    
+
         document.addEventListener(
             "visibilitychange",
             handleVisibilityChange
         );
-    
+
         return ()=>{
             clearInterval(intervalId);
-    
+
             document.removeEventListener(
                 "visibilitychange",
                 handleVisibilityChange
@@ -182,20 +196,50 @@ function Organization(){
     },[]);
 
     const handleRefreshOrganizationChanges = async()=>{
+        if(refreshingOrganization){
+            return;
+        }
+    
         try{
+            setRefreshingOrganization(true);
             setError("");
+            setMessage("");
+    
+            const beforeRevisionResponse = await api.get(
+                "/organization/revision"
+            );
+    
+            const beforeRevision =
+                beforeRevisionResponse.data.data.revision;
     
             const [
                 organizationResponse,
                 unitsResponse,
-                membersResponse,
-                revisionResponse
+                membersResponse
             ] = await Promise.all([
                 api.get("/organization"),
                 api.get("/organization/units"),
-                api.get("/organization/members"),
-                api.get("/organization/revision")
+                api.get("/organization/members")
             ]);
+    
+            const afterRevisionResponse = await api.get(
+                "/organization/revision"
+            );
+    
+            const afterRevision =
+                afterRevisionResponse.data.data.revision;
+    
+            if(beforeRevision !== afterRevision){
+                setLatestOrganizationRevision(
+                    afterRevision
+                );
+    
+                setError(
+                    "Organization changed while refreshing. Please refresh changes again."
+                );
+    
+                return;
+            }
     
             const organizationData =
                 organizationResponse.data.data;
@@ -206,20 +250,12 @@ function Organization(){
             const membersData =
                 membersResponse.data.data;
     
-            const revisionData =
-                revisionResponse.data.data;
-    
             setOrganization(organizationData);
             setOrganizationUnits(unitsData);
             setOrganizationMembers(membersData);
     
-            setOrganizationRevision(
-                revisionData.revision
-            );
-    
-            setLatestOrganizationRevision(
-                revisionData.revision
-            );
+            setOrganizationRevision(afterRevision);
+            setLatestOrganizationRevision(afterRevision);
     
             const selectedUnitStillExists =
                 unitsData.some(
@@ -237,6 +273,7 @@ function Organization(){
             }
     
             setCapacityData({});
+    
             setMessage(
                 "Organization changes refreshed successfully"
             );
@@ -246,6 +283,9 @@ function Organization(){
                 error.response?.data?.message ||
                 "Failed to refresh organization changes"
             );
+        }
+        finally{
+            setRefreshingOrganization(false);
         }
     };
 
@@ -421,6 +461,9 @@ function Organization(){
             setMemberSearch("");
             setName("");
             setParentId("");
+
+            await syncOrganizationRevision();
+
             setMessage(`${type} created successfully`);
         }
         catch(error){
@@ -475,6 +518,8 @@ function Organization(){
 
             setEditingUnitId(null);
             setEditingName("");
+
+            await syncOrganizationRevision();
 
             setMessage(
                 "Organization unit updated successfully"
@@ -540,6 +585,8 @@ function Organization(){
             setDestinationParentId("");
             setCapacityData({});
 
+            await syncOrganizationRevision();
+
             setMessage(
                 "Organization unit moved successfully"
             );
@@ -601,6 +648,8 @@ function Organization(){
             );
 
             setMemberSearch("");
+
+            await syncOrganizationRevision();
 
             setMessage(
                 "Organization unit deleted successfully"
@@ -693,6 +742,8 @@ function Organization(){
             setEditingCapacityId(null);
             setAllocatedCapacity("");
 
+            await syncOrganizationRevision();
+
             setMessage(
                 "Organization unit capacity updated successfully"
             );
@@ -749,6 +800,8 @@ function Organization(){
 
             setEditingMemberId(null);
             setEditingRole("");
+
+            await syncOrganizationRevision();
 
             setMessage(
                 "Member role updated successfully"
@@ -807,6 +860,8 @@ function Organization(){
             setMovingMemberId(null);
             setDestinationUnitId("");
 
+            await syncOrganizationRevision();
+
             setMessage(
                 "Member moved successfully"
             );
@@ -846,6 +901,8 @@ function Organization(){
                         currentMember.id !== member.id
                 )
             );
+
+            await syncOrganizationRevision();
 
             setMessage(
                 "Member removed successfully"
@@ -978,10 +1035,13 @@ function Organization(){
                         selectedUnit.parentId
             )
             : [];
+
     const hasOrganizationUpdates =
-    organizationRevision !== null &&
-    latestOrganizationRevision !== null &&
-    latestOrganizationRevision >organizationRevision;       
+        organizationRevision !== null &&
+        latestOrganizationRevision !== null &&
+        latestOrganizationRevision >
+            organizationRevision;
+
     if(loading){
         return (
             <div className="organization-state">
@@ -999,7 +1059,7 @@ function Organization(){
     }
 
     return (
-        <main className="organization-page">
+        <main className="organization-page app-page-background">
             <div className="organization-container">
                 <header className="organization-header">
                     <p className="organization-eyebrow">
@@ -1028,7 +1088,7 @@ function Organization(){
                 )}
 
                 <section className="organization-section">
-                <div className="organization-section-header">
+                    <div className="organization-section-header">
                         <div>
                             <h2>
                                 Organization Structure
@@ -1052,6 +1112,7 @@ function Organization(){
                             }
                         </button>
                     </div>
+
                     {hasOrganizationUpdates && (
                         <div className="organization-updates-available">
                             <div>
@@ -1075,11 +1136,13 @@ function Organization(){
 
                                 <button
                                     type="button"
-                                    onClick={
-                                        handleRefreshOrganizationChanges
-                                    }
+                                    onClick={handleRefreshOrganizationChanges}
+                                    disabled={refreshingOrganization}
                                 >
-                                    Refresh Changes
+                                    {refreshingOrganization
+                                        ? "Refreshing..."
+                                        : "Refresh Changes"
+                                    }
                                 </button>
                             </div>
                         </div>

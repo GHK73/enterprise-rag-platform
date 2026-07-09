@@ -206,7 +206,7 @@ const Permissions = () => {
     }
 
     return (
-        <main className="permissions-page">
+        <main className="permissions-page app-page-background">
             <section className="permissions-header">
                 <div>
                     <p className="permissions-eyebrow">

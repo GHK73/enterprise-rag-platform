@@ -235,7 +235,7 @@ const Invitations = () => {
     }
 
     return (
-        <main className="invitations-page">
+        <main className="invitations-page app-page-background">
             <section className="invitations-header">
                 <p className="invitations-eyebrow">
                     Member Access

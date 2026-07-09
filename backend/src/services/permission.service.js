@@ -3,35 +3,43 @@
 import prisma from "../config/prisma.js";
 import ApiError from "../utils/ApiError.js";
 
-export const isUnitInsideScope = async(scopeUnitId, targetUnitId)=>{
+export const isUnitInsideScope = async(
+    scopeUnitId,
+    targetUnitId,
+    db = prisma
+)=>{
     if(scopeUnitId === targetUnitId){
         return true;
     }
 
-    let currentUnit = await prisma.organizationUnit.findUnique({
-        where:{
-            id: targetUnitId 
-        },
-        select:{
-            parentId: true 
-        }
-    });
-    while(currentUnit?.parentId){
-        if(currentUnit.parentId === scopeUnitId){
-            return true; 
-        }
-
-        currentUnit = await prisma.organizationUnit.findUnique({
+    let currentUnit =
+        await db.organizationUnit.findUnique({
             where:{
-                id: currentUnit.parentId 
+                id:targetUnitId
             },
             select:{
-                parentId: true 
+                parentId:true
             }
         });
+
+    while(currentUnit?.parentId){
+        if(currentUnit.parentId === scopeUnitId){
+            return true;
+        }
+
+        currentUnit =
+            await db.organizationUnit.findUnique({
+                where:{
+                    id:currentUnit.parentId
+                },
+                select:{
+                    parentId:true
+                }
+            });
     }
+
     return false;
-}
+};
 
 export const hasPermission = async(userId, permission, targetUnitId)=>{
     const targetUnit = await prisma.organizationUnit.findUnique({

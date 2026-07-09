@@ -15,13 +15,9 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 | Backend Foundation | ✅ |
 | Authentication | ✅ |
 | Organization Management | ✅ |
-| Organization Hierarchy | ✅ |
-| Permission Engine | ✅ |
-| Invitation Management | ✅ |
-| Member Management | ✅ |
-| Capacity Management | ✅ |
-| Unit Reorganization | ✅ |
-| Organization Sync | ⏳ |
+| Access & Administration | ✅ |
+| Organization Synchronization | ✅ |
+| Concurrency Protection | ✅ |
 | Document Management | ⏳ |
 
 ---
@@ -49,8 +45,7 @@ GET /api/v1/health
 ## Completed
 
 * User registration and login
-* Password hashing and verification
-* JWT generation and validation
+* Password hashing and JWT authentication
 * Current user retrieval
 * Inactive and missing user rejection
 * Authentication independent of organization membership
@@ -61,7 +56,7 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 ~~~
 
-New users start without organization membership:
+New users start with:
 
 ~~~text
 role   = null
@@ -80,8 +75,7 @@ unitId = null
 * Automatic owner permission grants
 * Organization structure retrieval
 * Unit creation, rename, movement, and deletion
-* Organization isolation
-* Hierarchy validation
+* Organization isolation and hierarchy validation
 * Root and non-leaf deletion protection
 
 ## Hierarchy
@@ -112,14 +106,12 @@ GET    /api/v1/organization/members
 
 ## 4.1 Permission Engine ✅
 
-Authorization is based on:
+Authorization model:
 
 ~~~text
 Permission
-+
-Hierarchy Scope
-+
-Delegation Authority
++ Hierarchy Scope
++ Delegation Authority
 ~~~
 
 ## Completed
@@ -140,14 +132,13 @@ REMOVE_MEMBER
 UPDATE_MEMBER
 ASSIGN_ROLE
 MOVE_MEMBER
-
 CREATE_UNIT
 UPDATE_UNIT
 DELETE_UNIT
 MOVE_UNIT
 ~~~
 
-Roles classify members, while permissions control operations.
+Roles classify members. Permissions control operations.
 
 ---
 
@@ -165,16 +156,6 @@ Roles classify members, while permissions control operations.
 * Unit and role assignment
 * Capacity validation
 * Invitation status tracking
-
-~~~text
-Create Invitation
-→ User Logs In
-→ Accept Invitation
-→ Validate Token + Email + Expiry
-→ Validate Capacity
-→ Assign Unit + Role
-→ Mark ACCEPTED
-~~~
 
 ---
 
@@ -213,8 +194,7 @@ PATCH /api/v1/organization/units/:unitId/capacity
 * Organization member listing
 * Member role and unit retrieval
 * Role updates
-* Member movement
-* Member removal
+* Member movement and removal
 * Owner protection
 * Permission and scope validation
 * Destination capacity validation
@@ -240,8 +220,6 @@ DELETE /api/v1/organization/members/:memberId
 * Destination capacity validation
 * Same-parent movement prevention
 
-## Hierarchy Rules
-
 ~~~text
 DEPARTMENT → COMPANY
 TEAM       → DEPARTMENT
@@ -249,15 +227,11 @@ GROUP      → TEAM
 COMPANY    → Cannot Move
 ~~~
 
-~~~http
-PATCH /api/v1/organization/units/:unitId/move
-~~~
-
 ---
 
 ## 4.6 Organization Synchronization ✅
 
-The organization uses revision-based stale-state detection instead of full-page refreshes or WebSockets.
+Revision-based stale-state detection provides lightweight multi-user synchronization without WebSockets.
 
 Each organization stores a monotonically increasing revision:
 
@@ -266,62 +240,71 @@ Organization
 └── revision
 ~~~
 
-Every successful organization-changing transaction increments the revision.
-## Remaining
+## Completed
 
-* Protect capacity-sensitive operations from concurrent mutations
-* Prevent parallel requests from validating against the same stale state
-* Add transaction conflict and retry handling where required
+* Revision increment for organization-changing mutations
+* Mutation and revision update in the same transaction
+* Organization revision endpoint
+* Frontend stale-state detection support
+* Periodic and visibility-based revision checking
+* Consistent snapshot refresh support
 
 ## Covered Changes
 
 * Organization updates
-* Unit creation
-* Unit rename
-* Unit deletion
-* Unit movement
+* Unit creation, rename, deletion, and movement
 * Capacity updates
-* Member role updates
-* Member movement
-* Member removal
+* Member role updates, movement, and removal
 * Invitation acceptance
-
-Mutation and revision increment occur in the same database transaction.
-
-~~~text
-Organization Change
-+
-Revision Increment
-→ Commit Together
-or
-→ Roll Back Together
-~~~
-
-## Endpoint
 
 ~~~http
 GET /api/v1/organization/revision
 ~~~
 
-## Synchronization Flow
-
 ~~~text
-Frontend Loads Organization
-→ Store Current Revision
-→ Check Revision Periodically
-→ Check Again When Tab Becomes Visible
-
-Revision Unchanged
-→ No Action
-
-Revision Changed
-→ Show Updates Available
-→ Refresh Organization Data
-→ Update Local State
-→ Store Latest Revision
+Organization Mutation
++ Revision Increment
+→ Commit Together
+or
+→ Roll Back Together
 ~~~
 
-This provides lightweight multi-user change detection without WebSocket complexity.
+---
+
+## 4.7 Concurrency Protection ✅
+
+Capacity-sensitive operations are protected from parallel requests validating against the same stale state.
+
+## Completed
+
+* PostgreSQL serializable transactions
+* Automatic retry for Prisma `P2034` conflicts
+* Transaction-aware hierarchy scope checks
+* Fresh state validation inside transactions
+* Transactional revision increments
+
+## Protected Operations
+
+* Capacity updates
+* Member movement
+* Unit and subtree movement
+* Invitation acceptance
+
+## Flow
+
+~~~text
+Start Serializable Transaction
+→ Read Current State
+→ Validate Capacity and Constraints
+→ Apply Mutation
+→ Increment Revision
+→ Commit
+
+Transaction Conflict
+→ Retry with Fresh State
+~~~
+
+This prevents concurrent requests from consuming the same remaining capacity.
 
 ---
 
@@ -389,14 +372,6 @@ Organization Isolation
 → Retrieval-Time Validation
 ~~~
 
-Policies may include:
-
-~~~text
-validFrom
-validUntil
-revokedAt
-~~~
-
 ---
 
 # Future Phases
@@ -414,8 +389,7 @@ revokedAt
 * Embeddings
 * Semantic and keyword search
 * Metadata filtering
-* Hybrid retrieval
-* Permission-aware retrieval
+* Hybrid and permission-aware retrieval
 
 ## Phase 8 — RAG Pipeline
 
@@ -447,8 +421,7 @@ revokedAt
 * Worker deployment
 * Production PostgreSQL
 * Amazon S3
-* Redis
-* Qdrant
+* Redis and Qdrant
 * Monitoring and observability
 
 ---
