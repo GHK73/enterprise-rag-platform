@@ -21,6 +21,65 @@ enum OrganizationUnitType {
   GROUP
 }
 
+enum DocumentClassification {
+  GENERAL
+  INTERNAL
+  CONFIDENTIAL
+  RESTRICTED
+}
+
+enum DocumentStatus {
+  DRAFT
+  SUBMITTED
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+  EXPIRED
+  DELETED
+}
+
+enum DocumentProcessingStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DocumentAccessSubjectType {
+  ORGANIZATION
+  UNIT
+  ROLE
+  USER
+}
+
+enum DocumentAccessAction {
+  QUERY
+  VIEW
+  DOWNLOAD
+  MANAGE_ACCESS
+}
+
+enum DocumentAccessEffect {
+  ALLOW
+  DENY
+}
+
+enum DocumentAccessScope {
+  UNIT_ONLY
+  UNIT_AND_DESCENDANTS
+}
+
+enum DocumentAccessEventType {
+  CREATED
+  UPDATED
+  REVOKED
+  EXPIRED
+  TEMPORARY_GRANTED
+  TEMPORARY_EXTENDED
+}
+
 enum Permission {
   INVITE_MEMBER
   REMOVE_MEMBER
@@ -48,12 +107,16 @@ model Organization {
 
   revision Int @default(1)
 
-  units            OrganizationUnit[]
-  permissionGrants PermissionGrant[]
+  units                OrganizationUnit[]
+  permissionGrants     PermissionGrant[]
+  documents            Document[]
+  documentAccessAudits DocumentAccessAudit[]
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  invitations Invitation[]
+  createdAt                     DateTime               @default(now())
+  updatedAt                     DateTime               @updatedAt
+  invitations                   Invitation[]
+  documentAccessPolicies        DocumentAccessPolicy[] @relation("DocumentAccessPolicyOrganization")
+  documentAccessSubjectPolicies DocumentAccessPolicy[] @relation("DocumentAccessSubjectOrganization")
 }
 
 model OrganizationUnit {
@@ -63,9 +126,10 @@ model OrganizationUnit {
   organizationId String
   organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  parentId String?
-  parent   OrganizationUnit?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
-  children OrganizationUnit[] @relation("OrganizationHierarchy")
+  parentId               String?
+  parent                 OrganizationUnit?      @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children               OrganizationUnit[]     @relation("OrganizationHierarchy")
+  documentAccessPolicies DocumentAccessPolicy[] @relation("DocumentAccessSubjectUnit")
 
   allocatedCapacity Int?
 
@@ -96,10 +160,17 @@ model User {
   unitId String?
   unit   OrganizationUnit? @relation(fields: [unitId], references: [id], onDelete: Restrict)
 
-  receivedPermissionGrants PermissionGrant[] @relation("ReceivedPermissionGrants")
-  givenPermissionGrants    PermissionGrant[] @relation("GivenPermissionGrants")
+  receivedPermissionGrants      PermissionGrant[]      @relation("ReceivedPermissionGrants")
+  givenPermissionGrants         PermissionGrant[]      @relation("GivenPermissionGrants")
+  uploadedDocuments             Document[]             @relation("UploadedDocuments")
+  deletedDocuments              Document[]             @relation("DeletedDocuments")
+  createdDocumentVersions       DocumentVersion[]      @relation("CreatedDocumentVersions")
+  documentAccessPolicies        DocumentAccessPolicy[] @relation("DocumentAccessSubjectUser")
+  grantedDocumentAccessPolicies DocumentAccessPolicy[] @relation("GrantedDocumentAccessPolicies")
+  revokedDocumentAccessPolicies DocumentAccessPolicy[] @relation("RevokedDocumentAccessPolicies")
 
-  sentInvitations Invitation[] @relation("SentInvitations")
+  sentInvitations            Invitation[]          @relation("SentInvitations")
+  documentAccessAuditActions DocumentAccessAudit[] @relation("DocumentAccessAuditActor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -167,4 +238,172 @@ model Invitation {
   @@index([unitId])
   @@index([invitedById])
   @@index([status])
+}
+
+model Document {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  title          String
+  description    String?
+  classification DocumentClassification
+  status         DocumentStatus         @default(DRAFT)
+
+  currentVersionId String?          @unique
+  currentVersion   DocumentVersion? @relation("CurrentDocumentVersion", fields: [currentVersionId], references: [id], onDelete: Restrict)
+
+  uploadedById String
+  uploadedBy   User   @relation("UploadedDocuments", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  draftExpiresAt DateTime?
+  submittedAt    DateTime?
+
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedById String?
+  deletedBy   User?     @relation("DeletedDocuments", fields: [deletedById], references: [id], onDelete: Restrict)
+
+  versions     DocumentVersion[]     @relation("DocumentVersions")
+  accessAudits DocumentAccessAudit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accessPolicies DocumentAccessPolicy[]
+
+  @@index([organizationId])
+  @@index([uploadedById])
+  @@index([status])
+  @@index([classification])
+  @@index([isDeleted])
+  @@index([draftExpiresAt])
+}
+
+model DocumentVersion {
+  id String @id @default(cuid())
+
+  documentId String
+  document   Document @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+
+  versionNumber Int
+
+  storageBucket String
+  storageKey    String
+
+  originalFileName String
+  mimeType         String
+  fileSize         BigInt
+  checksum         String
+
+  processingStatus DocumentProcessingStatus @default(PENDING)
+
+  createdById String
+  createdBy   User   @relation("CreatedDocumentVersions", fields: [createdById], references: [id], onDelete: Restrict)
+
+  currentForDocument Document? @relation("CurrentDocumentVersion")
+
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, versionNumber])
+  @@unique([storageBucket, storageKey])
+  @@index([documentId])
+  @@index([createdById])
+  @@index([processingStatus])
+  @@index([checksum])
+}
+
+model DocumentAccessPolicy {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation("DocumentAccessPolicyOrganization", fields: [organizationId], references: [id], onDelete: Cascade)
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  subjectType DocumentAccessSubjectType
+
+  subjectOrganizationId String?
+  subjectOrganization   Organization? @relation("DocumentAccessSubjectOrganization", fields: [subjectOrganizationId], references: [id], onDelete: Cascade)
+
+  subjectUnitId String?
+  subjectUnit   OrganizationUnit? @relation("DocumentAccessSubjectUnit", fields: [subjectUnitId], references: [id], onDelete: Cascade)
+
+  subjectRole Role?
+
+  subjectUserId String?
+  subjectUser   User?   @relation("DocumentAccessSubjectUser", fields: [subjectUserId], references: [id], onDelete: Cascade)
+
+  action DocumentAccessAction
+  effect DocumentAccessEffect @default(ALLOW)
+  scope  DocumentAccessScope?
+
+  validFrom  DateTime  @default(now())
+  validUntil DateTime?
+
+  grantedById String
+  grantedBy   User   @relation("GrantedDocumentAccessPolicies", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  auditRecords DocumentAccessAudit[]
+
+  isActive    Boolean   @default(true)
+  revokedAt   DateTime?
+  revokedById String?
+  revokedBy   User?     @relation("RevokedDocumentAccessPolicies", fields: [revokedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([documentId])
+  @@index([subjectType])
+  @@index([subjectOrganizationId])
+  @@index([subjectUnitId])
+  @@index([subjectRole])
+  @@index([subjectUserId])
+  @@index([action])
+  @@index([isActive])
+  @@index([validUntil])
+}
+
+model DocumentAccessAudit {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  policyId String?
+  policy   DocumentAccessPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  actorId String
+  actor   User   @relation("DocumentAccessAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  subjectType DocumentAccessSubjectType
+
+  subjectOrganizationId String?
+  subjectUnitId         String?
+  subjectRole           Role?
+  subjectUserId         String?
+
+  eventType DocumentAccessEventType
+
+  previousState Json?
+  newState      Json?
+
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([documentId])
+  @@index([policyId])
+  @@index([actorId])
+  @@index([subjectType])
+  @@index([eventType])
+  @@index([createdAt])
 }

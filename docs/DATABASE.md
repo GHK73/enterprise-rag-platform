@@ -2,7 +2,7 @@
 
 Database design for the Enterprise Retrieval-Augmented Generation (RAG) Platform.
 
-> **Current Phase:** Phase 5 — Document Management Architecture
+> **Current Phase:** Phase 5 — Document Management
 
 ---
 
@@ -10,13 +10,11 @@ Database design for the Enterprise Retrieval-Augmented Generation (RAG) Platform
 
 ```text
 PostgreSQL
-→ Application source of truth
-→ Organizations and users
-→ Administrative permissions
+→ Application and authorization source of truth
+→ Organizations, users, permissions
 → Document metadata and versions
 → Access policies and audit history
 → Processing state
-→ Vector placement
 
 Amazon S3
 → Temporary uploads
@@ -29,50 +27,35 @@ Qdrant
 → Chunk references
 
 Redis + BullMQ
-→ Background processing
-→ Cleanup jobs
+→ Background jobs
+→ Cleanup
 → Caching
-→ Future vector migration jobs
 ```
 
-Large files and embedding vectors are not stored directly in PostgreSQL.
+Large files and vectors are not stored directly in PostgreSQL.
 
-The core rule is:
+Core security rule:
 
 ```text
-PostgreSQL
-→ Authorization authority
-
-Qdrant
-→ Retrieval infrastructure
-```
+PostgreSQL → Authorization Authority
+Qdrant     → Retrieval Infrastructure
 
 Unauthorized content must never reach the LLM.
+```
 
 ---
 
-# 2. Existing Organization Model
+# 2. Organization and Authorization
 
-## Hierarchy
+Organization hierarchy:
 
 ```text
 COMPANY → DEPARTMENT → TEAM → GROUP
 ```
 
-Valid parent relationships:
+Administrative authority:
 
 ```text
-DEPARTMENT → COMPANY
-TEAM       → DEPARTMENT
-GROUP      → TEAM
-COMPANY    → No Parent
-```
-
-## Administrative Authorization
-
-```text
-Effective Authority
-=
 Permission
 +
 Hierarchy Scope
@@ -80,61 +63,33 @@ Hierarchy Scope
 Delegation Authority
 ```
 
-Roles classify members.
-
-Permissions control operations.
-
-Administrative permissions do not grant document access.
+Roles classify members. Permissions control administrative operations.
 
 ```text
-Administrative Authority
+Administrative Permission
 ≠
-Knowledge Access
+Document Access
+
+Data Classification
+≠
+Document Access
 ```
 
-## Existing Core Models
-
-```text
-Organization
-├── OrganizationUnit
-├── PermissionGrant
-└── Invitation
-
-OrganizationUnit
-├── Parent / Children
-├── Users
-├── PermissionGrants
-└── Invitations
-
-User
-├── Assigned Unit
-├── Received PermissionGrants
-├── Given PermissionGrants
-└── Invitations
-```
-
-Detailed organization, permission, capacity, synchronization, and concurrency behavior is documented in the backend development log.
+Document access is controlled independently through `DocumentAccessPolicy`.
 
 ---
 
 # 3. Document Architecture
 
-The document system separates logical documents, immutable versions, source files, access rules, processing state, and retrieval data.
-
 ```text
 Organization
 └── Document
     ├── DocumentVersion
-    │   └── Future Processing Structure
-    │       ├── Page
-    │       ├── ContentBlock
-    │       └── Chunk
-    │
     ├── DocumentAccessPolicy
     └── DocumentAccessAudit
 ```
 
-A logical document may have many versions, but only one current version.
+A logical document may have multiple immutable versions but only one current version.
 
 ```text
 Document
@@ -143,11 +98,18 @@ Document
 └── Version 3 ← Current
 ```
 
+Implemented Phase 5 models:
+
+```text
+Document
+DocumentVersion
+DocumentAccessPolicy
+DocumentAccessAudit
+```
+
 ---
 
 # 4. Document Lifecycle
-
-A file cannot remain permanently as unused S3 storage.
 
 ```text
 DRAFT
@@ -157,102 +119,69 @@ DRAFT
 → READY
 ```
 
-Failure flow:
+Additional transitions:
 
 ```text
-PROCESSING
-→ FAILED
-→ RETRY
+PROCESSING → FAILED
+DRAFT      → EXPIRED
+READY      → DELETED
 ```
 
-Draft expiry:
+## DRAFT
+
+The file is temporarily stored while metadata, classification, and access are configured.
+
+Initial configurable limit:
 
 ```text
-DRAFT
-→ EXPIRED
-→ S3 CLEANUP
+Maximum draft period → 24 hours
 ```
 
-Deletion:
+Expired drafts are blocked and scheduled for cleanup.
 
-```text
-READY
-→ DELETED
-→ ASYNC CLEANUP
-```
+## SUBMITTED
 
-## Lifecycle Rules
+Document configuration and initial access have been validated.
 
-### DRAFT
+## QUEUED
 
-The file is temporarily stored in S3 while the uploader configures:
+A processing job has been prepared.
 
-* Metadata
-* Classification
-* Access policies
+## PROCESSING
 
-A draft must be published before its expiry time.
+The current version is being extracted, chunked, embedded, and indexed.
 
-Initial platform rule:
+## READY
 
-```text
-Maximum S3-only draft period
-→ 24 hours
-```
+The document is available for authorized use.
 
-The exact duration should remain configurable.
+## FAILED
 
-### SUBMITTED
+Processing failed and may be retried.
 
-The document configuration has been validated and accepted.
-
-The initial access state is recorded before processing begins.
-
-### QUEUED
-
-A background processing job has been created.
-
-### PROCESSING
-
-The current version is being extracted, structured, chunked, embedded, and indexed.
-
-### READY
-
-The document is available for authorized retrieval.
-
-### FAILED
-
-Processing failed after submission.
-
-The document may remain for retry and investigation.
-
-### EXPIRED
+## EXPIRED
 
 An unpublished draft exceeded its staging period.
 
-Its temporary S3 object is scheduled for deletion.
+## DELETED
 
-### DELETED
-
-The document is immediately blocked from retrieval.
-
-Physical cleanup occurs asynchronously.
+Access and retrieval are blocked immediately. Physical cleanup occurs asynchronously.
 
 ---
 
 # 5. Document Model
 
-Represents one logical document across all versions.
+`Document` represents one logical document across all versions.
 
 ```text
-Document
-
 id
 organizationId
+
 title
 description
 classification
 status
+
 currentVersionId
 uploadedById
 
@@ -270,24 +199,21 @@ updatedAt
 Responsibilities:
 
 * Tenant ownership
-* Display metadata
-* Data classification
+* Metadata and classification
 * Lifecycle state
 * Current version reference
 * Draft expiry
 * Soft deletion
 
-The actual file is stored in S3.
+The actual file remains in S3.
 
 ---
 
 # 6. Document Version Model
 
-Represents one immutable application-level version.
+`DocumentVersion` represents one immutable application-level version.
 
 ```text
-DocumentVersion
-
 id
 documentId
 versionNumber
@@ -312,38 +238,24 @@ Each version owns its own:
 S3 source object
 Processing state
 Content hash
-Extracted artifacts
-Chunks
-Qdrant vectors
+Future extracted artifacts
+Future chunks and vectors
 ```
 
-Application versioning remains separate from S3 object versioning.
+Application versioning and S3 versioning remain separate.
 
 ```text
-DocumentVersion
-→ Business and retrieval history
-
-S3 Versioning
-→ Storage recovery and protection
+DocumentVersion → Business and retrieval history
+S3 Versioning   → Storage recovery
 ```
 
-Initial access should remain document-level.
-
-```text
-Document
-→ Owns access policies
-
-DocumentVersion
-→ Inherits document access
-```
-
-Version-specific access is not planned for the initial implementation.
+Access remains document-level. Versions inherit document access.
 
 ---
 
 # 7. S3 Storage Model
 
-## Draft Storage
+Draft storage:
 
 ```text
 organizations/
@@ -353,9 +265,7 @@ organizations/
             └── original
 ```
 
-Draft objects are temporary.
-
-## Published Version Storage
+Published storage:
 
 ```text
 organizations/
@@ -368,30 +278,15 @@ organizations/
                     └── artifacts/
 ```
 
-Future artifacts may include:
+Rules:
 
-```text
-Extracted text
-OCR output
-Table data
-Chart crops
-Image crops
-Layout metadata
-```
-
-PostgreSQL stores object references, not permanent public URLs.
-
-The S3 bucket remains private.
-
-Authorized downloads use short-lived presigned URLs.
+* Bucket remains private
+* PostgreSQL stores object references, not permanent public URLs
+* Authorized downloads use short-lived presigned URLs
 
 ---
 
 # 8. Data Classification
-
-Data classification describes sensitivity.
-
-It does not directly describe a user's organizational role.
 
 Initial classifications:
 
@@ -402,44 +297,21 @@ CONFIDENTIAL
 RESTRICTED
 ```
 
-The platform must not use:
+Classification describes data sensitivity, not user authority.
 
 ```text
-EMPLOYEE → Low-level data
-MANAGER  → Higher-level data
-OWNER    → All data
+Role           → Administrative classification
+Classification → Data sensitivity
+Access Policy  → Actual document authorization
 ```
 
-A senior member in one department must not automatically access confidential data from another department.
-
-```text
-Role
-→ Administrative classification
-
-Classification
-→ Data sensitivity
-
-Access Policy
-→ Actual authorization
-```
-
-Classification rules may later become organization-configurable.
+A senior organizational role does not automatically grant access to sensitive documents.
 
 ---
 
 # 9. Document Access Model
 
-Document access is independent of administrative permissions.
-
-```text
-PermissionGrant
-→ May the user perform an administrative operation?
-
-DocumentAccessPolicy
-→ May the user access this document?
-```
-
-## Access Subjects
+Access subjects:
 
 ```text
 ORGANIZATION
@@ -448,11 +320,7 @@ ROLE
 USER
 ```
 
-`GROUP` is already represented by the organization hierarchy as an `OrganizationUnit` type and therefore does not require a separate access subject type.
-
-## Access Actions
-
-Initial actions:
+Access actions:
 
 ```text
 QUERY
@@ -461,31 +329,34 @@ DOWNLOAD
 MANAGE_ACCESS
 ```
 
-`QUERY` controls whether document content may participate in retrieval and reach the RAG pipeline.
+Action responsibilities:
 
-`VIEW` controls document visibility and details.
+```text
+QUERY         → Content may participate in retrieval
+VIEW          → Document metadata and details
+DOWNLOAD      → Original file access
+MANAGE_ACCESS → Access-policy changes
+```
 
-`DOWNLOAD` controls access to the original file.
-
-`MANAGE_ACCESS` controls access-policy changes.
-
-These actions remain independent.
+Actions are evaluated independently.
 
 ---
 
-# 10. Document Access Policy Model
+# 10. Document Access Policy
 
-Represents current document authorization state.
+`DocumentAccessPolicy` represents current authorization state.
 
 ```text
-DocumentAccessPolicy
-
 id
 organizationId
 documentId
 
 subjectType
-subjectId
+
+subjectOrganizationId
+subjectUnitId
+subjectRole
+subjectUserId
 
 action
 effect
@@ -504,28 +375,21 @@ createdAt
 updatedAt
 ```
 
-## Effect
+Effects:
 
 ```text
 ALLOW
 DENY
 ```
 
-DENY support and precedence rules must be finalized before implementation.
-
-## Unit Scope
-
-For `UNIT` subjects:
+Unit scopes:
 
 ```text
 UNIT_ONLY
-
 UNIT_AND_DESCENDANTS
 ```
 
-This prevents ambiguous hierarchy inheritance.
-
-## Active Policy Rule
+A policy is active only when:
 
 ```text
 isActive = true
@@ -540,70 +404,94 @@ AND
 )
 ```
 
-Security correctness must not depend on cleanup jobs.
-
-Expired access is rejected during authorization even if the policy record has not yet been cleaned up.
+Security enforcement does not depend on cleanup jobs.
 
 ---
 
-# 11. Temporary Access
+# 11. Authorization Resolution
 
-Temporary access is a first-class policy type.
+The user may match policies through:
+
+```text
+ORGANIZATION
+UNIT
+ROLE
+USER
+```
+
+Resolution for each action:
+
+```text
+Any Matching DENY
+→ DENY
+
+No DENY + Matching ALLOW
+→ ALLOW
+
+No Matching Policy
+→ DENY
+```
+
+Explicit `DENY` always wins regardless of subject type.
+
+The system does not use specificity precedence such as:
+
+```text
+USER > UNIT > ROLE > ORGANIZATION
+```
+
+For RAG retrieval:
+
+```text
+QUERY Denied
+→ Document excluded from authorized retrieval
+→ Retrieved content rejected
+→ Content cannot reach the LLM
+```
+
+---
+
+# 12. Temporary Access
+
+Temporary access uses:
 
 ```text
 validFrom
 validUntil
 ```
 
-Initial platform rule:
+Initial configurable limit:
 
 ```text
-validUntil
-≤
-validFrom + 7 days
+Maximum temporary access → 7 days
 ```
 
-Temporary access expires automatically during authorization checks.
+Rules:
 
-A background worker may update expired policy state for housekeeping, but it is not responsible for security enforcement.
+```text
+validUntil > validFrom
+validUntil <= validFrom + configured maximum
+```
 
-Permanent access and temporary access remain separate concepts.
+Expired access is rejected during authorization even before housekeeping updates the policy record.
 
 ---
 
-# 12. Access Changes
+# 13. Access Changes and Audit History
 
-Initial access is configured before publication.
-
-After publication, access is not casually overwritten.
-
-Changes require a controlled operation:
+Access changes use a controlled transactional flow:
 
 ```text
 Validate Authority
-→ Validate New Policy
-→ Change Current Access
+→ Validate Policy
+→ Mutate Access
 → Create Audit Record
-→ Increment Access Revision
 → Commit
 ```
 
-Emergency revocation must always be possible.
+Any failure rolls back both the policy mutation and audit insertion.
 
-```text
-Revoke Access
-→ PostgreSQL blocks access immediately
-→ Invalidate related cache
-→ No vector rebuild required
-```
-
-Access changes do not require Qdrant reindexing because Qdrant is not the authorization authority.
-
----
-
-# 13. Document Access Audit
-
-Every access mutation creates an immutable history record.
+Core rule:
 
 ```text
 No access mutation
@@ -613,37 +501,11 @@ without an audit record.
 Current state and history remain separate:
 
 ```text
-DocumentAccessPolicy
-→ Current authorization state
-
-DocumentAccessAudit
-→ Append-only history
+DocumentAccessPolicy → Current authorization state
+DocumentAccessAudit  → Append-only history
 ```
 
-## Audit Model
-
-```text
-DocumentAccessAudit
-
-id
-organizationId
-documentId
-policyId
-
-actorId
-subjectType
-subjectId
-
-eventType
-
-previousState
-newState
-
-reason
-createdAt
-```
-
-Possible events:
+Audit events:
 
 ```text
 CREATED
@@ -654,32 +516,123 @@ TEMPORARY_GRANTED
 TEMPORARY_EXTENDED
 ```
 
-Important searchable fields remain explicit columns.
-
-Full before-and-after states may be stored as JSON.
-
-Access policy mutation and audit insertion must occur in the same database transaction.
+Audit records store:
 
 ```text
-Begin Transaction
-→ Validate Authority
-→ Mutate Policy
-→ Insert Audit Event
-→ Commit
-
-Any Failure
-→ Roll Back Everything
+Organization and document
+Policy reference
+Actor
+Subject snapshot
+Event type
+Previous state
+New state
+Reason
+Timestamp
 ```
 
-Audit records are append-only and cannot be edited or deleted through normal application operations.
+Audit records cannot be edited or deleted through normal application operations.
 
 ---
 
-# 14. Future Structure-Preserving Processing
+# 14. Phase 5 Service Invariants
 
-Documents must not be reduced to plain text only.
+All document mutations must validate tenant consistency.
 
-The future processing model is:
+## Document
+
+```text
+organizationId must match the uploader's organization
+```
+
+## Document Version
+
+```text
+Version must belong to the target document
+
+Document.currentVersionId
+→ Must reference a version of the same document
+```
+
+## Access Policy
+
+```text
+Policy organization
+→ Must match document organization
+```
+
+Subject validation:
+
+```text
+ORGANIZATION
+→ subjectOrganizationId required
+→ Other subject fields null
+→ Organization must match document organization
+→ Scope null
+
+UNIT
+→ subjectUnitId required
+→ Other subject fields null
+→ Unit must belong to document organization
+→ Scope required
+
+ROLE
+→ subjectRole required
+→ Other subject fields null
+→ Scope null
+
+USER
+→ subjectUserId required
+→ Other subject fields null
+→ User must belong to document organization
+→ Scope null
+```
+
+Every access mutation must:
+
+```text
+Validate Authority
+→ Mutate Policy
+→ Insert Audit Record
+→ Commit in One Transaction
+```
+
+---
+
+# 15. Deletion and Cleanup
+
+Deletion must block access before physical cleanup.
+
+```text
+Delete Request
+→ Mark Document DELETED
+→ Reject Retrieval and Access
+→ Invalidate Cache
+→ Queue Cleanup
+```
+
+Asynchronous cleanup may remove:
+
+```text
+Qdrant → Document vectors
+S3     → Stored objects
+Redis  → Cached data
+```
+
+Cleanup failure must never become a security failure.
+
+```text
+PostgreSQL says DELETED
+→ Content cannot reach the LLM
+
+Old storage or vectors still exist
+→ Authorization still rejects them
+```
+
+---
+
+# 16. Future Document Processing
+
+Phase 6 will finalize:
 
 ```text
 DocumentVersion
@@ -691,20 +644,13 @@ DocumentVersion
 Responsibilities:
 
 ```text
-DocumentVersion
-→ Source version
-
-Page
-→ Visual and layout unit
-
-ContentBlock
-→ Semantic and structural unit
-
-Chunk
-→ Retrieval unit
+DocumentVersion → Source version
+Page            → Visual and layout unit
+ContentBlock    → Semantic and structural unit
+Chunk           → Retrieval unit
 ```
 
-Future content block types:
+Planned content types:
 
 ```text
 TEXT
@@ -714,106 +660,32 @@ CHART
 DIAGRAM
 ```
 
-These models belong to the document-processing phase and should not be fully implemented until extraction architecture is finalized.
+These models are intentionally not included in the current Prisma schema.
 
 ---
 
-# 15. Tables and Visual Content
+# 17. Future Retrieval Architecture
 
-Embeddings are used to find content, not reconstruct it.
-
-```text
-Embedding
-→ Find Content Block
-
-Content Block Reference
-→ Fetch Authoritative Representation
-
-Authoritative Content
-→ Validate Access
-→ Send to LLM
-```
-
-A future table block may preserve:
+Qdrant points will contain stable ownership and source identifiers:
 
 ```text
-Page location
-Bounding box
-Structured rows and columns
-Searchable representation
-Source artifact
-```
-
-A future chart block may preserve:
-
-```text
-Original visual crop
-Title
-Chart type
-Extracted values when available
-Searchable description
-Source page
-```
-
-Retrieved content may later expand to nearby structural context such as headings, captions, and explanations.
-
----
-
-# 16. Future Chunk Model
-
-A chunk is a retrieval unit, not the source of truth for the original document.
-
-Conceptual model:
-
-```text
-DocumentChunk
-
-id
 organizationId
 documentId
-versionId
+documentVersionId
 pageId
 contentBlockId
-
-chunkIndex
-content
-contentHash
-tokenCount
-
-qdrantPointId
-createdAt
+chunkId
+contentType
 ```
 
-The exact chunk model should be finalized during the document-processing phase.
+Access lists will not be the primary authorization source inside Qdrant.
 
----
-
-# 17. Qdrant Mapping
-
-Each vector point must contain stable ownership and source identifiers.
-
-```text
-{
-    organizationId,
-    documentId,
-    documentVersionId,
-    pageId,
-    contentBlockId,
-    chunkId,
-    contentType
-}
-```
-
-Frequently changing access lists are not stored as the primary authorization source inside Qdrant.
-
-Retrieval will eventually follow:
+Future retrieval flow:
 
 ```text
 Resolve User
-→ Resolve Organization
-→ Resolve Vector Placement
-→ Resolve Authorized Resources
-→ Search Correct Qdrant Partition
+→ Resolve Authorized Documents
+→ Search Correct Vector Placement
 → Filter Authorized Content
 → Revalidate Retrieved Resources
 → Reconstruct Context
@@ -824,9 +696,9 @@ Resolve User
 
 ---
 
-# 18. Vector Multitenancy
+# 18. Future Vector Multitenancy
 
-The long-term vector architecture is:
+Long-term architecture:
 
 ```text
 One Collection per Embedding Configuration
@@ -836,43 +708,7 @@ Shared Shard Pool
 Dedicated Shards
 ```
 
-Example:
-
-```text
-Shared Shard 01
-├── Small Organization A
-├── Small Organization B
-└── Small Organization C
-
-Shared Shard 02
-├── Small Organization D
-└── Small Organization E
-
-Dedicated Shard X
-└── Large Organization X
-```
-
-The system should avoid both extremes:
-
-````text
-One collection per organization
-```
-
-and:
-
-~~~text
-One permanent flat shared shard
-````
-
-Initial implementation may use shared placement, but the database design must allow future migration.
-
----
-
-# 19. Vector Placement
-
-PostgreSQL should explicitly track where each organization is stored.
-
-Conceptual future model:
+PostgreSQL may later track explicit organization placement:
 
 ```text
 OrganizationVectorPlacement
@@ -882,11 +718,9 @@ collectionName
 shardKey
 placementType
 migrationState
-createdAt
-updatedAt
 ```
 
-Placement types:
+Possible placement types:
 
 ```text
 SHARED
@@ -894,174 +728,51 @@ DEDICATED_SHARD
 DEDICATED_CLUSTER
 ```
 
-`DEDICATED_CLUSTER` is future architecture only.
-
-Placement should be explicit rather than derived from a permanent hash function.
+Vector placement and migration are future Phase 7 and scaling work and are not included in the current Prisma schema.
 
 ---
 
-# 20. Future Vector Migration
+# 19. Referential Integrity
 
-Large organizations may move from shared to dedicated placement.
-
-Migration states:
-
-```text
-SHARED
-→ MIGRATION_PENDING
-→ MIGRATING
-→ VERIFYING
-→ DEDICATED
-→ CLEANUP_PENDING
-```
-
-Routing during migration:
-
-```text
-Before Migration
-
-READ  → Shared
-WRITE → Shared
-```
-
-```text
-During Migration
-
-READ  → Shared + Dedicated
-WRITE → Dedicated
-```
-
-```text
-After Verification
-
-READ  → Dedicated
-WRITE → Dedicated
-```
-
-After successful verification, the organization's old points are deleted from the shared shard.
-
-Shared shards may also be rebalanced when cumulative growth from many small organizations creates pressure.
-
-Vector migration is a future scaling feature and is not part of the initial Phase 5 implementation.
-
----
-
-# 21. Ingestion Protection
-
-One organization must not overload shared infrastructure.
-
-Future limits may include:
-
-```text
-Per Time Period
-→ Maximum files
-→ Maximum upload bytes
-→ Maximum generated chunks
-
-Concurrent
-→ Maximum processing jobs
-
-Storage
-→ Maximum active document bytes
-→ Maximum vector count
-```
-
-These limits protect S3, workers, embedding infrastructure, and Qdrant.
-
-Rate limits control ingestion pressure without permanently blocking legitimate organization growth.
-
----
-
-# 22. Deletion and Cleanup
-
-Document deletion must block retrieval before physical cleanup begins.
-
-```text
-Delete Request
-→ Mark Document DELETED
-→ Reject Future Retrieval
-→ Invalidate Cache
-→ Queue Cleanup
-```
-
-Asynchronous cleanup:
-
-```text
-Qdrant
-→ Delete points by organizationId + documentId
-
-S3
-→ Delete objects according to retention policy
-
-Redis
-→ Remove related cached data
-```
-
-For version cleanup:
-
-```text
-organizationId
-+
-documentVersionId
-```
-
-Physical cleanup failure must not become a security failure.
-
-```text
-PostgreSQL says DELETED
-→ Content cannot reach the LLM
-
-Even if old vectors temporarily remain
-→ Authorization rejects them
-```
-
----
-
-# 23. Referential Integrity Rules
-
-The document schema must enforce:
+Required invariants:
 
 ```text
 Document.organizationId
-→ Valid Organization
+→ Valid organization
 
 Document.uploadedById
-→ Valid User
+→ Valid user in the same organization
 
 Document.currentVersionId
-→ Version belonging to the same Document
+→ Version belonging to the same document
 
 DocumentVersion.documentId
-→ Valid Document
-
-DocumentAccessPolicy.documentId
-→ Valid Document
+→ Valid document
 
 DocumentAccessPolicy.organizationId
-→ Same organization as Document
+→ Same organization as document
 
-DocumentAccessAudit.documentId
-→ Valid Document
+Policy subjects
+→ Must belong to the document organization
 
 DocumentAccessAudit.organizationId
-→ Same organization as Document
+→ Same organization as document
 ```
 
-Cross-organization references must never be accepted.
+Foreign keys enforce direct relations.
+
+Cross-organization and polymorphic subject rules are additionally enforced transactionally in the service layer.
 
 Deletion behavior must preserve audit history.
 
 ---
 
-# 24. Phase Boundaries
+# 20. Phase Boundaries
 
 ## Phase 5 — Document Management
 
-Implement:
-
 ```text
-Document
-DocumentVersion
+Document and versions
 Document lifecycle
 Draft expiry
 S3 mapping
@@ -1069,28 +780,24 @@ Classification
 Access policies
 Temporary access
 Access audit history
+Authorized downloads
 Soft deletion
-Authorized download
 Processing status
 ```
 
 ## Phase 6 — Document Processing
 
-Implement:
-
 ```text
 Layout-aware extraction
+OCR
 Pages
 Content blocks
-Tables
-Charts
+Tables and charts
 Chunking
 Processing workers
 ```
 
 ## Phase 7 — Retrieval Infrastructure
-
-Implement:
 
 ```text
 Qdrant integration
@@ -1100,33 +807,44 @@ Tenant routing
 Permission-aware retrieval
 ```
 
-## Later Scaling Work
-
-Implement only when required:
-
-```text
-Shared shard pool management
-Automatic tenant placement
-Large-tenant promotion
-Shared-shard rebalancing
-Dual-read migration
-Dedicated clusters
-```
+Later scaling work will add shard management and vector migration only when required.
 
 ---
 
-# Next Database Step
+# Current Database Status
+
+Completed:
 
 ```text
-Finalize Phase 5 Enums
-→ Finalize Document Model
-→ Finalize DocumentVersion Model
-→ Finalize DocumentAccessPolicy Model
-→ Finalize DocumentAccessAudit Model
-→ Validate Referential Integrity
-→ Update schema.prisma
+Phase 5 Enums               ✅
+Document Model              ✅
+DocumentVersion Model       ✅
+DocumentAccessPolicy Model  ✅
+DocumentAccessAudit Model   ✅
+Referential Integrity Review ✅
+Prisma Validation           ✅
+Database Migration          ✅
+Prisma Client Generation    ✅
 ```
 
-Only Phase 5 models should be added to Prisma now.
+Migration:
 
-Future processing, retrieval, and vector-scaling models should remain architectural placeholders until their implementation phases.
+```text
+20260710095413_add_document_management
+```
+
+Future processing and retrieval models remain architectural placeholders until their implementation phases.
+
+---
+
+# Next Development Step
+
+```text
+Phase 5.2 — Document Lifecycle
+
+Implement Draft Creation
+→ Implement Draft Expiry
+→ Implement Metadata Updates
+→ Implement Lifecycle Validation
+→ Implement Document Retrieval
+```
