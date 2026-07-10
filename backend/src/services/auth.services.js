@@ -1,39 +1,42 @@
 // backend/src/services/auth.services.js
 
 import prisma from "../config/prisma.js";
-import { hashPassword, verifyPassword } from "../utils/password.js";
-import { generateToken } from "../utils/jwt.js";
+import {hashPassword,verifyPassword} from "../utils/password.js";
+import {generateToken} from "../utils/jwt.js";
 import ApiError from "../utils/ApiError.js";
 
-export const registerUser = async({fullName, email, password})=>{
+export const registerUser = async({fullName,email,password})=>{
     const existingUser = await prisma.user.findUnique({
-        where:{email,},
+        where:{email}
     });
+
     if(existingUser){
-        throw new ApiError(409,"User already Exists");
+        throw new ApiError(409,"User already exists");
     }
+
     const passwordHash = await hashPassword(password);
+
     const user = await prisma.user.create({
         data:{
             fullName,
             email,
-            passwordHash,
-        },
+            passwordHash
+        }
     });
 
     const token = generateToken(user);
-    return {user,token,};
-};
+    const {passwordHash:_,...safeUser} = user;
 
+    return {user:safeUser,token};
+};
 
 export const loginUser = async({email,password})=>{
     const user = await prisma.user.findUnique({
-        where:{
-            email,
-        },
+        where:{email}
     });
+
     if(!user){
-        throw new ApiError(401,"Invalid Email or Password");
+        throw new ApiError(401,"Invalid email or password");
     }
 
     const isPasswordValid = await verifyPassword(
@@ -42,7 +45,7 @@ export const loginUser = async({email,password})=>{
     );
 
     if(!isPasswordValid){
-        throw new ApiError(401,"Invalid Email or Password");
+        throw new ApiError(401,"Invalid email or password");
     }
 
     if(!user.isActive){
@@ -50,6 +53,8 @@ export const loginUser = async({email,password})=>{
     }
 
     const token = generateToken(user);
+    const {passwordHash:_,...safeUser} = user;
 
-    return {user,token,};
+    return {user:safeUser,token};
 };
+

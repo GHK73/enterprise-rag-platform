@@ -8,7 +8,7 @@ Database architecture: [`docs/DATABASE.md`](DATABASE.md)
 
 # Current Status
 
-**Active Phase:** Phase 5 — Document Management ⏳
+**Active Phase:** Phase 5.3 — S3 Uploads ⏳
 
 | Area                         | Status |
 | ---------------------------- | ------ |
@@ -29,10 +29,10 @@ Completed:
 * Node.js and Express backend
 * PostgreSQL with Prisma ORM
 * Environment and JWT configuration
-* Versioned `/api/v1` routing
+* Versioned API routing
 * Authentication middleware
-* Global error and 404 handling
-* Reusable API response and error utilities
+* Global error handling
+* Reusable API utilities
 
 ---
 
@@ -40,13 +40,39 @@ Completed:
 
 Completed:
 
-* User registration and login
+* Registration and login
 * Password hashing and JWT authentication
 * Current-user retrieval
 * Inactive and missing-user rejection
-* Authentication independent of organization membership
+* Organization-independent authentication
+* Database-backed request authentication
+* Authenticated user and unit context loading
+* Password-safe request context
+* Shared `req.user` propagation to protected services
+* Redundant authenticated-user query removal
 
-New users begin with no organization membership.
+Authentication flow:
+
+```text
+JWT Verification
+→ Load Active User + Unit
+→ Remove Password Hash
+→ Attach req.user
+→ Reuse Authenticated Context
+```
+
+Service boundary:
+
+```text
+Middleware
+→ Identity and active-account validation
+
+Services
+→ Membership, tenant, permission, and business validation
+
+Transactions
+→ Fresh concurrency-sensitive state validation
+```
 
 ---
 
@@ -55,13 +81,14 @@ New users begin with no organization membership.
 Completed:
 
 * Organization creation and updates
-* Automatic `COMPANY` root creation
-* Creator assignment as `OWNER`
-* Automatic owner permission grants
-* Organization structure retrieval
-* Unit creation, rename, movement, and deletion
-* Organization isolation and hierarchy validation
-* Root and non-leaf deletion protection
+* Automatic root unit creation
+* Owner assignment and permissions
+* Organization hierarchy management
+* Organization isolation
+* Hierarchy validation
+* Protected unit deletion
+* Child-unit deletion protection
+* Member-containing unit deletion protection
 
 Hierarchy:
 
@@ -77,123 +104,81 @@ COMPANY → DEPARTMENT → TEAM → GROUP
 
 Completed:
 
-* Atomic permissions
-* Scoped permission grants
+* Atomic and scoped permissions
 * Hierarchy scope validation
 * Delegation authority
 * Permission revocation and history
 * Member permission retrieval
 * Scoped operation enforcement
-
-Authorization model:
-
-```text
-Permission
-+
-Hierarchy Scope
-+
-Delegation Authority
-```
-
----
+* Scoped unit update and deletion authorization
+* Transaction-aware permission helper support
 
 ## 4.2 Invitation Management ✅
 
 Completed:
 
 * Invitation creation and validation
-* Optional role assignment
-* Secure token generation
-* Received invitation retrieval
-* Invitation acceptance and expiration
-* Unit and role assignment
+* Role assignment
+* Secure tokens
+* Invitation retrieval and acceptance
+* Expiration and revocation
 * Capacity validation
-* Invitation status tracking
 
-External email delivery is not implemented yet.
-
----
+External email delivery remains future work.
 
 ## 4.3 Capacity Management ✅
 
 Completed:
 
-* Capacity configuration and updates
-* Direct-member usage calculation
-* Child-allocation calculation
+* Capacity configuration
+* Member and child allocation tracking
 * Parent capacity enforcement
-* Child over-allocation prevention
+* Over-allocation prevention
 * Invitation capacity enforcement
-
-```text
-Remaining Capacity
-=
-Allocated Capacity
-− Direct Members
-− Child Allocations
-```
-
----
 
 ## 4.4 Member Management ✅
 
 Completed:
 
-* Organization member listing
-* Member role and unit retrieval
+* Member listing
 * Role updates
 * Member movement and removal
 * Owner protection
-* Permission and scope validation
+* Permission validation
 * Destination capacity validation
 * Permission revocation on removal
-
----
 
 ## 4.5 Unit Reorganization ✅
 
 Completed:
 
 * Unit and subtree movement
-* Strict hierarchy validation
+* Hierarchy validation
 * Circular-reference protection
-* Source and destination scope validation
+* Scope validation
 * Destination capacity validation
-* Same-parent movement prevention
-
----
 
 ## 4.6 Organization Synchronization ✅
 
 Completed:
 
-* Monotonically increasing organization revision
+* Organization revision tracking
 * Transactional revision updates
 * Revision endpoint
-* Frontend stale-state detection support
-* Periodic and visibility-based checking
+* Frontend stale-state detection
 * Consistent snapshot refresh support
-
-Covered changes include organization, unit, capacity, member, and invitation mutations.
-
----
 
 ## 4.7 Concurrency Protection ✅
 
 Completed:
 
-* PostgreSQL serializable transactions
-* Automatic retry for Prisma `P2034` conflicts
-* Transaction-aware hierarchy checks
-* Fresh validation inside transactions
+* Serializable transactions
+* Prisma `P2034` retry handling
+* Transaction-aware validation
 * Transactional revision increments
+* Fresh state checks for concurrency-sensitive operations
 
-Protected operations:
-
-* Capacity updates
-* Member movement
-* Unit and subtree movement
-* Invitation acceptance
+Protected operations include organization creation, capacity updates, member movement, unit movement, and invitation acceptance.
 
 ---
 
@@ -207,19 +192,16 @@ Completed:
 
 * Document lifecycle design
 * Document and immutable version models
-* S3 storage mapping architecture
+* S3 storage architecture
 * Data classification model
-* Document access policy model
+* Document access policies
 * Temporary access design
-* Append-only access audit model
-* Soft-deletion and cleanup boundaries
+* Append-only access auditing
+* Soft deletion and cleanup boundaries
 * Authorization resolution rules
-* Phase 5 service invariants
+* Service invariants
 * Referential-integrity review
-* Prisma schema update
-* Prisma validation
-* Phase 5 database migration
-* Prisma Client regeneration
+* Prisma schema and migration
 
 Migration:
 
@@ -227,7 +209,7 @@ Migration:
 20260710095413_add_document_management
 ```
 
-Added models:
+Models:
 
 ```text
 Document
@@ -236,29 +218,14 @@ DocumentAccessPolicy
 DocumentAccessAudit
 ```
 
-Document lifecycle:
+Lifecycle:
 
 ```text
-DRAFT
-→ SUBMITTED
-→ QUEUED
-→ PROCESSING
-→ READY
-```
+DRAFT → SUBMITTED → QUEUED → PROCESSING → READY
 
-Additional states:
-
-```text
-PROCESSING → FAILED
 DRAFT → EXPIRED
+PROCESSING → FAILED
 READY → DELETED
-```
-
-Initial configurable limits:
-
-```text
-Draft staging period → 24 hours
-Temporary access     → 7 days
 ```
 
 Security boundaries:
@@ -271,64 +238,46 @@ PostgreSQL → Authorization Authority
 Qdrant     → Retrieval Infrastructure
 ```
 
-Access subjects:
-
-```text
-ORGANIZATION
-UNIT
-ROLE
-USER
-```
-
-Access actions:
-
-```text
-QUERY
-VIEW
-DOWNLOAD
-MANAGE_ACCESS
-```
-
-Authorization resolution:
-
-```text
-Matching DENY
-→ DENY
-
-No DENY + Matching ALLOW
-→ ALLOW
-
-No Matching Policy
-→ DENY
-```
-
-Every access mutation must create an append-only audit record in the same transaction.
-
 ---
 
-## 5.2 Document Lifecycle ⏳
+## 5.2 Document Lifecycle ✅
 
-Next implementation work:
+Completed:
 
 * Draft document creation
-* Draft expiry handling
+* 24-hour draft expiry
+* Real-time expiry enforcement
+* Organization-wide draft expiry handling
 * Metadata and classification updates
 * Lifecycle transition validation
-* Publication preparation
-* Document listing and retrieval
+* Tenant-isolated document listing
+* Individual document retrieval
+* Soft-deleted document filtering
+* Reusable draft-expiry helpers
+* Authenticated request-context integration
+
+Implemented endpoints:
+
+```text
+POST   /api/v1/documents/drafts
+PATCH  /api/v1/documents/:documentId
+GET    /api/v1/documents
+GET    /api/v1/documents/:documentId
+```
 
 ---
 
 ## 5.3 S3 Uploads ⏳
 
-Planned:
+Next:
 
-* Private S3 storage
-* Draft uploads
+* AWS S3 configuration
+* Private bucket integration
+* Draft file uploads
+* File validation
 * File metadata and checksum storage
-* Published version storage
-* Draft cleanup
-* Short-lived authorized download URLs
+* Draft storage mapping
+* Draft object cleanup
 
 ---
 
@@ -340,6 +289,7 @@ Planned:
 * Initial access validation
 * Immutable document versions
 * Current-version management
+* Published file storage
 * Processing queue preparation
 * New-version uploads
 
@@ -376,10 +326,11 @@ Planned:
 Planned:
 
 * Authorized downloads
+* Short-lived presigned URLs
 * Soft deletion
-* Immediate retrieval blocking
+* Immediate access blocking
 * Cache invalidation preparation
-* Asynchronous S3 and vector cleanup preparation
+* Asynchronous storage and vector cleanup
 
 ---
 
@@ -391,7 +342,7 @@ Planned:
 * Pages and content blocks
 * Tables, charts, images, and diagrams
 * Chunking and content hashing
-* BullMQ processing workers
+* BullMQ workers
 
 ## Phase 7 — Retrieval Infrastructure
 
@@ -444,11 +395,35 @@ backend/
 ├── server.js
 └── src/
     ├── config/
+    │   └── prisma.js
     ├── controllers/
+    │   ├── auth.controller.js
+    │   ├── document.controller.js
+    │   ├── invitation.controller.js
+    │   ├── organization.controller.js
+    │   └── permission.controller.js
     ├── middleware/
+    │   └── auth.middleware.js
     ├── routes/
+    │   ├── auth.routes.js
+    │   ├── document.routes.js
+    │   ├── health.routes.js
+    │   ├── index.js
+    │   ├── invitation.routes.js
+    │   ├── organization.routes.js
+    │   └── permission.routes.js
     ├── services/
+    │   ├── auth.services.js
+    │   ├── document.service.js
+    │   ├── invitation.service.js
+    │   ├── organization.service.js
+    │   └── permission.service.js
     ├── utils/
+    │   ├── ApiError.js
+    │   ├── ApiResponse.js
+    │   ├── asyncHandler.js
+    │   ├── jwt.js
+    │   └── password.js
     └── app.js
 ```
 
@@ -457,11 +432,11 @@ backend/
 # Next Development Step
 
 ```text
-Phase 5.2 — Document Lifecycle
+Phase 5.3 — S3 Uploads
 
-Implement Draft Creation
-→ Implement Draft Expiry
-→ Implement Metadata Updates
-→ Implement Lifecycle Validation
-→ Implement Document Retrieval
+Configure AWS S3
+→ Implement Draft Upload
+→ Validate Files
+→ Store File Metadata and Checksum
+→ Add Draft Cleanup
 ```
