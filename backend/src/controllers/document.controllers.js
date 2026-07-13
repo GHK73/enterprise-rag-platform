@@ -4,7 +4,9 @@ import{
     createDocumentDraft as createDocumentDraftService,
     updateDocumentDraft as updateDocumentDraftService,
     getDocuments as getDocumentsService,
-    getDocumentById as getDocumentByIdService
+    getDocumentById as getDocumentByIdService,
+    uploadDraft as uploadDraftService,
+    
 } from "../services/document.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
@@ -61,3 +63,20 @@ export const getDocumentById = asyncHandler(async(req,res)=>{
     );
 });
 
+export const uploadDraft = asyncHandler(async (req, res) => {
+    const { documentId } = req.params;
+
+    const document = await uploadDraftService(
+        req.user,
+        documentId,
+        req.file
+    );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Draft uploaded successfully",
+            document
+        )
+    );
+});
