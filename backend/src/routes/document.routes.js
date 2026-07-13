@@ -5,6 +5,7 @@ import{
     getDocuments,
     getDocumentById,
     uploadDraft,
+    deleteDraftUpload,
 }from "../controllers/document.controller.js";
 import authenticate from "../middleware/auth.middleware.js";
 import upload from "../middleware/upload.middleware.js";
@@ -14,6 +15,8 @@ const router = Router();
 router.post("/drafts",authenticate,createDocumentDraft);
 
 router.post("/drafts/:documentId/upload",authenticate,upload.single("file"),uploadDraft);
+
+router.delete("/drafts/:documentId/upload", authenticate,deleteDraftUpload);
 
 router.patch("/:documentId",authenticate,updateDocumentDraft);
 

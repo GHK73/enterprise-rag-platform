@@ -3,6 +3,7 @@
 import prisma from "../config/prisma.js";
 import ApiError from "../utils/ApiError.js";
 import {randomUUID} from "crypto";
+import {validateFile} from "../utils/fileValidation.js";
 import {
     uploadFileToS3,
     deleteFileFromS3, 
@@ -16,6 +17,26 @@ const validClassifications = [
     "CONFIDENTIAL",
     "RESTRICTED"
 ];
+
+const getDraftDocument = async(user, documentId)=>{
+    const document = await prisma.document.findUnique({
+        where:{id: documentId,},
+    });
+    if(!document){
+        throw new ApiError(404,"Document not found");
+    }
+    if(document.organizationId !== user.unit.organizationId){
+        throw new ApiError(403,"Document does not belong to your Organization");
+    }
+    if(document.status !== "DRAFT"){
+        throw new ApiError(400,"Only draft documents can be modified");
+    }
+    if(isDraftExpired(document)){
+        await expireDraftIfNeeded(document);
+        throw new ApiError(400,"Document draft has expired");
+    }
+    return document;
+}
 
 const validDocumentTransitions = {
     DRAFT:["SUBMITTED","EXPIRED"],
@@ -103,56 +124,39 @@ export const expireDocumentDrafts = async(user)=>{
     return {expiredDocuments:result.count};
 };
 
-export const updateDocumentDraft = async(
-    user,
-    documentId,
-    documentData
-)=>{
-    const {title,description,classification} = documentData;
+export const updateDocumentDraft = async (user,documentId,documentData) => {
+    const { title, description, classification } = documentData;
 
     validateOrganizationMembership(user);
 
-    const document = await prisma.document.findUnique({
-        where:{id:documentId}
-    });
+    await getDraftDocument(user, documentId);
 
-    if(!document){
-        throw new ApiError(404,"Document not Found");
+    if (title !== undefined && !title.trim()) {
+        throw new ApiError(400, "Document title cannot be empty");
     }
 
-    if(document.organizationId !== user.unit.organizationId){
-        throw new ApiError(403,"Document does not belong to your organization");
-    }
-
-    if(document.status !== "DRAFT"){
-        throw new ApiError(400,"Only draft documents can be updated");
-    }
-
-    if(isDraftExpired(document)){
-        await expireDraftIfNeeded(document);
-        throw new ApiError(400,"Document draft has expired");
-    }
-
-    if(title !== undefined && !title.trim()){
-        throw new ApiError(400,"Document title cannot be empty");
-    }
-
-    if(
+    if (
         classification !== undefined &&
         !validClassifications.includes(classification)
-    ){
-        throw new ApiError(400,"Invalid document classification");
+    ) {
+        throw new ApiError(400, "Invalid document classification");
     }
 
     return prisma.document.update({
-        where:{id:documentId},
-        data:{
-            ...(title !== undefined &&{title:title.trim()}),
-            ...(description !== undefined &&{
-                description:description?.trim() || null
+        where: {
+            id: documentId,
+        },
+        data: {
+            ...(title !== undefined && {
+                title: title.trim(),
             }),
-            ...(classification !== undefined &&{classification})
-        }
+            ...(description !== undefined && {
+                description: description?.trim() || null,
+            }),
+            ...(classification !== undefined && {
+                classification,
+            }),
+        },
     });
 };
 
@@ -213,38 +217,26 @@ export const getDocumentById = async(user,documentId)=>{
     return expireDraftIfNeeded(document);
 };
 
-export const uploadDraft = async(
-    user,
-    documentId,
-    file
-)=>{
+export const uploadDraft = async (user, documentId,file) => {
     validateOrganizationMembership(user);
+    validateFile(file);
 
-    const document = await prisma.document.findUnique({
-        where:{id:documentId}
+    const document = await getDraftDocument(
+        user,
+        documentId
+    );
+
+    const existingVersion = await prisma.documentVersion.findFirst({
+        where: {
+            documentId,
+        },
     });
 
-    if(!document){
-        throw new ApiError(404,"Document not Found");
-    }
-
-    if(document.organizationId !== user.unit.organizationId){
-        throw new ApiError(
-            403,
-            "Document does not belong to your organization"
-        );
-    }
-
-    if(document.status !== "DRAFT"){
+    if (existingVersion) {
         throw new ApiError(
             400,
-            "Only draft documents can be uploaded"
+            "A file has already been uploaded for this draft."
         );
-    }
-
-    if(isDraftExpired(document)){
-        await expireDraftIfNeeded(document);
-        throw new ApiError(400,"Document draft has expired");
     }
 
     const versionId = randomUUID();
@@ -253,40 +245,82 @@ export const uploadDraft = async(
         `organizations/${user.unit.organizationId}` +
         `/drafts/${documentId}/${versionId}`;
 
-    let uploadedObject;
+    let uploadedObject = null;
 
-    try{
+    try {
         uploadedObject = await uploadFileToS3(
             file,
             objectKey
         );
 
-        const version = await prisma.documentVersion.create({
-            data:{
-                id:versionId,
-                documentId,
-                versionNumber:1,
+        const result = await prisma.$transaction(async (tx) => {
+            const version = await tx.documentVersion.create({
+                data: {
+                    id: versionId,
+                    documentId,
+                    versionNumber: 1,
 
-                storageBucket:uploadedObject.bucket,
-                storageKey:uploadedObject.key,
+                    storageBucket: uploadedObject.bucket,
+                    storageKey: uploadedObject.key,
 
-                originalFileName:file.originalname,
-                mimeType:file.mimetype,
-                fileSize:file.size,
-                checksum:uploadedObject.checksum,
+                    originalFileName: file.originalname,
+                    mimeType: file.mimetype,
+                    fileSize: file.size,
+                    checksum: uploadedObject.checksum,
 
-                createdById:user.id
-            }
+                    createdById: user.id,
+                },
+            });
+
+            await tx.document.update({
+                where: {
+                    id: documentId,
+                },
+                data: {
+                    currentVersionId: version.id,
+                },
+            });
+
+            return version;
         });
 
-        return version;
-
-    }catch(error){
-
-        if(uploadedObject){
-            await deleteFileFromS3(objectKey);
+        return result;
+    } catch (error) {
+        if (uploadedObject) {
+            try {
+                await deleteFileFromS3(objectKey);
+            } catch {
+                // Ignore cleanup failures.
+            }
         }
 
+        throw error;
+    }
+};
+
+export const deleteDraftUpload = async(user, documentId)=>{
+    validateOrganizationMembership(user);
+    const document = await getDraftDocument(user, documentId);
+
+    const version = await prisma.documentVersion.findFirst({
+        where:{documentId,},
+    });
+    if(!version){
+        throw new ApiError(404,"NO uploaded file exists for this draft");
+    }
+    try{
+        await deleteFileFromS3(version.storageKey);
+        await prisma.$transaction(async(tx)=>{
+            await tx.documentVersion.delete({
+                where:{id: version.id,},
+            });
+            await tx.document.update({
+                where:{id: document.id,},
+                data:{currentVersionId: null,},
+            });
+        });
+        return {message:"Draft upload deleted successfully",};
+    }catch(error){
         throw error;
     }
 };

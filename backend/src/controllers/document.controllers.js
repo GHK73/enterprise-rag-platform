@@ -6,6 +6,7 @@ import{
     getDocuments as getDocumentsService,
     getDocumentById as getDocumentByIdService,
     uploadDraft as uploadDraftService,
+    deleteDraftUpload as deleteDraftUploadService,
     
 } from "../services/document.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
@@ -79,4 +80,11 @@ export const uploadDraft = asyncHandler(async (req, res) => {
             document
         )
     );
+});
+
+export const deleteDraftUpload = asyncHandler(async(req,res)=>{
+    const {documentId} = req.params;
+    await deleteDraftUploadService(req.user, documentId);
+
+    return res.status(200).json(new ApiResponse(200,"Draft upload deleted successfully"));
 });
