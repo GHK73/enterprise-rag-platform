@@ -330,11 +330,11 @@ const resolveDocumentAccessTargetUnit = async(tx,document,accessData)=>{
     }
 };
 
-const validateDocumentAccessPolicy = async(tx,user,document,accessData)=>{
+const validateDocumentAccessAuthority = async(tx,user,document,accessData)=>{
     const targetUnitId = await resolveDocumentAccessTargetUnit(
         tx,document, accessData
     );
-    const allowe = await hasPermission(
+    const allowed = await hasPermission(
         user.id,
         "MANAGE_ACCESS",
         targetUnitId,
@@ -344,7 +344,32 @@ const validateDocumentAccessPolicy = async(tx,user,document,accessData)=>{
         throw new ApiError(403,"You do not have permission to manage document access for the requested scope.");
     }
     return targetUnitId;
-}
+};
+
+const isDocumentAccessPolicyActive = (policy) => {
+
+    if (!policy.isActive) {
+        return false;
+    }
+
+    const now = new Date();
+
+    if (
+        policy.validFrom &&
+        policy.validFrom > now
+    ) {
+        return false;
+    }
+
+    if (
+        policy.validUntil &&
+        policy.validUntil <= now
+    ) {
+        return false;
+    }
+
+    return true;
+};
 
 export const createDocumentDraft = async(user,documentData)=>{
     const {title,description,classification} = documentData;
@@ -707,11 +732,716 @@ export const grantDocumentAccess = async (user,documentId,accessData) => {
     });
 };
 
-export const grantDocumentAccess = asyncHandler(async(requ,res)=>{
-    const policy = await documentService.grantDocumentAccess(
-        requ.user,
-        requ.params.documentId,
-        requ.body
+export const updateDocumentAccessPolicy = async(user, policyId, accessData)=>{
+    validateOrganizationMembership(user);
+    return prisma.$transaction(async(tx)=>{
+        const policy = await tx.documentAccessPolicy.findUnique({
+            where:{id: policyId,},
+            include:{document:true,},
+        });
+        if(!policy){
+            throw new ApiError(404,"Access policy not found.");
+        }
+        if(policy.document.organizationId !== user.unit.organizaionId){
+            throw new ApiError(403,"Document does not belong to your organization.");
+        }
+        if(!policy.isActive){
+            throw new ApiError(400,"Access policy has already been revoked.");
+        }
+        await validateDocumentAccessAuthority(tx, user, policy.document, policy);
+        if(policy.subjectType !== "UNIT" && accessData.scope){
+            throw new ApiError(400,"Only UNIT policies may define a scope");
+        }
+        if(accessData.validUntil){
+            const start = accessData.validFrom ?? policy.validFrom ?? new Date();
+            if(accessData.validUntil <= start){
+                throw new ApiError(400,"validUntil must be later than validFrom.");
+            }
+        }
+        const updatePolicy = await tx.documentAccessPolicy.update({
+            where:{id: policy.id},
+            data:{
+                ...ApiError(accessData.effect !== undefined &&{effect: accessData.effect,}),
+                ...ApiError(accessData.scope !== undefined &&{scope: accessData.scope,}),
+                ...ApiError(accessData.validFrom !== undefined && {validFrom: accessData.validFrom,}),
+                ...ApiError(accessData.validUntil !== undefined &&{valideUntil: accessData.validUntil}),
+            },
+        });
+        await tx.documentAccessAudit.create({
+            data:{
+                organizationId: updatedPolicy.organizationId,
+                documentId: updatedPolicy.documentId, 
+                policyId: updatedPolicy.id,
+                actorId: user.id,
+                subjectType: updatedPolicy.subjectType,
+                subjectOrganizationId: updatedPolicy.subjectOrganizationId,
+                subjectUnitId: updatedPolicy.subjectUnitId,
+                subjectRole: updatedPolicy.subjectRole,
+                subjectUserId: updatedPolicy.subjectUserId,
+                eventType: "UPDATED",
+                previousState:{
+                    effect: policy.effect,
+                    scope: policy.scope,
+                    validFrom: policy.validFrom,
+                    validUntil: policy.validUntil,
+                },
+                newState:{
+                    effect: updatedPolicy.effect,
+                    scope:updatedPolicy.scope,
+                    validFrom: updatedPolicy.validFrom,
+                    validUntil: updatedPolicy.validUntil,
+                },
+                reason: accessData.reason ?? null,
+            },
+        });
+        return updatedPolicy;
+    });
+};
+
+export const revokeDocumentAccess = async (user,policyId, reason) => {
+    validateOrganizationMembership(user);
+
+    return prisma.$transaction(async (tx) => {
+
+        const policy = await tx.documentAccessPolicy.findUnique({
+            where: {
+                id: policyId,
+            },
+            include: {
+                document: true,
+            },
+        });
+
+        if (!policy) {
+            throw new ApiError(
+                404,
+                "Access policy not found."
+            );
+        }
+
+        if (
+            policy.document.organizationId !==
+            user.unit.organizationId
+        ) {
+            throw new ApiError(
+                403,
+                "Document does not belong to your organization."
+            );
+        }
+
+        if (!policy.isActive) {
+            throw new ApiError(
+                400,
+                "Access policy is already revoked."
+            );
+        }
+
+        await validateDocumentAccessAuthority(
+            tx,
+            user,
+            policy.document,
+            policy
+        );
+
+        const revokedPolicy =
+            await tx.documentAccessPolicy.update({
+                where: {
+                    id: policy.id,
+                },
+                data: {
+                    isActive: false,
+                    revokedAt: new Date(),
+                    revokedById: user.id,
+                },
+            });
+
+        await tx.documentAccessAudit.create({
+            data: {
+                organizationId:
+                    revokedPolicy.organizationId,
+
+                documentId:
+                    revokedPolicy.documentId,
+
+                policyId:
+                    revokedPolicy.id,
+
+                actorId: user.id,
+
+                subjectType:
+                    revokedPolicy.subjectType,
+
+                subjectOrganizationId:
+                    revokedPolicy.subjectOrganizationId,
+
+                subjectUnitId:
+                    revokedPolicy.subjectUnitId,
+
+                subjectRole:
+                    revokedPolicy.subjectRole,
+
+                subjectUserId:
+                    revokedPolicy.subjectUserId,
+
+                eventType: "REVOKED",
+
+                previousState: {
+                    isActive: true,
+                },
+
+                newState: {
+                    isActive: false,
+                },
+
+                reason: reason ?? null,
+            },
+        });
+
+        return revokedPolicy;
+    });
+};
+
+export const getDocumentAccessPolicies = async ( user,documentId) => {
+
+    validateOrganizationMembership(user);
+    const document =
+        await prisma.document.findUnique({
+            where: {
+                id: documentId,
+            },
+        });
+
+    if (!document) {
+        throw new ApiError(
+            404,
+            "Document not found."
+        );
+    }
+
+    if (
+        document.organizationId !==
+        user.unit.organizationId
+    ) {
+        throw new ApiError(
+            403,
+            "Document does not belong to your organization."
+        );
+    }
+
+    return prisma.documentAccessPolicy.findMany({
+        where: {
+            documentId,
+        },
+        orderBy: {
+            createdAt: "desc",
+        },
+    });
+};
+
+export const getDocumentAccessHistory = async (
+    user,
+    documentId
+) => {
+
+    validateOrganizationMembership(user);
+
+    const document = await prisma.document.findUnique({
+        where: {
+            id: documentId,
+        },
+    });
+
+    if (!document) {
+        throw new ApiError(
+            404,
+            "Document not found."
+        );
+    }
+
+    if (
+        document.organizationId !==
+        user.unit.organizationId
+    ) {
+        throw new ApiError(
+            403,
+            "Document does not belong to your organization."
+        );
+    }
+
+    return prisma.documentAccessAudit.findMany({
+        where: {
+            documentId,
+        },
+        orderBy: {
+            createdAt: "desc",
+        },
+    });
+};
+
+export const getDocumentAccessPolicyById = async (
+    user,
+    policyId
+) => {
+
+    validateOrganizationMembership(user);
+
+    const policy =
+        await prisma.documentAccessPolicy.findUnique({
+            where: {
+                id: policyId,
+            },
+            include: {
+                document: true,
+            },
+        });
+
+    if (!policy) {
+        throw new ApiError(
+            404,
+            "Access policy not found."
+        );
+    }
+
+    if (
+        policy.document.organizationId !==
+        user.unit.organizationId
+    ) {
+        throw new ApiError(
+            403,
+            "Document does not belong to your organization."
+        );
+    }
+
+    return policy;
+};
+
+const MAX_TEMPORARY_ACCESS_DAYS = 7;
+
+const validateTemporaryAccess = (
+    validFrom,
+    validUntil
+) => {
+
+    if (!validUntil) {
+        return;
+    }
+
+    const start = validFrom ?? new Date();
+
+    if (validUntil <= start) {
+        throw new ApiError(
+            400,
+            "validUntil must be later than validFrom."
+        );
+    }
+
+    const maximumEnd = new Date(
+        start.getTime() +
+        MAX_TEMPORARY_ACCESS_DAYS * 24 * 60 * 60 * 1000
     );
-    return res.status(201).json(new ApiResponse(201,policy,"Document access granted successfully."));
-});
+
+    if (validUntil > maximumEnd) {
+        throw new ApiError(
+            400,
+            `Temporary access cannot exceed ${MAX_TEMPORARY_ACCESS_DAYS} days.`
+        );
+    }
+};
+
+export const grantTemporaryDocumentAccess = async (
+    user,
+    documentId,
+    accessData
+) => {
+
+    validateTemporaryAccess(
+        accessData.validFrom,
+        accessData.validUntil
+    );
+
+    return grantDocumentAccess(
+        user,
+        documentId,
+        accessData
+    );
+};
+
+export const authorizeDocumentAction = async (
+    user,
+    documentId,
+    action
+) => {
+
+    validateOrganizationMembership(user);
+
+    const document = await prisma.document.findUnique({
+        where: {
+            id: documentId,
+        },
+    });
+
+    if (!document) {
+        throw new ApiError(
+            404,
+            "Document not found."
+        );
+    }
+
+    if (document.isDeleted) {
+        throw new ApiError(
+            404,
+            "Document not found."
+        );
+    }
+
+    if (
+        document.organizationId !==
+        user.unit.organizationId
+    ) {
+        throw new ApiError(
+            403,
+            "Document does not belong to your organization."
+        );
+    }
+
+    const policies =
+        await prisma.documentAccessPolicy.findMany({
+            where: {
+                documentId,
+                action,
+            },
+        });
+
+    const activePolicies =
+        policies.filter(isDocumentAccessPolicyActive);
+
+    const matches = [];
+
+    for (const policy of activePolicies) {
+
+        switch (policy.subjectType) {
+
+            case "ORGANIZATION":
+
+                if (
+                    policy.subjectOrganizationId ===
+                    user.unit.organizationId
+                ) {
+                    matches.push(policy);
+                }
+
+                break;
+
+            case "UNIT":
+
+                if (
+                    policy.subjectUnitId === user.unitId
+                ) {
+                    matches.push(policy);
+                }
+
+                break;
+
+            case "ROLE":
+
+                if (
+                    policy.subjectRole === user.role
+                ) {
+                    matches.push(policy);
+                }
+
+                break;
+
+            case "USER":
+
+                if (
+                    policy.subjectUserId === user.id
+                ) {
+                    matches.push(policy);
+                }
+
+                break;
+        }
+    }
+
+    if (
+        matches.some(
+            policy => policy.effect === "DENY"
+        )
+    ) {
+        throw new ApiError(
+            403,
+            "Access denied."
+        );
+    }
+
+    if (
+        matches.some(
+            policy => policy.effect === "ALLOW"
+        )
+    ) {
+        return true;
+    }
+
+    throw new ApiError(
+        403,
+        "Access denied."
+    );
+};
+
+export const softDeleteDocument = async (
+    user,
+    documentId
+) => {
+
+    validateOrganizationMembership(user);
+
+    const document = await prisma.document.findUnique({
+        where: {
+            id: documentId,
+        },
+    });
+
+    if (!document) {
+        throw new ApiError(
+            404,
+            "Document not found."
+        );
+    }
+
+    if (
+        document.organizationId !==
+        user.unit.organizationId
+    ) {
+        throw new ApiError(
+            403,
+            "Document does not belong to your organization."
+        );
+    }
+
+    if (document.isDeleted) {
+        throw new ApiError(
+            400,
+            "Document is already deleted."
+        );
+    }
+
+    await authorizeDocumentAction(
+        user,
+        documentId,
+        "MANAGE_ACCESS"
+    );
+
+    return prisma.document.update({
+        where: {
+            id: documentId,
+        },
+        data: {
+            status: "DELETED",
+            isDeleted: true,
+            deletedAt: new Date(),
+            deletedById: user.id,
+        },
+    });
+};
+
+export const restoreDocument = async (
+    user,
+    documentId
+) => {
+
+    validateOrganizationMembership(user);
+
+    const document = await prisma.document.findUnique({
+        where: {
+            id: documentId,
+        },
+    });
+
+    if (!document) {
+        throw new ApiError(
+            404,
+            "Document not found."
+        );
+    }
+
+    if (
+        document.organizationId !==
+        user.unit.organizationId
+    ) {
+        throw new ApiError(
+            403,
+            "Document does not belong to your organization."
+        );
+    }
+
+    if (!document.isDeleted) {
+        throw new ApiError(
+            400,
+            "Document is not deleted."
+        );
+    }
+
+    await authorizeDocumentAction(
+        user,
+        documentId,
+        "MANAGE_ACCESS"
+    );
+
+    return prisma.document.update({
+        where: {
+            id: documentId,
+        },
+        data: {
+            status: "READY",
+            isDeleted: false,
+            deletedAt: null,
+            deletedById: null,
+        },
+    });
+};
+
+export const cleanupDeletedDocument = async (
+    user,
+    documentId
+) => {
+
+    validateOrganizationMembership(user);
+
+    const document = await prisma.document.findUnique({
+        where: {
+            id: documentId,
+        },
+        include: {
+            versions: true,
+        },
+    });
+
+    if (!document) {
+        throw new ApiError(
+            404,
+            "Document not found."
+        );
+    }
+
+    if (
+        document.organizationId !==
+        user.unit.organizationId
+    ) {
+        throw new ApiError(
+            403,
+            "Document does not belong to your organization."
+        );
+    }
+
+    if (!document.isDeleted) {
+        throw new ApiError(
+            400,
+            "Document must be deleted before cleanup."
+        );
+    }
+
+    await authorizeDocumentAction(
+        user,
+        documentId,
+        "MANAGE_ACCESS"
+    );
+
+    for (const version of document.versions) {
+        try {
+            await deleteFileFromS3(
+                version.storageKey
+            );
+        } catch {
+            // Ignore missing objects.
+        }
+    }
+
+    await prisma.$transaction(async (tx) => {
+
+        await tx.documentAccessAudit.deleteMany({
+            where: {
+                documentId,
+            },
+        });
+
+        await tx.documentAccessPolicy.deleteMany({
+            where: {
+                documentId,
+            },
+        });
+
+        await tx.documentVersion.deleteMany({
+            where: {
+                documentId,
+            },
+        });
+
+        await tx.document.delete({
+            where: {
+                id: documentId,
+            },
+        });
+
+    });
+
+    return {
+        message:
+            "Document cleanup completed successfully.",
+    };
+};
+
+export const cleanupExpiredDrafts = async (
+    user
+) => {
+
+    validateOrganizationMembership(user);
+
+    const drafts =
+        await prisma.document.findMany({
+            where: {
+                organizationId:
+                    user.unit.organizationId,
+                status: "EXPIRED",
+            },
+            include: {
+                versions: true,
+            },
+        });
+
+    for (const document of drafts) {
+
+        for (const version of document.versions) {
+
+            try {
+                await deleteFileFromS3(
+                    version.storageKey
+                );
+            } catch {
+                // Ignore cleanup failures.
+            }
+
+        }
+
+        await prisma.$transaction(async (tx) => {
+
+            await tx.documentVersion.deleteMany({
+                where: {
+                    documentId: document.id,
+                },
+            });
+
+            await tx.document.delete({
+                where: {
+                    id: document.id,
+                },
+            });
+
+        });
+
+    }
+
+    return {
+        cleanedDrafts: drafts.length,
+    };
+};
