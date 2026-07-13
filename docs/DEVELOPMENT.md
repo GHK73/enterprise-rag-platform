@@ -8,17 +8,17 @@ Database architecture: [`docs/DATABASE.md`](DATABASE.md)
 
 # Current Status
 
-**Active Phase:** Phase 5.3 — S3 Uploads ⏳
+**Active Phase:** Phase 5 — Document Management ⏳
 
-| Area                         | Status |
+| Area | Status |
 | ---------------------------- | ------ |
-| Backend Foundation           | ✅ |
-| Authentication               | ✅ |
-| Organization Management      | ✅ |
-| Access & Administration      | ✅ |
+| Backend Foundation | ✅ |
+| Authentication | ✅ |
+| Organization Management | ✅ |
+| Access & Administration | ✅ |
 | Organization Synchronization | ✅ |
-| Concurrency Protection       | ✅ |
-| Document Management          | ⏳ |
+| Concurrency Protection | ✅ |
+| Document Management | ⏳ |
 
 ---
 
@@ -28,11 +28,12 @@ Completed:
 
 * Node.js and Express backend
 * PostgreSQL with Prisma ORM
-* Environment and JWT configuration
+* Environment configuration
+* JWT authentication
 * Versioned API routing
 * Authentication middleware
 * Global error handling
-* Reusable API utilities
+* Shared API utilities
 
 ---
 
@@ -41,17 +42,16 @@ Completed:
 Completed:
 
 * Registration and login
-* Password hashing and JWT authentication
+* Password hashing
+* JWT authentication
 * Current-user retrieval
-* Inactive and missing-user rejection
+* Active-account validation
+* Database-backed authentication
+* Authenticated request context
 * Organization-independent authentication
-* Database-backed request authentication
-* Authenticated user and unit context loading
-* Password-safe request context
 * Shared `req.user` propagation
-* Redundant authenticated-user query removal
 
-Authentication flow:
+Authentication Flow
 
 ```text
 JWT Verification
@@ -61,17 +61,19 @@ JWT Verification
 → Reuse Authenticated Context
 ```
 
-Service boundary:
+Service Boundary
 
 ```text
 Middleware
-→ Identity and active-account validation
+→ Identity Validation
 
 Services
-→ Membership, tenant, permission, and business validation
+→ Organization
+→ Permission
+→ Business Rules
 
 Transactions
-→ Fresh concurrency-sensitive state validation
+→ Fresh Concurrency Validation
 ```
 
 ---
@@ -80,20 +82,24 @@ Transactions
 
 Completed:
 
-* Organization creation and updates
+* Organization creation
+* Organization updates
 * Automatic root unit creation
 * Owner assignment
-* Organization hierarchy management
+* Organization hierarchy
 * Organization isolation
 * Hierarchy validation
 * Protected unit deletion
 * Child-unit deletion protection
 * Member-containing unit deletion protection
 
-Hierarchy:
+Hierarchy
 
 ```text
-COMPANY → DEPARTMENT → TEAM → GROUP
+COMPANY
+→ DEPARTMENT
+→ TEAM
+→ GROUP
 ```
 
 ---
@@ -104,14 +110,15 @@ COMPANY → DEPARTMENT → TEAM → GROUP
 
 Completed:
 
-* Atomic and scoped permissions
+* Atomic permissions
+* Scoped permissions
 * Hierarchy scope validation
 * Delegation authority
-* Permission revocation and history
+* Permission history
+* Permission revocation
 * Member permission retrieval
-* Scoped operation enforcement
-* Scoped unit update and deletion authorization
-* Transaction-aware permission helpers
+* Scoped authorization helpers
+* Transaction-aware permission validation
 
 ---
 
@@ -119,14 +126,18 @@ Completed:
 
 Completed:
 
-* Invitation creation and validation
+* Invitation creation
+* Invitation validation
+* Secure invitation tokens
 * Role assignment
-* Secure tokens
-* Invitation retrieval and acceptance
-* Expiration and revocation
+* Invitation acceptance
+* Expiration validation
+* Revocation support
 * Capacity validation
 
-External email delivery remains future work.
+Remaining:
+
+* External email delivery
 
 ---
 
@@ -135,10 +146,12 @@ External email delivery remains future work.
 Completed:
 
 * Capacity configuration
-* Member and child allocation tracking
 * Parent capacity enforcement
+* Remaining capacity calculation
+* Member allocation tracking
+* Child allocation tracking
 * Over-allocation prevention
-* Invitation capacity enforcement
+* Invitation capacity validation
 
 ---
 
@@ -148,11 +161,12 @@ Completed:
 
 * Member listing
 * Role updates
-* Member movement and removal
+* Member movement
+* Member removal
 * Owner protection
 * Permission validation
-* Destination capacity validation
-* Permission revocation on removal
+* Capacity validation
+* Permission cleanup on removal
 
 ---
 
@@ -160,7 +174,8 @@ Completed:
 
 Completed:
 
-* Unit and subtree movement
+* Unit movement
+* Subtree movement
 * Hierarchy validation
 * Circular-reference protection
 * Scope validation
@@ -176,7 +191,7 @@ Completed:
 * Transactional revision updates
 * Revision endpoint
 * Frontend stale-state detection
-* Consistent snapshot refresh support
+* Consistent snapshot refresh
 
 ---
 
@@ -187,48 +202,50 @@ Completed:
 * Serializable transactions
 * Prisma `P2034` retry handling
 * Transaction-aware validation
-* Transactional revision increments
-* Fresh state validation for concurrency-sensitive operations
+* Transactional revision updates
+* Fresh concurrency validation
 
-Protected operations:
+Protected Operations
 
-* Organization creation
-* Capacity updates
-* Member movement
-* Unit movement
-* Invitation acceptance
+```text
+Organization Creation
+Capacity Updates
+Member Movement
+Unit Movement
+Invitation Acceptance
+```
 
 ---
 
 # Phase 5 — Document Management ⏳
 
-Detailed architecture: `docs/DATABASE.md`
+Detailed design: `docs/DATABASE.md`
 
 ## 5.1 Document Architecture & Database Design ✅
 
 Completed:
 
-* Document lifecycle design
-* Document and immutable version models
+* Document lifecycle
+* Immutable document versions
 * S3 storage architecture
-* Data classification model
-* Document access policies
+* Classification model
+* Authorization model
 * Temporary access design
-* Append-only access auditing
+* Append-only access audit
 * Soft deletion boundaries
 * Authorization resolution rules
 * Service invariants
-* Referential-integrity review
+* Referential integrity review
 * Prisma schema
 * Database migration
 
-Migration:
+Migration
 
 ```text
 20260710095413_add_document_management
 ```
 
-Models:
+Models
 
 ```text
 Document
@@ -237,24 +254,31 @@ DocumentAccessPolicy
 DocumentAccessAudit
 ```
 
-Lifecycle:
+Lifecycle
 
 ```text
-DRAFT → SUBMITTED → QUEUED → PROCESSING → READY
+DRAFT
+→ SUBMITTED
+→ QUEUED
+→ PROCESSING
+→ READY
 
 DRAFT → EXPIRED
 PROCESSING → FAILED
 READY → DELETED
 ```
 
-Security boundaries:
+Security Model
 
 ```text
 Administrative Permission ≠ Document Access
-Data Classification       ≠ Document Access
+Classification           ≠ Document Access
 
-PostgreSQL → Authorization Authority
-Qdrant     → Retrieval Infrastructure
+PostgreSQL
+→ Authorization Authority
+
+Qdrant
+→ Retrieval Infrastructure
 ```
 
 ---
@@ -266,16 +290,16 @@ Completed:
 * Draft creation
 * Draft updates
 * Draft expiry
-* Organization-wide draft expiry
+* Organization-wide expiry
 * Metadata updates
-* Lifecycle transition validation
+* Lifecycle validation
+* Draft validation helpers
 * Tenant-isolated document listing
 * Individual document retrieval
 * Soft-delete filtering
-* Draft validation helpers
-* Authenticated request-context integration
+* Authenticated request integration
 
-Implemented endpoints:
+Endpoints
 
 ```text
 POST    /api/v1/documents/drafts
@@ -286,7 +310,7 @@ GET     /api/v1/documents/:documentId
 
 ---
 
-## 5.3 S3 Uploads ⏳
+## 5.3 Draft Upload & Storage ⏳
 
 Completed:
 
@@ -294,7 +318,7 @@ Completed:
 * Private bucket integration
 * Upload middleware
 * File validation
-* Draft file upload
+* Draft uploads
 * SHA-256 checksum generation
 * File metadata storage
 * Draft storage mapping
@@ -302,10 +326,10 @@ Completed:
 * Current-version tracking
 * Duplicate upload prevention
 * Draft upload deletion
-* Upload rollback on database failure
+* Upload rollback
 * Transactional upload handling
 
-Implemented endpoints:
+Endpoints
 
 ```text
 POST    /api/v1/documents/drafts/:documentId/upload
@@ -318,43 +342,100 @@ Remaining:
 
 ---
 
-## 5.4 Document Publication & Versions ⏳
+## 5.4 Document Publication & Versioning ⏳
+
+Completed:
+
+* Draft publication validation
+* Lifecycle transition validation
+* Initial owner access policies
+* Initial access audit creation
+* Publication transaction flow
+
+Implemented Flow
+
+```text
+Validate Draft
+→ Validate Upload
+→ Create Initial Access Policies
+→ Create Initial Access Audit
+→ Publish Document
+```
 
 Planned:
 
-* Draft publication
-* Initial access validation
-* Immutable document versions
-* Published file storage
-* Current-version management
+* Immutable published versions
+* Published storage mapping
 * Processing queue preparation
-* New-version uploads
-
----
+* New version uploads
 
 ## 5.5 Document Access Management ⏳
 
+Completed:
+
+* Access subject resolution
+* Policy validation
+* Initial owner access policy creation
+* Initial access audit creation
+* Target-unit resolution
+* Document publication integration
+
+Current Access Subjects
+
+```text
+ORGANIZATION
+UNIT
+ROLE
+USER
+```
+
+Current Access Actions
+
+```text
+QUERY
+VIEW
+DOWNLOAD
+MANAGE_ACCESS
+```
+
+Publication Flow
+
+```text
+Publish Draft
+→ Create Owner Policies
+→ Create Access Audit
+→ Mark SUBMITTED
+```
+
 Planned:
 
-* Organization, unit, role, and user policies
-* Independent access actions
-* Permanent and temporary access
-* Explicit `DENY` precedence
-* Immediate revocation
-* Controlled policy updates
-* Transactional audit creation
+* Grant document access
+* Update access policies
+* Revoke access
+* Temporary access
+* Authority validation
+* DENY precedence
+* Access conflict resolution
 
 ---
 
 ## 5.6 Access History ⏳
 
+Completed:
+
+* Audit model
+* Initial publication audit
+* Policy snapshot storage
+
 Planned:
 
 * Append-only audit history
-* Previous and new policy state
-* Actor and subject tracking
+* Previous/New state tracking
+* Actor tracking
+* Subject tracking
 * Change reasons
-* Expiration and revocation events
+* Expiration events
+* Revocation events
 
 ---
 
@@ -363,11 +444,14 @@ Planned:
 Planned:
 
 * Authorized downloads
-* Short-lived presigned URLs
+* Presigned URLs
+* Download authorization
 * Soft deletion
 * Immediate access blocking
+* Draft cleanup
+* Storage cleanup
+* Vector cleanup
 * Cache invalidation
-* Asynchronous storage and vector cleanup
 
 ---
 
@@ -375,51 +459,122 @@ Planned:
 
 ## Phase 6 — Document Processing
 
-* Layout-aware extraction and OCR
-* Pages and content blocks
-* Tables, charts, images, and diagrams
-* Chunking and content hashing
+Planned:
+
 * BullMQ workers
+* Layout-aware extraction
+* OCR
+* Page extraction
+* Content blocks
+* Tables
+* Images
+* Chunking
+* Content hashing
+* Processing retries
+
+Processing Pipeline
+
+```text
+Publish
+→ Queue Job
+→ OCR
+→ Extract Content
+→ Create Chunks
+→ Generate Embeddings
+→ Store Processing Results
+```
+
+---
 
 ## Phase 7 — Retrieval Infrastructure
 
+Planned:
+
 * Qdrant integration
-* Embeddings
-* Vector placement
-* Tenant-aware routing
+* Embedding storage
+* Tenant isolation
 * Hybrid search
+* Metadata filtering
 * Permission-aware retrieval
+* Reranking
+
+Retrieval Flow
+
+```text
+User Query
+→ Resolve Accessible Documents
+→ Hybrid Search
+→ Metadata Filtering
+→ Permission Validation
+→ Reranking
+```
+
+---
 
 ## Phase 8 — RAG Pipeline
 
+Planned:
+
 * Query processing
 * Context reconstruction
-* Reranking
 * Final authorization validation
-* Grounded answers and citations
+* Prompt construction
 * Streaming
+* Citations
+* Grounded answer generation
+* Hallucination reduction
+
+Generation Flow
+
+```text
+Authorized Documents
+→ Retrieved Context
+→ Reranking
+→ Prompt Construction
+→ LLM
+→ Citation Validation
+→ Final Answer
+```
+
+---
 
 ## Phase 9 — Reliability & Caching
 
+Planned:
+
+* Redis caching
+* Version-aware cache invalidation
+* Retrieval caching
 * Hallucination detection
 * Answer verification
-* Redis caching
-* Version-aware invalidation
+* Retry handling
+
+---
 
 ## Phase 10 — Evaluation & Monitoring
 
+Planned:
+
 * Retrieval metrics
 * Generation metrics
-* Latency and throughput
-* Cache and cost analysis
+* Latency monitoring
+* Throughput monitoring
+* Cost analysis
+* Cache metrics
 * Security monitoring
+
+---
 
 ## Phase 11 — Deployment
 
-* Containerization
+Planned:
+
+* Docker containerization
 * Worker deployment
 * Production infrastructure
-* Monitoring and observability
+* Monitoring
+* Logging
+* Observability
 
 ---
 
@@ -435,6 +590,7 @@ backend/
 ├── server.js
 └── src/
     ├── config/
+    │   ├── config.js
     │   ├── prisma.js
     │   └── s3.js
     ├── controllers/
@@ -476,12 +632,24 @@ backend/
 # Next Development Step
 
 ```text
-Complete Phase 5.3
-→ Implement Draft Object Cleanup
+Complete Phase 5
 
-Start Phase 5.4
-→ Draft Publication
-→ Initial Access Validation
-→ Immutable Version Management
-→ Processing Queue Preparation
+→ Draft Object Cleanup
+→ Grant Document Access
+→ Update Access Policies
+→ Revoke Access
+→ Temporary Access
+→ Download Authorization
+→ Soft Delete
+→ Storage Cleanup
+
+Start Phase 6
+
+→ BullMQ Workers
+→ Document Processing
+→ OCR & Extraction
+→ Chunking
+→ Embeddings
+→ Qdrant Indexing
+→ Processing Monitoring
 ```
