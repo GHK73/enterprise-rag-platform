@@ -1,16 +1,25 @@
 import { Router } from "express";
+
 import {
     createDocumentDraft,
     updateDocumentDraft,
     getDocuments,
     getDocumentById,
+
     uploadDraft,
     deleteDraftUpload,
     publishDraft,
 
+    getDocumentVersions,
+    getDocumentVersionById,
+    uploadDocumentVersion,
+    getDocumentDownloadUrl,
+
+    grantDocumentAccess,
     updateDocumentAccessPolicy,
     revokeDocumentAccess,
     getDocumentAccessPolicies,
+    getDocumentAccessPolicyById,
     getDocumentAccessHistory,
     grantTemporaryDocumentAccess,
 
@@ -26,14 +35,10 @@ import upload from "../middleware/upload.middleware.js";
 const router = Router();
 
 /* -------------------------------------------------------------------------- */
-/*                                Drafts                                      */
+/*                                   Drafts                                   */
 /* -------------------------------------------------------------------------- */
 
-router.post(
-    "/drafts",
-    authenticate,
-    createDocumentDraft
-);
+router.post("/drafts",authenticate,createDocumentDraft);
 
 router.post(
     "/drafts/:documentId/upload",
@@ -61,14 +66,10 @@ router.post(
 );
 
 /* -------------------------------------------------------------------------- */
-/*                              Documents                                     */
+/*                                 Documents                                  */
 /* -------------------------------------------------------------------------- */
 
-router.get(
-    "/",
-    authenticate,
-    getDocuments
-);
+router.get("/",authenticate,getDocuments);
 
 router.get(
     "/:documentId",
@@ -101,8 +102,49 @@ router.delete(
 );
 
 /* -------------------------------------------------------------------------- */
-/*                           Document Access                                  */
+/*                              Document Versions                             */
 /* -------------------------------------------------------------------------- */
+
+router.get(
+    "/:documentId/versions",
+    authenticate,
+    getDocumentVersions
+);
+
+router.get(
+    "/:documentId/versions/:versionId",
+    authenticate,
+    getDocumentVersionById
+);
+
+router.post(
+    "/:documentId/versions",
+    authenticate,
+    upload.single("file"),
+    uploadDocumentVersion
+);
+
+router.get(
+    "/:documentId/download",
+    authenticate,
+    getDocumentDownloadUrl
+);
+
+router.get(
+    "/:documentId/versions/:versionId/download",
+    authenticate,
+    getDocumentDownloadUrl
+);
+
+/* -------------------------------------------------------------------------- */
+/*                              Document Access                               */
+/* -------------------------------------------------------------------------- */
+
+router.post(
+    "/:documentId/access",
+    authenticate,
+    grantDocumentAccess
+);
 
 router.post(
     "/:documentId/access/temporary",
@@ -122,6 +164,12 @@ router.get(
     getDocumentAccessHistory
 );
 
+router.get(
+    "/access/:policyId",
+    authenticate,
+    getDocumentAccessPolicyById
+);
+
 router.patch(
     "/access/:policyId",
     authenticate,
@@ -133,6 +181,5 @@ router.delete(
     authenticate,
     revokeDocumentAccess
 );
-
 
 export default router;

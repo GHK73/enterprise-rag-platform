@@ -1,21 +1,49 @@
-// frontend/src/pages/Documents/DocumentLibrary.jsx
+import {
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
 
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
 import { getDocuments } from "../../api/document.api";
+
+import DocumentFilters from "./components/DocumentFilters";
+import DocumentTable from "./components/DocumentTable";
+
 import "./DocumentLibrary.css";
 
 const DocumentLibrary = () => {
-    const [documents, setDocuments] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
+    const [documents, setDocuments] =
+        useState([]);
+
+    const [loading, setLoading] =
+        useState(true);
+
+    const [error, setError] =
+        useState("");
+
+    const [search, setSearch] =
+        useState("");
+
+    const [
+        classification,
+        setClassification,
+    ] = useState("ALL");
+
+    const [
+        lifecycle,
+        setLifecycle,
+    ] = useState("ALL");
 
     const loadDocuments = async () => {
         try {
             setLoading(true);
+
             setError("");
 
-            const response = await getDocuments();
+            const response =
+                await getDocuments();
 
             setDocuments(response || []);
         } catch (err) {
@@ -32,47 +60,65 @@ const DocumentLibrary = () => {
         loadDocuments();
     }, []);
 
-    const getStatusClass = (status) => {
-        switch (status) {
-            case "READY":
-                return "status-ready";
+    const filteredDocuments = useMemo(() => {
+        return documents.filter(
+            (document) => {
+                const matchesSearch =
+                    !search ||
+                    document.title
+                        ?.toLowerCase()
+                        .includes(
+                            search.toLowerCase()
+                        ) ||
+                    document.description
+                        ?.toLowerCase()
+                        .includes(
+                            search.toLowerCase()
+                        );
 
-            case "PROCESSING":
-                return "status-processing";
+                const matchesClassification =
+                    classification ===
+                        "ALL" ||
+                    document.classification ===
+                        classification;
 
-            case "QUEUED":
-                return "status-queued";
+                const matchesLifecycle =
+                    lifecycle === "ALL" ||
+                    document.lifecycle ===
+                        lifecycle;
 
-            case "SUBMITTED":
-                return "status-submitted";
-
-            case "FAILED":
-                return "status-failed";
-
-            case "DRAFT":
-                return "status-draft";
-
-            case "EXPIRED":
-                return "status-expired";
-
-            case "DELETED":
-                return "status-deleted";
-
-            default:
-                return "";
-        }
-    };
+                return (
+                    matchesSearch &&
+                    matchesClassification &&
+                    matchesLifecycle
+                );
+            }
+        );
+    }, [
+        documents,
+        search,
+        classification,
+        lifecycle,
+    ]);
 
     if (loading) {
         return (
             <div className="document-library-page">
+
                 <div className="document-library-header">
-                    <h1>Document Library</h1>
+
+                    <h1>
+                        Document Library
+                    </h1>
+
                 </div>
 
                 <div className="document-library-loading">
+
                     Loading documents...
+
                 </div>
+
             </div>
         );
     }
@@ -80,34 +126,52 @@ const DocumentLibrary = () => {
     if (error) {
         return (
             <div className="document-library-page">
+
                 <div className="document-library-header">
-                    <h1>Document Library</h1>
+
+                    <h1>
+                        Document Library
+                    </h1>
+
                 </div>
 
                 <div className="document-library-error">
+
                     <p>{error}</p>
 
                     <button
-                        onClick={loadDocuments}
                         className="primary-button"
+                        onClick={
+                            loadDocuments
+                        }
                     >
                         Retry
                     </button>
+
                 </div>
+
             </div>
         );
     }
 
     return (
         <div className="document-library-page">
+
             <div className="document-library-header">
+
                 <div>
-                    <h1>Document Library</h1>
+
+                    <h1>
+                        Document Library
+                    </h1>
 
                     <p>
-                        Manage enterprise documents,
-                        drafts, and published knowledge.
+                        Manage enterprise
+                        documents, drafts,
+                        and published
+                        knowledge.
                     </p>
+
                 </div>
 
                 <Link
@@ -116,104 +180,49 @@ const DocumentLibrary = () => {
                 >
                     + New Document
                 </Link>
+
             </div>
 
-            {documents.length === 0 ? (
+            <DocumentFilters
+                search={search}
+                onSearchChange={
+                    setSearch
+                }
+                classification={
+                    classification
+                }
+                onClassificationChange={
+                    setClassification
+                }
+                lifecycle={lifecycle}
+                onLifecycleChange={
+                    setLifecycle
+                }
+            />
+
+            {filteredDocuments.length ===
+            0 ? (
                 <div className="document-library-empty">
-                    <h2>No Documents Found</h2>
+
+                    <h2>
+                        No Documents Found
+                    </h2>
 
                     <p>
-                        Create your first document draft to
-                        start building your organization
-                        knowledge base.
+                        No documents match
+                        the current
+                        filters.
                     </p>
 
-                    <Link
-                        to="/documents/new"
-                        className="primary-button"
-                    >
-                        Create Document
-                    </Link>
                 </div>
             ) : (
-                <div className="document-table-wrapper">
-                    <table className="document-table">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Classification</th>
-                                <th>Status</th>
-                                <th>Version</th>
-                                <th>Updated</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            {documents.map((document) => (
-                                <tr key={document.id}>
-                                    <td>
-                                        <div className="document-name">
-                                            <strong>
-                                                {document.title ||
-                                                    "Untitled Document"}
-                                            </strong>
-
-                                            {document.description && (
-                                                <span>
-                                                    {
-                                                        document.description
-                                                    }
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-
-                                    <td>
-                                        {document.classification ||
-                                            "-"}
-                                    </td>
-
-                                    <td>
-                                        <span
-                                            className={`status-badge ${getStatusClass(
-                                                document.lifecycle
-                                            )}`}
-                                        >
-                                            {
-                                                document.lifecycle
-                                            }
-                                        </span>
-                                    </td>
-
-                                    <td>
-                                        {document.currentVersion
-                                            ?.versionNumber ??
-                                            "-"}
-                                    </td>
-
-                                    <td>
-                                        {document.updatedAt
-                                            ? new Date(
-                                                  document.updatedAt
-                                              ).toLocaleDateString()
-                                            : "-"}
-                                    </td>
-
-                                    <td>
-                                        <Link
-                                            to={`/documents/${document.id}`}
-                                            className="table-action-button"
-                                        >
-                                            View
-                                        </Link>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                <DocumentTable
+                    documents={
+                        filteredDocuments
+                    }
+                />
             )}
+
         </div>
     );
 };

@@ -3,7 +3,10 @@
 import {
     PutObjectCommand,
     DeleteObjectCommand,
+    GetObjectCommand,
 } from "@aws-sdk/client-s3";
+
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
 
 import s3Client from "../config/s3.js";
@@ -37,5 +40,16 @@ export const deleteFileFromS3 = async (objectKey) => {
             Bucket: config.aws.bucket,
             Key: objectKey,
         })
+    );
+};
+
+export const getDownloadUrlFromS3 = async(objectKey)=>{
+    const command = new GetObjectCommand({
+        Bucket: config.aws.bucket,
+        Key: objectKey, 
+    });
+    return getSignedUrl(
+        s3Client,
+        command,{expiresIn:60*5,}
     );
 };

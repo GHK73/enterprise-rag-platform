@@ -5,15 +5,24 @@ import {
     updateDocumentDraft as updateDocumentDraftService,
     getDocuments as getDocumentsService,
     getDocumentById as getDocumentByIdService,
+
     uploadDraft as uploadDraftService,
     deleteDraftUpload as deleteDraftUploadService,
     publishDraft as publishDraftService,
+
+    getDocumentVersions as getDocumentVersionsService,
+    getDocumentVersionById as getDocumentVersionByIdService,
+    uploadDocumentVersion as uploadDocumentVersionService,
+    getDocumentDownloadUrl as getDocumentDownloadUrlService,
+
     grantDocumentAccess as grantDocumentAccessService,
     updateDocumentAccessPolicy as updateDocumentAccessPolicyService,
     revokeDocumentAccess as revokeDocumentAccessService,
     getDocumentAccessPolicies as getDocumentAccessPoliciesService,
+    getDocumentAccessPolicyById as getDocumentAccessPolicyByIdService,
     getDocumentAccessHistory as getDocumentAccessHistoryService,
     grantTemporaryDocumentAccess as grantTemporaryDocumentAccessService,
+
     softDeleteDocument as softDeleteDocumentService,
     restoreDocument as restoreDocumentService,
     cleanupDeletedDocument as cleanupDeletedDocumentService,
@@ -106,6 +115,90 @@ export const publishDraft = asyncHandler(async(req,res)=>{
     return res.status(200).json(new ApiResponse(200,"Document published successfully",document));
 });
 
+export const getDocumentVersions = asyncHandler(async(req,res)=>{
+    const versions =
+        await getDocumentVersionsService(
+            req.user,
+            req.params.documentId
+        );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Document versions fetched successfully",
+            versions
+        )
+    );
+});
+
+export const getDocumentVersionById = asyncHandler(async(req,res)=>{
+    const version =
+        await getDocumentVersionByIdService(
+            req.user,
+            req.params.documentId,
+            req.params.versionId
+        );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Document version fetched successfully",
+            version
+        )
+    );
+});
+
+export const uploadDocumentVersion = asyncHandler(async(req,res)=>{
+    const version =
+        await uploadDocumentVersionService(
+            req.user,
+            req.params.documentId,
+            req.file
+        );
+
+    return res.status(201).json(
+        new ApiResponse(
+            201,
+            "Document version uploaded successfully",
+            version
+        )
+    );
+});
+
+export const getDocumentDownloadUrl = asyncHandler(async(req,res)=>{
+    const result =
+        await getDocumentDownloadUrlService(
+            req.user,
+            req.params.documentId,
+            req.params.versionId
+        );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Download URL generated successfully",
+            result
+        )
+    );
+});
+
+export const grantDocumentAccess = asyncHandler(async(req,res)=>{
+    const policy =
+        await grantDocumentAccessService(
+            req.user,
+            req.params.documentId,
+            req.body
+        );
+
+    return res.status(201).json(
+        new ApiResponse(
+            201,
+            "Document access granted successfully",
+            policy
+        )
+    );
+});
+
 export const updateDocumentAccessPolicy = asyncHandler(async(req,res)=>{
     const policy = await updateDocumentAccessPolicyService(
         req.user,
@@ -153,6 +246,22 @@ export const getDocumentAccessPolicies = asyncHandler(
         );
     }
 );
+
+export const getDocumentAccessPolicyById = asyncHandler(async(req,res)=>{
+    const policy =
+        await getDocumentAccessPolicyByIdService(
+            req.user,
+            req.params.policyId
+        );
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            "Document access policy fetched successfully",
+            policy
+        )
+    );
+});
 
 export const getDocumentAccessHistory = asyncHandler(
     async (req, res) => {

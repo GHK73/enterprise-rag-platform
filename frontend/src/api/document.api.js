@@ -59,24 +59,19 @@ export const expireDocumentDrafts = async () => {
 
 export const uploadDraft = async (
     documentId,
-    file
+    file,
+    onUploadProgress,
 ) => {
     const formData = new FormData();
 
-    formData.append(
-        "file",
-        file
-    );
+    formData.append("file", file);
 
     const response = await api.post(
         `/documents/drafts/${documentId}/upload`,
         formData,
         {
-            headers: {
-                "Content-Type":
-                    "multipart/form-data",
-            },
-        }
+            onUploadProgress,
+        },
     );
 
     return response.data.data;
@@ -101,6 +96,51 @@ export const publishDocumentDraft = async (
 ) => {
     const response = await api.post(
         `/documents/drafts/${documentId}/publish`
+    );
+
+    return response.data.data;
+};
+
+// ==============================
+// Document Versions
+// ==============================
+
+export const getDocumentVersions = async (
+    documentId,
+) => {
+    const response = await api.get(
+        `/documents/${documentId}/versions`
+    );
+
+    return response.data.data;
+};
+
+export const getDocumentVersionById = async (
+    documentId,
+    versionId,
+) => {
+    const response = await api.get(
+        `/documents/${documentId}/versions/${versionId}`
+    );
+
+    return response.data.data;
+};
+
+export const uploadDocumentVersion = async (
+    documentId,
+    file,
+    onUploadProgress,
+) => {
+    const formData = new FormData();
+
+    formData.append("file", file);
+
+    const response = await api.post(
+        `/documents/${documentId}/versions`,
+        formData,
+        {
+            onUploadProgress,
+        },
     );
 
     return response.data.data;
@@ -201,10 +241,15 @@ export const getDocumentDownloadUrl = async (
 };
 
 export const downloadDocument = async (
-    documentId
+    documentId,
+    versionId,
 ) => {
+    const endpoint = versionId
+        ? `/documents/${documentId}/versions/${versionId}/download`
+        : `/documents/${documentId}/download`;
+
     const response = await api.get(
-        `/documents/${documentId}/download`
+        endpoint
     );
 
     return response.data.data;

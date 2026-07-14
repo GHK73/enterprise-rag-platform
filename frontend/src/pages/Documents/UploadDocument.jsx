@@ -1,9 +1,17 @@
-// frontend/src/pages/Documents/UploadDocument.jsx
-
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { uploadDraft } from "../../api/document.api";
+import UploadCard from "./components/UploadCard";
 import "./UploadDocument.css";
+
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+
+const ALLOWED_TYPES = [
+    "application/pdf",
+    "text/plain",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
 
 const UploadDocument = () => {
     const { documentId } = useParams();
@@ -16,17 +24,37 @@ const UploadDocument = () => {
     const [uploading, setUploading] =
         useState(false);
 
+    const [uploadProgress, setUploadProgress] = useState(0);
+
     const [error, setError] =
         useState("");
-
     const handleFileSelection = (event) => {
-        const file = event.target.files[0];
-
+        const file = event.target.files[0];        
         if (!file) {
             return;
         }
-
+        setError("");    
+        if (!ALLOWED_TYPES.includes(file.type)) {
+            setSelectedFile(null);    
+            setError(
+                "Only PDF, TXT, DOC and DOCX files are supported."
+            );        
+            return;
+       }    
+        if (file.size > MAX_FILE_SIZE) {
+            setSelectedFile(null);    
+            setError(
+                "Maximum file size is 25 MB."
+            );    
+            return;
+        }        
         setSelectedFile(file);
+    };
+
+    const handleRemoveFile = () => {
+        setSelectedFile(null);
+    
+        setError("");
     };
 
     const handleUpload = async () => {
@@ -40,11 +68,20 @@ const UploadDocument = () => {
 
         try {
             setUploading(true);
+            setUploadProgress(0);
             setError("");
 
             await uploadDraft(
                 documentId,
-                selectedFile
+                selectedFile,
+                (progressEvent) => {
+                    const progress = Math.round(
+                        (progressEvent.loaded * 100) /
+                        progressEvent.total
+                    );
+            
+                    setUploadProgress(progress);
+                },
             );
 
             navigate(
@@ -53,25 +90,23 @@ const UploadDocument = () => {
         } catch (err) {
             setError(
                 err?.response?.data?.message ||
-                "Failed to upload document."
+                    "Failed to upload document."
             );
         } finally {
             setUploading(false);
+            setUploadProgress(0);
         }
     };
 
     return (
         <div className="upload-document-page">
-
             <div className="upload-document-header">
-
                 <h1>Upload Document</h1>
 
                 <p>
                     Upload the file that belongs
                     to this draft.
                 </p>
-
             </div>
 
             {error && (
@@ -80,52 +115,15 @@ const UploadDocument = () => {
                 </div>
             )}
 
-            <div className="upload-card">
-
-                <input
-                    type="file"
-                    onChange={
-                        handleFileSelection
-                    }
-                />
-
-                {selectedFile && (
-                    <div className="selected-file">
-
-                        <h3>
-                            Selected File
-                        </h3>
-
-                        <p>
-                            {selectedFile.name}
-                        </p>
-
-                        <p>
-                            {(
-                                selectedFile.size /
-                                1024 /
-                                1024
-                            ).toFixed(2)}
-                            {" "}
-                            MB
-                        </p>
-
-                    </div>
-                )}
-
-                <button
-                    type="button"
-                    className="primary-button"
-                    disabled={uploading}
-                    onClick={handleUpload}
-                >
-                    {uploading
-                        ? "Uploading..."
-                        : "Upload File"}
-                </button>
-
-            </div>
-
+            <UploadCard
+                selectedFile={selectedFile}
+                uploading={uploading}
+                uploadProgress={uploadProgress}
+                onFileSelection={handleFileSelection}
+                onUpload={handleUpload}
+                onRemove={handleRemoveFile}
+                buttonText="Upload Draft"
+            />
         </div>
     );
 };
