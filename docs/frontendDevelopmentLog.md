@@ -16,7 +16,14 @@ Implementation progress for the Enterprise RAG Platform frontend.
 | Organization Management      | ✅      |
 | Access & Administration UI   | ✅      |
 | Organization Synchronization | ✅      |
-| Document Management UI       | ⏳      |
+| Document API Layer           | ✅      |
+| Document Routes & Navigation | ✅      |
+| Document Library             | ⏳      |
+| Draft Upload Flow            | ⏳      |
+| Document Details             | ⏳      |
+| Access Management UI         | ⏳      |
+| Access History UI            | ⏳      |
+| Deletion & Recovery UI       | ⏳      |
 
 ---
 
@@ -245,25 +252,65 @@ Organization Mutation
 
 ---
 
+## 4.8 Organization Module Refactor ✅
+
+The organization workspace was split into focused hooks, components, and utilities to keep `Organization.jsx` as a composition layer.
+
+## Completed
+
+* `hooks/` — data loading, tree state, CRUD, movement, capacity, members, and revision sync
+* `components/` — header, tree, details, capacity, members, create form, and update notification
+* `utils/` — shared organization helpers
+
+---
+
 # Phase 5 — Document Management UI ⏳
 
-The frontend will be implemented after the Phase 5 backend APIs are ready.
+Phase 5 backend APIs are available. Frontend work has started with the API layer, routing, and the first document pages.
+
+## 5.0 Document Foundation ✅
+
+## Completed
+
+* `document.api.js` covering drafts, upload, publish, access, history, download, and deletion
+* Protected document routes in `DocumentRoutes.jsx`
+* Navbar link to `/documents`
+* Route map:
+
+```text
+/documents                          → Document Library
+/documents/new                      → Create Draft
+/documents/:documentId/upload       → Upload Draft File
+/documents/:documentId              → Document Details
+```
+
+---
 
 ## 5.1 Document Library ⏳
 
-Planned:
+## Completed
 
-* Document listing
-* Search and filtering
+* Document listing from `/documents`
 * Classification display
-* Lifecycle and processing status
+* Lifecycle status badges (`DRAFT`, `SUBMITTED`, `QUEUED`, `PROCESSING`, `READY`, `FAILED`, `EXPIRED`, `DELETED`)
 * Current version information
+* Updated timestamp display
+* Empty state and retry handling
+* Navigation to create and view documents
+
+## Remaining
+
+* Search and filtering
 * Draft expiry visibility
-* Deleted document handling
+* Deleted document filtering or dedicated deleted view
+* Processing status distinction beyond lifecycle badge
+* Dashboard quick link to documents
+
+---
 
 ## 5.2 Upload and Draft Management ⏳
 
-The frontend must support temporary draft storage rather than immediate processing.
+The frontend supports temporary draft storage rather than immediate processing.
 
 ```text
 Select File
@@ -276,17 +323,24 @@ Select File
 → Publish
 ```
 
-Planned:
+## Completed
 
-* File selection and validation
-* Upload progress
-* Draft creation
+* Draft creation with title, description, and classification
+* Redirect from draft creation to upload step
+* File selection and basic upload state
+* Draft file upload to backend
+* Redirect to document details after upload
+
+## Remaining
+
+* Client-side file validation
+* Upload progress indicator
+* Draft metadata editing after creation
+* Access configuration before publish
+* Review and publish confirmation step
 * Draft expiry display
-* Metadata editing
-* Classification selection
-* Access configuration
-* Publish confirmation
 * Expired draft handling
+* Delete or replace draft upload
 
 A draft cannot remain permanently as unused S3-only storage.
 
@@ -294,16 +348,22 @@ A draft cannot remain permanently as unused S3-only storage.
 
 ## 5.3 Document Details and Versions ⏳
 
-Planned:
+## Completed
 
-* Document metadata
+* Document metadata display
 * Current lifecycle status
-* Processing status
-* Current version
+* Current version number
+* Updated timestamp
+* Loading and error states
+
+## Remaining
+
+* Processing status visibility
 * Version history
 * New version upload
 * Failed processing visibility
 * Retry actions when supported
+* Publish action for draft documents
 * Authorized download
 
 ---
@@ -328,7 +388,11 @@ DOWNLOAD
 MANAGE_ACCESS
 ```
 
-Planned:
+## Completed
+
+* API client methods for grant, update, revoke, and temporary access
+
+## Remaining
 
 * Current access policy display
 * Organization access
@@ -348,9 +412,13 @@ Temporary access is initially limited to a maximum of seven days.
 
 ## 5.5 Access History ⏳
 
-Planned:
+## Completed
 
-* Append-only access history
+* API client method for access history retrieval
+
+## Remaining
+
+* Append-only access history display
 * Actor display
 * Subject display
 * Change type
@@ -365,11 +433,15 @@ The frontend may display access history but must never provide edit or delete ac
 
 ## 5.6 Deletion and Recovery ⏳
 
-Planned:
+## Completed
+
+* API client methods for soft delete, restore, and cleanup
+
+## Remaining
 
 * Soft-delete confirmation
 * Immediate removal from normal document views
-* Deleted document state
+* Deleted document state display
 * Recovery when supported
 * Cleanup-state visibility when needed
 
@@ -414,14 +486,14 @@ Deleted State
 ## Phase 5 Frontend Implementation Order
 
 ```text
-Wait for Phase 5 Backend APIs
-→ Add Document API Layer
-→ Build Document Library
-→ Build Draft Upload Flow
-→ Build Metadata and Classification UI
+Document API Layer ✅
+→ Document Routes & Navigation ✅
+→ Build Document Library ⏳
+→ Build Draft Upload Flow ⏳
+→ Build Metadata and Classification UI ⏳
 → Build Access Configuration UI
 → Build Publish Flow
-→ Build Document Details
+→ Build Document Details ⏳
 → Build Version History
 → Build Access Management
 → Build Access History
@@ -481,18 +553,36 @@ Wait for Phase 5 Backend APIs
 frontend/
 └── src/
     ├── api/
+    │   ├── axios.js
+    │   └── document.api.js
     ├── components/
+    │   ├── Navbar/
+    │   ├── ProtectedRoute/
+    │   └── PublicRoute/
     ├── context/
+    │   └── AuthContext.jsx
     ├── layouts/
+    │   └── PublicLayout.jsx
     ├── pages/
     │   ├── CreateOrganization/
     │   ├── Dashboard/
+    │   ├── Documents/
+    │   │   ├── CreateDocument.jsx
+    │   │   ├── DocumentDetails.jsx
+    │   │   ├── DocumentLibrary.jsx
+    │   │   └── UploadDocument.jsx
     │   ├── Home/
     │   ├── Invitations/
     │   ├── Login/
     │   ├── Organization/
+    │   │   ├── components/
+    │   │   ├── hooks/
+    │   │   └── utils/
     │   ├── Permissions/
     │   └── Register/
+    ├── routes/
+    │   ├── DocumentRoutes.jsx
+    │   └── index.js
     ├── App.jsx
     ├── main.jsx
     └── index.css
@@ -503,9 +593,12 @@ frontend/
 # Next Development Step
 
 ```text
-Finalize Phase 5 Database Design
-→ Implement Phase 5 Backend
-→ Finalize Document API Contracts
-→ Build Document Management UI
+Complete Draft Publish Flow
+→ Add Access Configuration UI
+→ Extend Document Details (publish, download, versions)
+→ Build Access Management and Access History
+→ Add Deletion and Recovery UI
+→ Add Library Search, Filtering, and Draft Expiry Visibility
+→ Add Dashboard Documents Quick Link
 → Test Complete Document Lifecycle
 ```
