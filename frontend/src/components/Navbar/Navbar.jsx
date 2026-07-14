@@ -1,34 +1,42 @@
 // frontend/src/components/Navbar/Navbar.jsx
 
-import {useContext, useState} from "react";
-import {Link, useNavigate} from "react-router-dom";
-import {AuthContext} from "../../context/AuthContext";
+import { useContext, useState } from "react";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+
+import { AuthContext } from "../../context/AuthContext";
+
 import "./Navbar.css";
 
-function Navbar(){
-    const [menuOpen,setMenuOpen] = useState(false);
+function Navbar() {
 
-    const {token,logout} = useContext(AuthContext);
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    const { token, logout } = useContext(AuthContext);
+
     const navigate = useNavigate();
 
-    function toggleMenu(){
-        setMenuOpen(!menuOpen);
+    function toggleMenu() {
+        setMenuOpen((previous) => !previous);
     }
 
-    function closeMenu(){
+    function closeMenu() {
         setMenuOpen(false);
     }
 
-    function handleLogout(){
+    function handleLogout() {
         logout();
         closeMenu();
         navigate("/");
     }
 
     return (
+
         <header className="navbar">
+
             <div className="navbar-container">
+
                 <div className="navbar-left">
+
                     <Link
                         to={token ? "/dashboard" : "/"}
                         className="navbar-logo"
@@ -36,69 +44,122 @@ function Navbar(){
                     >
                         Enterprise RAG
                     </Link>
+
                 </div>
 
                 <div className={`navbar-center ${menuOpen ? "active" : ""}`}>
+
                     <nav className="navbar-links">
+
                         {token ? (
+
                             <>
-                                <Link
+
+                                <NavLink
                                     to="/dashboard"
                                     onClick={closeMenu}
+                                    className={({ isActive }) =>
+                                        isActive ? "active-nav-link" : ""
+                                    }
                                 >
                                     Dashboard
-                                </Link>
+                                </NavLink>
 
-                                <Link
+                                <NavLink
                                     to="/organization"
                                     onClick={closeMenu}
+                                    className={({ isActive }) =>
+                                        isActive ? "active-nav-link" : ""
+                                    }
                                 >
                                     Organization
-                                </Link>
-                                <Link
+                                </NavLink>
+
+                                <NavLink
+                                    to="/documents"
+                                    onClick={closeMenu}
+                                    className={({ isActive }) =>
+                                        isActive ? "active-nav-link" : ""
+                                    }
+                                >
+                                    Documents
+                                </NavLink>
+
+                                <NavLink
                                     to="/permissions"
                                     onClick={closeMenu}
+                                    className={({ isActive }) =>
+                                        isActive ? "active-nav-link" : ""
+                                    }
                                 >
                                     Permissions
-                                </Link>
-                                <Link
+                                </NavLink>
+
+                                <NavLink
                                     to="/invitations"
                                     onClick={closeMenu}
+                                    className={({ isActive }) =>
+                                        isActive ? "active-nav-link" : ""
+                                    }
                                 >
                                     Invitations
-                                </Link>
+                                </NavLink>
+
                             </>
+
                         ) : (
+
                             <>
-                                <Link to="/" onClick={closeMenu}>
+
+                                <Link
+                                    to="/"
+                                    onClick={closeMenu}
+                                >
                                     Home
                                 </Link>
 
-                                <Link to="/" onClick={closeMenu}>
+                                <Link
+                                    to="/"
+                                    onClick={closeMenu}
+                                >
                                     Features
                                 </Link>
 
-                                <Link to="/" onClick={closeMenu}>
+                                <Link
+                                    to="/"
+                                    onClick={closeMenu}
+                                >
                                     Documentation
                                 </Link>
 
-                                <Link to="/" onClick={closeMenu}>
+                                <Link
+                                    to="/"
+                                    onClick={closeMenu}
+                                >
                                     GitHub
                                 </Link>
+
                             </>
+
                         )}
+
                     </nav>
 
                     <div className="mobile-actions">
+
                         {token ? (
+
                             <button
                                 className="login-btn"
                                 onClick={handleLogout}
                             >
                                 Logout
                             </button>
+
                         ) : (
+
                             <>
+
                                 <Link
                                     to="/login"
                                     className="login-btn"
@@ -114,30 +175,48 @@ function Navbar(){
                                 >
                                     Register
                                 </Link>
+
                             </>
+
                         )}
+
                     </div>
+
                 </div>
 
                 <div className="navbar-actions">
+
                     {token ? (
+
                         <button
                             className="login-btn"
                             onClick={handleLogout}
                         >
                             Logout
                         </button>
+
                     ) : (
+
                         <>
-                            <Link to="/login" className="login-btn">
+
+                            <Link
+                                to="/login"
+                                className="login-btn"
+                            >
                                 Login
                             </Link>
 
-                            <Link to="/register" className="register-btn">
+                            <Link
+                                to="/register"
+                                className="register-btn"
+                            >
                                 Register
                             </Link>
+
                         </>
+
                     )}
+
                 </div>
 
                 <button
@@ -147,9 +226,13 @@ function Navbar(){
                 >
                     {menuOpen ? "✕" : "☰"}
                 </button>
+
             </div>
+
         </header>
+
     );
+
 }
 
 export default Navbar;

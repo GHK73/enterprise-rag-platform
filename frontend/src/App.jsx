@@ -1,5 +1,3 @@
-// frontend/src/App.jsx
-
 import "./App.css";
 
 import {
@@ -13,26 +11,22 @@ import Home from "./pages/Home/Home";
 import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
 
-import Dashboard from "./pages/Dashboard/Dashboard.jsx";
-import CreateOrganization from "./pages/CreateOrganization/CreateOrganization.jsx";
-import Organization from "./pages/Organization/Organization.jsx";
-import Permissions from "./pages/Permissions/Permissions.jsx";
-import Invitations from "./pages/Invitations/Invitations.jsx";
+import Dashboard from "./pages/Dashboard/Dashboard";
+import CreateOrganization from "./pages/CreateOrganization/CreateOrganization";
+import Organization from "./pages/Organization/Organization";
+import Permissions from "./pages/Permissions/Permissions";
+import Invitations from "./pages/Invitations/Invitations";
 
 import PublicRoute from "./components/PublicRoute/PublicRoute";
 import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
 
-import {
-    documentRoutes
-} from "./routes/DocumentRoutes";
-
+import { documentRoutes } from "./routes/DocumentRoutes";
 
 function App() {
 
     return (
 
         <Routes>
-
 
             <Route
                 path="/"
@@ -42,8 +36,6 @@ function App() {
                     </PublicLayout>
                 }
             />
-
-
 
             <Route
                 path="/login"
@@ -56,8 +48,6 @@ function App() {
                 }
             />
 
-
-
             <Route
                 path="/register"
                 element={
@@ -69,76 +59,47 @@ function App() {
                 }
             />
 
-
-
             <Route
-                path="/dashboard"
                 element={
                     <ProtectedRoute>
-                        <PublicLayout>
-                            <Dashboard />
-                        </PublicLayout>
+                        <PublicLayout />
                     </ProtectedRoute>
                 }
-            />
+            >
 
+                <Route
+                    path="/dashboard"
+                    element={<Dashboard />}
+                />
 
+                <Route
+                    path="/organization"
+                    element={<Organization />}
+                />
 
-            <Route
-                path="/organization"
-                element={
-                    <ProtectedRoute>
-                        <PublicLayout>
-                            <Organization />
-                        </PublicLayout>
-                    </ProtectedRoute>
-                }
-            />
+                <Route
+                    path="/create-organization"
+                    element={<CreateOrganization />}
+                />
 
+                <Route
+                    path="/permissions"
+                    element={<Permissions />}
+                />
 
+                <Route
+                    path="/invitations"
+                    element={<Invitations />}
+                />
 
-            <Route
-                path="/create-organization"
-                element={
-                    <ProtectedRoute>
-                        <PublicLayout>
-                            <CreateOrganization />
-                        </PublicLayout>
-                    </ProtectedRoute>
-                }
-            />
+                {documentRoutes}
 
-            {documentRoutes}
-
-            <Route
-                path="/permissions"
-                element={
-                    <ProtectedRoute>
-                        <PublicLayout>
-                            <Permissions />
-                        </PublicLayout>
-                    </ProtectedRoute>
-                }
-            />
-
-
-
-            <Route
-                path="/invitations"
-                element={
-                    <ProtectedRoute>
-                        <PublicLayout>
-                            <Invitations />
-                        </PublicLayout>
-                    </ProtectedRoute>
-                }
-            />
-
+            </Route>
 
         </Routes>
 
     );
-}
 
+}
 
 export default App;

@@ -1,61 +1,32 @@
 import { Route } from "react-router-dom";
 
-import ProtectedRoute from "../components/ProtectedRoute/ProtectedRoute";
-import PublicLayout from "../layouts/PublicLayout";
-
 import DocumentLibrary from "../pages/Documents/DocumentLibrary";
 import CreateDocument from "../pages/Documents/CreateDocument";
 import UploadDocument from "../pages/Documents/UploadDocument";
 import DocumentDetails from "../pages/Documents/DocumentDetails";
 
-
 export const documentRoutes = (
     <>
+
         <Route
             path="/documents"
-            element={
-                <ProtectedRoute>
-                    <PublicLayout>
-                        <DocumentLibrary />
-                    </PublicLayout>
-                </ProtectedRoute>
-            }
+            element={<DocumentLibrary />}
         />
-
 
         <Route
             path="/documents/new"
-            element={
-                <ProtectedRoute>
-                    <PublicLayout>
-                        <CreateDocument />
-                    </PublicLayout>
-                </ProtectedRoute>
-            }
+            element={<CreateDocument />}
         />
-
 
         <Route
             path="/documents/:documentId/upload"
-            element={
-                <ProtectedRoute>
-                    <PublicLayout>
-                        <UploadDocument />
-                    </PublicLayout>
-                </ProtectedRoute>
-            }
+            element={<UploadDocument />}
         />
-
 
         <Route
             path="/documents/:documentId"
-            element={
-                <ProtectedRoute>
-                    <PublicLayout>
-                        <DocumentDetails />
-                    </PublicLayout>
-                </ProtectedRoute>
-            }
+            element={<DocumentDetails />}
         />
+
     </>
 );
