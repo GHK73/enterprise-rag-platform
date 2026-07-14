@@ -1,20 +1,39 @@
+// frontend/src/App.jsx
+
 import "./App.css";
-import {Routes, Route} from "react-router-dom";
+
+import {
+    Routes,
+    Route,
+} from "react-router-dom";
+
 import PublicLayout from "./layouts/PublicLayout";
+
 import Home from "./pages/Home/Home";
 import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
+
 import Dashboard from "./pages/Dashboard/Dashboard.jsx";
-import PublicRoute from "./components/PublicRoute/PublicRoute";
 import CreateOrganization from "./pages/CreateOrganization/CreateOrganization.jsx";
-import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
 import Organization from "./pages/Organization/Organization.jsx";
 import Permissions from "./pages/Permissions/Permissions.jsx";
 import Invitations from "./pages/Invitations/Invitations.jsx";
 
-function App(){
+import PublicRoute from "./components/PublicRoute/PublicRoute";
+import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
+
+import {
+    documentRoutes
+} from "./routes/DocumentRoutes";
+
+
+function App() {
+
     return (
+
         <Routes>
+
+
             <Route
                 path="/"
                 element={
@@ -23,6 +42,8 @@ function App(){
                     </PublicLayout>
                 }
             />
+
+
 
             <Route
                 path="/login"
@@ -35,6 +56,8 @@ function App(){
                 }
             />
 
+
+
             <Route
                 path="/register"
                 element={
@@ -45,6 +68,8 @@ function App(){
                     </PublicRoute>
                 }
             />
+
+
 
             <Route
                 path="/dashboard"
@@ -57,6 +82,8 @@ function App(){
                 }
             />
 
+
+
             <Route
                 path="/organization"
                 element={
@@ -68,6 +95,8 @@ function App(){
                 }
             />
 
+
+
             <Route
                 path="/create-organization"
                 element={
@@ -78,6 +107,9 @@ function App(){
                     </ProtectedRoute>
                 }
             />
+
+            {documentRoutes}
+
             <Route
                 path="/permissions"
                 element={
@@ -88,6 +120,9 @@ function App(){
                     </ProtectedRoute>
                 }
             />
+
+
+
             <Route
                 path="/invitations"
                 element={
@@ -98,8 +133,12 @@ function App(){
                     </ProtectedRoute>
                 }
             />
+
+
         </Routes>
+
     );
 }
+
 
 export default App;

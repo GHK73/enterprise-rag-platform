@@ -14,8 +14,6 @@ import {
     getDocumentAccessPolicies as getDocumentAccessPoliciesService,
     getDocumentAccessHistory as getDocumentAccessHistoryService,
     grantTemporaryDocumentAccess as grantTemporaryDocumentAccessService,
-    downloadDocument as downloadDocumentService,
-    generateDocumentDownloadUrl as generateDocumentDownloadUrlService,
     softDeleteDocument as softDeleteDocumentService,
     restoreDocument as restoreDocumentService,
     cleanupDeletedDocument as cleanupDeletedDocumentService,
@@ -117,26 +115,6 @@ export const updateDocumentAccessPolicy = asyncHandler(async(req,res)=>{
     return res.status(200).json(new ApiResponse(200,"Document access updated successfully",policy));
 });
 
-export const updateDocumentAccessPolicy = asyncHandler(
-    async (req, res) => {
-
-        const policy =
-            await updateDocumentAccessPolicyService(
-                req.user,
-                req.params.policyId,
-                req.body
-            );
-
-        return res.status(200).json(
-            new ApiResponse(
-                200,
-                "Document access policy updated successfully",
-                policy
-            )
-        );
-    }
-);
-
 export const revokeDocumentAccess = asyncHandler(
     async (req, res) => {
 
@@ -210,44 +188,6 @@ export const grantTemporaryDocumentAccess = asyncHandler(
                 201,
                 "Temporary document access granted successfully",
                 policy
-            )
-        );
-    }
-);
-
-export const downloadDocument = asyncHandler(
-    async (req, res) => {
-
-        const download =
-            await downloadDocumentService(
-                req.user,
-                req.params.documentId
-            );
-
-        return res.status(200).json(
-            new ApiResponse(
-                200,
-                "Download authorized successfully",
-                download
-            )
-        );
-    }
-);
-
-export const generateDocumentDownloadUrl = asyncHandler(
-    async (req, res) => {
-
-        const url =
-            await generateDocumentDownloadUrlService(
-                req.user,
-                req.params.documentId
-            );
-
-        return res.status(200).json(
-            new ApiResponse(
-                200,
-                "Download URL generated successfully",
-                url
             )
         );
     }

@@ -1,0 +1,73 @@
+.upload-document-page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem;
+    box-sizing: border-box;
+}
+
+.upload-document-header {
+    margin-bottom: 2rem;
+}
+
+.upload-document-header h1 {
+    margin: 0;
+    font-size: 2rem;
+    color: #111827;
+}
+
+.upload-document-header p {
+    margin-top: 0.5rem;
+    color: #6b7280;
+}
+
+.upload-card {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    background: #ffffff;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+.upload-card input[type="file"] {
+    padding: 1rem;
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.selected-file {
+    padding: 1rem;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.selected-file h3 {
+    margin: 0 0 .5rem;
+}
+
+.selected-file p {
+    margin: .25rem 0;
+    color: #4b5563;
+}
+
+.upload-error {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border-radius: 8px;
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+@media (max-width:768px){
+
+    .upload-document-page{
+        padding:1rem;
+    }
+
+    .upload-card{
+        padding:1.5rem;
+    }
+
+}

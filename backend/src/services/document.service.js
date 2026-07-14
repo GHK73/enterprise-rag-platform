@@ -742,14 +742,14 @@ export const updateDocumentAccessPolicy = async(user, policyId, accessData)=>{
         if(!policy){
             throw new ApiError(404,"Access policy not found.");
         }
-        if(policy.document.organizationId !== user.unit.organizaionId){
+        if(policy.document.organizationId !== user.unit.organizationId){
             throw new ApiError(403,"Document does not belong to your organization.");
         }
         if(!policy.isActive){
             throw new ApiError(400,"Access policy has already been revoked.");
         }
         await validateDocumentAccessAuthority(tx, user, policy.document, policy);
-        if(policy.subjectType !== "UNIT" && accessData.scope){
+        if(policy.subjectType !== "UNIT" && accessData.scope !== undefined){
             throw new ApiError(400,"Only UNIT policies may define a scope");
         }
         if(accessData.validUntil){
@@ -758,13 +758,13 @@ export const updateDocumentAccessPolicy = async(user, policyId, accessData)=>{
                 throw new ApiError(400,"validUntil must be later than validFrom.");
             }
         }
-        const updatePolicy = await tx.documentAccessPolicy.update({
+        const updatedPolicy = await tx.documentAccessPolicy.update({
             where:{id: policy.id},
             data:{
-                ...ApiError(accessData.effect !== undefined &&{effect: accessData.effect,}),
-                ...ApiError(accessData.scope !== undefined &&{scope: accessData.scope,}),
-                ...ApiError(accessData.validFrom !== undefined && {validFrom: accessData.validFrom,}),
-                ...ApiError(accessData.validUntil !== undefined &&{valideUntil: accessData.validUntil}),
+                ...(accessData.effect !== undefined &&{effect: accessData.effect,}),
+                ...(accessData.scope !== undefined &&{scope: accessData.scope,}),
+                ...(accessData.validFrom !== undefined && {validFrom: accessData.validFrom,}),
+                ...(accessData.validUntil !== undefined &&{validUntil: accessData.validUntil}),
             },
         });
         await tx.documentAccessAudit.create({
@@ -1066,12 +1066,7 @@ export const grantTemporaryDocumentAccess = async (
     );
 };
 
-export const authorizeDocumentAction = async (
-    user,
-    documentId,
-    action
-) => {
-
+export const authorizeDocumentAction = async (user,documentId,action) => {
     validateOrganizationMembership(user);
 
     const document = await prisma.document.findUnique({

@@ -8,21 +8,17 @@ import {
     deleteDraftUpload,
     publishDraft,
 
-    grantDocumentAccess,
     updateDocumentAccessPolicy,
     revokeDocumentAccess,
     getDocumentAccessPolicies,
     getDocumentAccessHistory,
     grantTemporaryDocumentAccess,
 
-    downloadDocument,
-    generateDocumentDownloadUrl,
-
     softDeleteDocument,
     restoreDocument,
     cleanupDeletedDocument,
     cleanupExpiredDrafts,
-} from "../controllers/document.controller.js";
+} from "../controllers/document.controllers.js";
 
 import authenticate from "../middleware/auth.middleware.js";
 import upload from "../middleware/upload.middleware.js";
@@ -109,12 +105,6 @@ router.delete(
 /* -------------------------------------------------------------------------- */
 
 router.post(
-    "/:documentId/access",
-    authenticate,
-    grantDocumentAccess
-);
-
-router.post(
     "/:documentId/access/temporary",
     authenticate,
     grantTemporaryDocumentAccess
@@ -144,20 +134,5 @@ router.delete(
     revokeDocumentAccess
 );
 
-/* -------------------------------------------------------------------------- */
-/*                               Downloads                                    */
-/* -------------------------------------------------------------------------- */
-
-router.get(
-    "/:documentId/download",
-    authenticate,
-    downloadDocument
-);
-
-router.get(
-    "/:documentId/download-url",
-    authenticate,
-    generateDocumentDownloadUrl
-);
 
 export default router;
