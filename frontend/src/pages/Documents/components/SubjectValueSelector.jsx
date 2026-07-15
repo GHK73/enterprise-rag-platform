@@ -5,6 +5,9 @@ const SubjectValueSelector = ({
     value,
     onChange,
 }) => {
+    const handleChange = (event) => {
+        onChange(event.target.value);
+    };
 
     if (subjectType === "ORGANIZATION") {
         return (
@@ -20,6 +23,10 @@ const SubjectValueSelector = ({
                     disabled
                 />
 
+                <small className="form-helper">
+                    This policy applies to every member of the organization.
+                </small>
+
             </div>
         );
     }
@@ -34,13 +41,8 @@ const SubjectValueSelector = ({
 
                 <select
                     value={value}
-                    onChange={(event) =>
-                        onChange(
-                            event.target.value
-                        )
-                    }
+                    onChange={handleChange}
                 >
-
                     <option value="">
                         Select Role
                     </option>
@@ -60,7 +62,6 @@ const SubjectValueSelector = ({
                     <option value="MEMBER">
                         MEMBER
                     </option>
-
                 </select>
 
             </div>
@@ -72,30 +73,31 @@ const SubjectValueSelector = ({
             <div className="form-group">
 
                 <label>
-                    Unit
+                    Organization Unit
                 </label>
 
                 <select
                     value={value}
-                    onChange={(event) =>
-                        onChange(
-                            event.target.value
-                        )
-                    }
+                    onChange={handleChange}
                 >
-
                     <option value="">
                         Select Unit
                     </option>
 
-                    {units.map((unit) => (
-                        <option
-                            key={unit.id}
-                            value={unit.id}
-                        >
-                            {unit.name}
+                    {units.length === 0 ? (
+                        <option disabled>
+                            No units available
                         </option>
-                    ))}
+                    ) : (
+                        units.map((unit) => (
+                            <option
+                                key={unit.id}
+                                value={unit.id}
+                            >
+                                {unit.name}
+                            </option>
+                        ))
+                    )}
 
                 </select>
 
@@ -112,25 +114,26 @@ const SubjectValueSelector = ({
 
             <select
                 value={value}
-                onChange={(event) =>
-                    onChange(
-                        event.target.value
-                    )
-                }
+                onChange={handleChange}
             >
-
                 <option value="">
                     Select Member
                 </option>
 
-                {members.map((member) => (
-                    <option
-                        key={member.id}
-                        value={member.id}
-                    >
-                        {member.name}
+                {members.length === 0 ? (
+                    <option disabled>
+                        No members available
                     </option>
-                ))}
+                ) : (
+                    members.map((member) => (
+                        <option
+                            key={member.id}
+                            value={member.id}
+                        >
+                            {member.name}
+                        </option>
+                    ))
+                )}
 
             </select>
 

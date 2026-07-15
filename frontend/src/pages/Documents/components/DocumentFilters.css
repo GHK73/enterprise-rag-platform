@@ -1,17 +1,128 @@
 .document-filters {
     display: flex;
+    align-items: center;
     gap: 1rem;
-    margin: 1.5rem 0;
     flex-wrap: wrap;
+    margin-bottom: 1.75rem;
+}
+
+.document-filters input,
+.document-filters select,
+.document-filters button {
+    height: 48px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    box-sizing: border-box;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+}
+
+.document-filters input,
+.document-filters select {
+    background: #fff;
+    padding: 0 1rem;
 }
 
 .document-filters input {
     flex: 1;
-    min-width: 220px;
-    padding: 0.75rem;
+    min-width: 380px;
 }
 
 .document-filters select {
-    min-width: 180px;
-    padding: 0.75rem;
+    min-width: 200px;
+}
+
+.document-filters input:focus,
+.document-filters select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0 0.5rem;
+    white-space: nowrap;
+    color: #374151;
+    font-weight: 500;
+}
+
+.filter-checkbox input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.filter-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.clear-filter-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    padding: 0 1.25rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #fff;
+    color: #374151;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.clear-filter-button:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+}
+
+.clear-filter-button:active {
+    transform: scale(0.98);
+}
+
+@media (max-width: 992px) {
+
+    .document-filters {
+        align-items: stretch;
+    }
+
+    .filter-actions {
+        margin-left: 0;
+    }
+
+}
+
+@media (max-width: 768px) {
+
+    .document-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .document-filters input,
+    .document-filters select,
+    .clear-filter-button {
+        width: 100%;
+        min-width: unset;
+    }
+
+    .filter-checkbox {
+        justify-content: flex-start;
+        padding: 0;
+    }
+
+    .filter-actions {
+        width: 100%;
+    }
+
+    .clear-filter-button {
+        width: 100%;
+    }
+
 }

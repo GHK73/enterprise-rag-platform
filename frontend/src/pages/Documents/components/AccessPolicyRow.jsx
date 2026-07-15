@@ -3,11 +3,30 @@ const AccessPolicyRow = ({
     onEdit,
     onDelete,
 }) => {
+    const formatExpiry = (expiresAt) => {
+        if (!expiresAt) {
+            return "Permanent";
+        }
+
+        return new Date(
+            expiresAt
+        ).toLocaleString();
+    };
+
+    const subjectName =
+        policy.subjectName ||
+        policy.subjectUser?.name ||
+        policy.subjectUnit?.name ||
+        policy.subjectRole ||
+        "Unknown";
+
     return (
         <tr>
 
             <td>
-                {policy.subjectName}
+                <strong>
+                    {subjectName}
+                </strong>
             </td>
 
             <td>
@@ -15,34 +34,53 @@ const AccessPolicyRow = ({
             </td>
 
             <td>
-                {policy.permission}
+
+                <span
+                    className={
+                        policy.permission ===
+                        "ALLOW"
+                            ? "permission-badge allow"
+                            : "permission-badge deny"
+                    }
+                >
+                    {policy.permission}
+                </span>
+
             </td>
 
             <td>
-                {policy.expiresAt
-                    ? "Yes"
-                    : "No"}
+
+                {formatExpiry(
+                    policy.expiresAt
+                )}
+
             </td>
 
             <td>
 
-                <button
-                    className="secondary-button"
-                    onClick={() =>
-                        onEdit(policy)
-                    }
-                >
-                    Edit
-                </button>
+                <div className="table-actions">
 
-                <button
-                    className="danger-button"
-                    onClick={() =>
-                        onDelete(policy)
-                    }
-                >
-                    Delete
-                </button>
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() =>
+                            onEdit(policy)
+                        }
+                    >
+                        Edit
+                    </button>
+
+                    <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() =>
+                            onDelete(policy)
+                        }
+                    >
+                        Delete
+                    </button>
+
+                </div>
 
             </td>
 

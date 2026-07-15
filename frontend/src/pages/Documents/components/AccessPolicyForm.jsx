@@ -1,4 +1,8 @@
-import { useState } from "react";
+import {
+    useEffect,
+    useState,
+} from "react";
+
 import SubjectSelector from "./SubjectSelector";
 import SubjectValueSelector from "./SubjectValueSelector";
 
@@ -7,6 +11,10 @@ const AccessPolicyForm = ({
     members,
     onSubmit,
     loading,
+
+    editing = false,
+    initialValues = null,
+    onCancel,
 }) => {
     const [subjectType, setSubjectType] =
         useState("USER");
@@ -26,10 +34,90 @@ const AccessPolicyForm = ({
     const [reason, setReason] =
         useState("");
 
-    const handleSubmit = (event) => {
+    useEffect(() => {
+        if (!editing || !initialValues) {
+            return;
+        }
+
+        setSubjectType(
+            initialValues.subjectType ||
+                "USER"
+        );
+
+        setSubjectId(
+            initialValues.subjectUserId ||
+                initialValues.subjectUnitId ||
+                initialValues.subjectRole ||
+                ""
+        );
+
+        setPermission(
+            initialValues.effect ||
+                initialValues.permission ||
+                "ALLOW"
+        );
+
+        setTemporary(
+            Boolean(
+                initialValues.validUntil ||
+                    initialValues.expiresAt
+            )
+        );
+
+        setExpiresAt(
+            initialValues.validUntil
+                ? new Date(
+                      initialValues.validUntil
+                  )
+                      .toISOString()
+                      .slice(0, 16)
+                : initialValues.expiresAt
+                ? new Date(
+                      initialValues.expiresAt
+                  )
+                      .toISOString()
+                      .slice(0, 16)
+                : ""
+        );
+
+        setReason(
+            initialValues.reason || ""
+        );
+    }, [
+        editing,
+        initialValues,
+    ]);
+
+    const resetForm = () => {
+        setSubjectType("USER");
+        setSubjectId("");
+        setPermission("ALLOW");
+        setTemporary(false);
+        setExpiresAt("");
+        setReason("");
+    };
+
+    const handleSubmit = async (
+        event
+    ) => {
         event.preventDefault();
 
-        onSubmit({
+        if (
+            subjectType !==
+                "ORGANIZATION" &&
+            !subjectId
+        ) {
+            return;
+        }
+
+        if (
+            temporary &&
+            !expiresAt
+        ) {
+            return;
+        }
+
+        await onSubmit({
             subjectType,
             subjectId,
             permission,
@@ -37,6 +125,10 @@ const AccessPolicyForm = ({
             expiresAt,
             reason,
         });
+
+        if (!editing) {
+            resetForm();
+        }
     };
 
     return (
@@ -44,46 +136,35 @@ const AccessPolicyForm = ({
             className="access-policy-form"
             onSubmit={handleSubmit}
         >
-
             <SubjectSelector
                 value={subjectType}
                 onChange={setSubjectType}
             />
 
-            <div className="form-group">
-
-                <label>
-                    Subject ID
-                </label>
-
-                <input
-                    type="text"
-                    value={subjectId}
-                    onChange={(event) =>
-                        setSubjectId(
-                            event.target.value
-                        )
-                    }
-                    placeholder="Enter subject id"
-                />
-
-            </div>
+            <SubjectValueSelector
+                subjectType={subjectType}
+                units={units}
+                members={members}
+                value={subjectId}
+                onChange={setSubjectId}
+            />
 
             <div className="form-group">
-
                 <label>
                     Permission
                 </label>
 
                 <select
                     value={permission}
-                    onChange={(event) =>
+                    onChange={(
+                        event
+                    ) =>
                         setPermission(
-                            event.target.value
+                            event.target
+                                .value
                         )
                     }
                 >
-
                     <option value="ALLOW">
                         ALLOW
                     </option>
@@ -91,20 +172,20 @@ const AccessPolicyForm = ({
                     <option value="DENY">
                         DENY
                     </option>
-
                 </select>
-
             </div>
 
             <div className="form-checkbox">
-
                 <input
                     id="temporary-access"
                     type="checkbox"
                     checked={temporary}
-                    onChange={(event) =>
+                    onChange={(
+                        event
+                    ) =>
                         setTemporary(
-                            event.target.checked
+                            event.target
+                                .checked
                         )
                     }
                 />
@@ -112,49 +193,81 @@ const AccessPolicyForm = ({
                 <label htmlFor="temporary-access">
                     Temporary Access
                 </label>
-
             </div>
 
             {temporary && (
-
                 <div className="form-group">
-
                     <label>
                         Expires At
                     </label>
 
                     <input
                         type="datetime-local"
+                        required
                         value={expiresAt}
-                        onChange={(event) =>
+                        onChange={(
+                            event
+                        ) =>
                             setExpiresAt(
-                                event.target.value
+                                event.target
+                                    .value
                             )
                         }
                     />
-
                 </div>
-
             )}
 
-                <SubjectValueSelector
-                    subjectType={subjectType}
-                    units={units}
-                    members={members}
-                    value={subjectId}
-                    onChange={setSubjectId}
+            <div className="form-group">
+                <label>
+                    Reason
+                </label>
+
+                <textarea
+                    rows={3}
+                    value={reason}
+                    onChange={(
+                        event
+                    ) =>
+                        setReason(
+                            event.target
+                                .value
+                        )
+                    }
+                    placeholder="Optional reason"
                 />
+            </div>
 
-            <button
-                type="submit"
-                className="primary-button"
-                disabled={loading}
-            >
-                {loading
-                    ? "Saving..."
-                    : "Save Policy"}
-            </button>
+            <div className="form-actions">
 
+                <button
+                    type="submit"
+                    className="primary-button"
+                    disabled={loading}
+                >
+                    {loading
+                        ? editing
+                            ? "Updating..."
+                            : "Creating..."
+                        : editing
+                        ? "Update Policy"
+                        : "Grant Access"}
+                </button>
+
+                {editing && (
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                            resetForm();
+
+                            onCancel?.();
+                        }}
+                    >
+                        Cancel
+                    </button>
+                )}
+
+            </div>
         </form>
     );
 };

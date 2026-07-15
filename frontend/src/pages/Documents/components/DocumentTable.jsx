@@ -1,11 +1,37 @@
 import { Link } from "react-router-dom";
+
 import StatusBadge from "./StatusBadge";
 
 const DocumentTable = ({ documents }) => {
+    const formatDate = (date) => {
+        if (!date) {
+            return "-";
+        }
+
+        return new Date(date).toLocaleDateString();
+    };
+
+    const isExpiredDraft = (document) => {
+        if (
+            document.status !== "DRAFT" ||
+            !document.draftExpiresAt
+        ) {
+            return false;
+        }
+
+        return (
+            new Date(document.draftExpiresAt) <
+            new Date()
+        );
+    };
+
     return (
         <div className="document-table-wrapper">
+
             <table className="document-table">
+
                 <thead>
+
                     <tr>
                         <th>Name</th>
                         <th>Classification</th>
@@ -14,63 +40,107 @@ const DocumentTable = ({ documents }) => {
                         <th>Updated</th>
                         <th>Actions</th>
                     </tr>
+
                 </thead>
 
                 <tbody>
-                    {documents.map((document) => (
-                        <tr key={document.id}>
-                            <td>
-                                <div className="document-name">
-                                    <strong>
-                                        {document.title ||
-                                            "Untitled Document"}
-                                    </strong>
 
-                                    {document.description && (
-                                        <span>
-                                            {document.description}
-                                        </span>
+                    {documents.map((document) => {
+
+                        const expired =
+                            isExpiredDraft(
+                                document
+                            );
+
+                        return (
+                            <tr key={document.id}>
+
+                                <td>
+
+                                    <div className="document-name">
+
+                                        <strong>
+                                            {document.title ||
+                                                "Untitled Document"}
+                                        </strong>
+
+                                        {document.description && (
+                                            <span>
+                                                {
+                                                    document.description
+                                                }
+                                            </span>
+                                        )}
+
+                                        {expired && (
+                                            <small className="document-expired">
+                                                Draft
+                                                Expired
+                                            </small>
+                                        )}
+
+                                        {document.status ===
+                                            "DELETED" && (
+                                            <small className="document-deleted">
+                                                Deleted
+                                            </small>
+                                        )}
+
+                                    </div>
+
+                                </td>
+
+                                <td>
+                                    {document.classification ||
+                                        "-"}
+                                </td>
+
+                                <td>
+
+                                    <StatusBadge
+                                        status={
+                                            document.status
+                                        }
+                                    />
+
+                                </td>
+
+                                <td>
+
+                                    {document
+                                        .currentVersion
+                                        ?.versionNumber ??
+                                        "-"}
+
+                                </td>
+
+                                <td>
+
+                                    {formatDate(
+                                        document.updatedAt
                                     )}
-                                </div>
-                            </td>
 
-                            <td>
-                                {document.classification || "-"}
-                            </td>
+                                </td>
 
-                            <td>
-                                <StatusBadge
-                                    status={
-                                        document.lifecycle
-                                    }
-                                />
-                            </td>
+                                <td>
 
-                            <td>
-                                {document.currentVersion
-                                    ?.versionNumber ?? "-"}
-                            </td>
+                                    <Link
+                                        to={`/documents/${document.id}`}
+                                        className="table-action-button"
+                                    >
+                                        View
+                                    </Link>
 
-                            <td>
-                                {document.updatedAt
-                                    ? new Date(
-                                          document.updatedAt
-                                      ).toLocaleDateString()
-                                    : "-"}
-                            </td>
+                                </td>
 
-                            <td>
-                                <Link
-                                    to={`/documents/${document.id}`}
-                                    className="table-action-button"
-                                >
-                                    View
-                                </Link>
-                            </td>
-                        </tr>
-                    ))}
+                            </tr>
+                        );
+                    })}
+
                 </tbody>
+
             </table>
+
         </div>
     );
 };

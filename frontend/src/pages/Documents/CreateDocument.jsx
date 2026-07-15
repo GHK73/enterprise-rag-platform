@@ -1,22 +1,29 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { createDocumentDraft } from "../../api/document.api";
+
 import "./CreateDocument.css";
 
 const CreateDocument = () => {
     const navigate = useNavigate();
 
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+    const [loading, setLoading] =
+        useState(false);
 
-    const [formData, setFormData] = useState({
-        title: "",
-        description: "",
-        classification: "",
-    });
+    const [error, setError] =
+        useState("");
+
+    const [formData, setFormData] =
+        useState({
+            title: "",
+            description: "",
+            classification: "GENERAL",
+        });
 
     const handleChange = (event) => {
-        const { name, value } = event.target;
+        const { name, value } =
+            event.target;
 
         setFormData((previous) => ({
             ...previous,
@@ -24,39 +31,48 @@ const CreateDocument = () => {
         }));
     };
 
-    const handleCreateDraft = async (event) => {
-        event.preventDefault();
+    const handleCreateDraft =
+        async (event) => {
+            event.preventDefault();
 
-        try {
-            setLoading(true);
-            setError("");
+            try {
+                setLoading(true);
+                setError("");
 
-            const createdDraft = await createDocumentDraft(
-                formData
-            );
+                const createdDraft =
+                    await createDocumentDraft(
+                        formData
+                    );
 
-            navigate(
-                `/documents/${createdDraft.id}/upload`
-            );
-        } catch (err) {
-            setError(
-                err?.response?.data?.message ||
-                    "Unable to create document draft."
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
+                navigate(
+                    `/documents/${createdDraft.id}/upload`
+                );
+            } catch (err) {
+                setError(
+                    err?.response?.data
+                        ?.message ||
+                        "Unable to create document draft."
+                );
+            } finally {
+                setLoading(false);
+            }
+        };
 
     return (
         <div className="create-document-page">
+
             <div className="create-document-header">
-                <h1>Create Document</h1>
+
+                <h1>
+                    Create Document
+                </h1>
 
                 <p>
-                    Create a document draft before
-                    uploading the document file.
+                    Create a document draft
+                    before uploading the
+                    document file.
                 </p>
+
             </div>
 
             {error && (
@@ -67,48 +83,70 @@ const CreateDocument = () => {
 
             <form
                 className="draft-form"
-                onSubmit={handleCreateDraft}
+                onSubmit={
+                    handleCreateDraft
+                }
             >
+
                 <div className="form-group">
-                    <label>Document Title</label>
+
+                    <label>
+                        Document Title
+                    </label>
 
                     <input
                         type="text"
                         name="title"
-                        value={formData.title}
-                        onChange={handleChange}
+                        value={
+                            formData.title
+                        }
+                        onChange={
+                            handleChange
+                        }
                         placeholder="Annual Financial Report"
                         required
                     />
+
                 </div>
 
                 <div className="form-group">
-                    <label>Description</label>
+
+                    <label>
+                        Description
+                    </label>
 
                     <textarea
                         name="description"
-                        value={formData.description}
-                        onChange={handleChange}
+                        value={
+                            formData.description
+                        }
+                        onChange={
+                            handleChange
+                        }
                         rows={4}
                         placeholder="Short document description..."
                     />
+
                 </div>
 
                 <div className="form-group">
-                    <label>Classification</label>
+
+                    <label>
+                        Classification
+                    </label>
 
                     <select
                         name="classification"
-                        value={formData.classification}
-                        onChange={handleChange}
-                        required
+                        value={
+                            formData.classification
+                        }
+                        onChange={
+                            handleChange
+                        }
                     >
-                        <option value="">
-                            Select Classification
-                        </option>
 
-                        <option value="PUBLIC">
-                            Public
+                        <option value="GENERAL">
+                            General
                         </option>
 
                         <option value="INTERNAL">
@@ -122,7 +160,9 @@ const CreateDocument = () => {
                         <option value="RESTRICTED">
                             Restricted
                         </option>
+
                     </select>
+
                 </div>
 
                 <button
@@ -134,7 +174,9 @@ const CreateDocument = () => {
                         ? "Creating Draft..."
                         : "Create Draft"}
                 </button>
+
             </form>
+
         </div>
     );
 };

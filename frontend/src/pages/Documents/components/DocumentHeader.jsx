@@ -18,12 +18,21 @@ const DocumentHeader = ({
                     {document.description ||
                         "No description"}
                 </p>
+                <p className="document-current-status">
+
+                    Current Status:
+                    <strong>
+                        {" "}
+                        {document.status}
+                    </strong>
+
+                </p>
 
             </div>
 
             <div className="document-actions">
 
-                {document.lifecycle ===
+                {document.status ===
                     "DRAFT" && (
                     <button
                         className="primary-button"
@@ -36,13 +45,18 @@ const DocumentHeader = ({
                     </button>
                 )}
 
-                <button
-                    className="secondary-button"
-                    onClick={onDownload}
-                    disabled={downloading}
-                >
+                    <button
+                        className="secondary-button"
+                        onClick={onDownload}
+                        disabled={
+                            downloading ||
+                            document.status === "DRAFT"
+                        }
+                    >
                     {downloading
                         ? "Downloading..."
+                        : document.status === "PROCESSING"
+                        ? "Processing..."
                         : "Download"}
                 </button>
 

@@ -36,10 +36,14 @@ const DocumentLibrary = () => {
         setLifecycle,
     ] = useState("ALL");
 
+    const [
+        showDeleted,
+        setShowDeleted,
+    ] = useState(false);
+
     const loadDocuments = async () => {
         try {
             setLoading(true);
-
             setError("");
 
             const response =
@@ -84,13 +88,19 @@ const DocumentLibrary = () => {
 
                 const matchesLifecycle =
                     lifecycle === "ALL" ||
-                    document.lifecycle ===
+                    document.status ===
                         lifecycle;
+
+                const matchesDeleted =
+                    showDeleted ||
+                    document.status !==
+                        "DELETED";
 
                 return (
                     matchesSearch &&
                     matchesClassification &&
-                    matchesLifecycle
+                    matchesLifecycle &&
+                    matchesDeleted
                 );
             }
         );
@@ -99,26 +109,21 @@ const DocumentLibrary = () => {
         search,
         classification,
         lifecycle,
+        showDeleted,
     ]);
 
     if (loading) {
         return (
             <div className="document-library-page">
-
                 <div className="document-library-header">
-
                     <h1>
                         Document Library
                     </h1>
-
                 </div>
 
                 <div className="document-library-loading">
-
                     Loading documents...
-
                 </div>
-
             </div>
         );
     }
@@ -126,17 +131,13 @@ const DocumentLibrary = () => {
     if (error) {
         return (
             <div className="document-library-page">
-
                 <div className="document-library-header">
-
                     <h1>
                         Document Library
                     </h1>
-
                 </div>
 
                 <div className="document-library-error">
-
                     <p>{error}</p>
 
                     <button
@@ -147,9 +148,7 @@ const DocumentLibrary = () => {
                     >
                         Retry
                     </button>
-
                 </div>
-
             </div>
         );
     }
@@ -174,12 +173,32 @@ const DocumentLibrary = () => {
 
                 </div>
 
-                <Link
-                    to="/documents/new"
-                    className="primary-button"
-                >
-                    + New Document
-                </Link>
+                <div className="document-library-actions">
+
+                    <Link
+                        to="/dashboard"
+                        className="secondary-button"
+                    >
+                        Dashboard
+                    </Link>
+
+                    <button
+                        className="secondary-button"
+                        onClick={
+                            loadDocuments
+                        }
+                    >
+                        Refresh
+                    </button>
+
+                    <Link
+                        to="/documents/new"
+                        className="primary-button"
+                    >
+                        + New Document
+                    </Link>
+
+                </div>
 
             </div>
 
@@ -197,6 +216,12 @@ const DocumentLibrary = () => {
                 lifecycle={lifecycle}
                 onLifecycleChange={
                     setLifecycle
+                }
+                showDeleted={
+                    showDeleted
+                }
+                onShowDeletedChange={
+                    setShowDeleted
                 }
             />
 

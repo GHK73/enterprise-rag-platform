@@ -20,12 +20,7 @@ Backend reference: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md)
 | Organization Synchronization | ✅ |
 | Document API Layer | ✅ |
 | Document Routes & Navigation | ✅ |
-| Document Library | ⏳ |
-| Draft Upload Flow | ⏳ |
-| Document Details | ⏳ |
-| Access Management UI | ⏳ |
-| Access History UI | ⏳ |
-| Deletion & Recovery UI | ⏳ |
+| Document Management UI | ⏳ |
 
 ---
 
@@ -35,108 +30,18 @@ Backend reference: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md)
 cd frontend
 npm install
 npm run dev
-```
-
-API base URL is configured in `src/api/axios.js`.
-
-JWT authentication is handled through Axios interceptors using the token stored in `localStorage`.
-
----
-
-# Completed Phases
-
-## Phase 1–2 — Foundation & Authentication ✅
-
-Implemented:
-
-* React + Vite application
-* React Router and protected/public routes
-* Global styling and responsive Navbar
-* Login and Register pages
-* AuthContext with session restoration
-* JWT authentication and logout
-* Axios configuration with automatic token attachment
-
----
-
-## Phase 3 — Dashboard & Organization ✅
-
-Implemented:
-
-* Dashboard with organization overview
-* Organization CRUD
-* Recursive hierarchy (`COMPANY → DEPARTMENT → TEAM → GROUP`)
-* Unit management
-* Member summaries
-* Recursive organization tree
-* Selected unit details
-* Organization module split into reusable components, hooks and utilities
-
----
-
-## Phase 4 — Access & Administration UI ✅
-
-Implemented:
-
-### Permissions
-
-* Grant permissions
-* Revoke permissions
-* Delegation support
-* Scope selection
-* Permission history
-
-### Invitations
-
-* Create invitations
-* Accept invitations
-* Revoke invitations
-* Received invitations
-
-> Email delivery is not implemented yet.
-
-### Members
-
-* Member listing
-* Search
-* Role updates
-* Unit movement
-* Removal
-* Owner protection
-
-### Capacity
-
-* Capacity allocation
-* Remaining capacity
-* Validation feedback
-
-### Reorganization
-
-* Unit movement
-* Destination filtering
-* Validation
-
-### Synchronization
-
-* Revision polling
-* Visibility refresh
-* Snapshot synchronization
-
-All organization pages communicate directly with the shared Axios instance.
-
----
 
 # Phase 5 — Document Management UI ⏳
 
-The backend document APIs are available and the frontend implementation is actively progressing.
+The frontend now supports the complete document management workflow, integrating directly with the backend document APIs.
 
 ## Foundation ✅
 
 Implemented:
 
-* Shared `document.api.js`
-* Protected document routes
-* Document navigation in Navbar
+- Shared `document.api.js`
+- Protected document routes
+- Document navigation in Navbar
 
 **Routes**
 
@@ -160,22 +65,22 @@ Implemented:
 
 Implemented:
 
-* Document listing
-* Empty and error states
-* Lifecycle status badges
-* Classification display
-* Current version display
-* Last updated timestamp
-* Navigation to Document Details
-* Search documents
-* Filter by classification
-* Filter by lifecycle
+- Document listing
+- Search
+- Classification filter
+- Lifecycle filter
+- Deleted document filter
+- Empty and error states
+- Lifecycle status badges
+- Classification display
+- Current version display
+- Last updated timestamp
+- Navigation to document details
 
 Remaining:
 
-* Draft expiry visibility
-* Deleted document view
-* Dashboard quick navigation
+- Draft expiry visibility
+- Dashboard quick shortcut
 
 ---
 
@@ -183,24 +88,22 @@ Remaining:
 
 Implemented:
 
-* Draft creation
-* Metadata entry
-* File selection
-* Client-side validation
-* Upload progress
-* Upload to backend
-* Redirect after successful upload
-* Reusable upload components
+- Draft creation
+- Metadata entry
+- File selection
+- Client-side validation
+- Upload progress
+- Draft upload
+- Redirect after successful upload
+- Reusable upload components
 
 Remaining:
 
-* Access configuration before publish
-* Review & confirmation step
-* Draft expiry visibility
-* Replace uploaded file
-* Delete uploaded file
-
-> Classification values must always match backend enums (`GENERAL`, `CONFIDENTIAL`, etc.).
+- Access configuration before publishing
+- Review & confirmation step
+- Draft expiry visibility
+- Replace uploaded file
+- Delete uploaded file
 
 ---
 
@@ -208,24 +111,26 @@ Remaining:
 
 Implemented:
 
-* Document metadata
-* Lifecycle status
-* Current version
-* Publish draft
-* Download latest version
-* Version history
-* Download previous versions
-* Upload new version
-* Upload progress
-* Client-side validation
-* Loading and error states
+- Document metadata
+- Current lifecycle status
+- Current version
+- Version history
+- Publish draft
+- Download latest version
+- Download previous versions
+- Upload new version
+- Upload progress
+- Client-side validation
+- Delete workflow
+- Restore workflow
+- Permanent cleanup workflow
+- Loading and error states
 
 Remaining:
 
-* Processing state UI
-* Failed processing state
-* Delete / Restore shortcuts
-* Access history shortcut
+- Processing status visualization
+- Failed processing UI
+- Access history shortcut
 
 ---
 
@@ -233,22 +138,22 @@ Remaining:
 
 Implemented:
 
-* Access policy loading
-* Organization data loading
-* Member data loading
-* Policy listing
-* Grant access
-* Revoke access
-* Basic access management UI
+- Load access policies
+- Load organization units
+- Load organization members
+- Policy table
+- Grant access
+- Revoke access
+- Subject selection
+- Temporary access support
+- Reason field
+- Basic validation
 
 Remaining:
 
-* Edit policy
-* Temporary access
-* Better subject selection
-* Validation improvements
-* Reason editing
-* Scope configuration
+- Edit existing policy
+- Advanced scope configuration
+- Validation improvements
 
 ---
 
@@ -256,15 +161,15 @@ Remaining:
 
 Implemented:
 
-* API integration
+- API integration
 
 Remaining:
 
-* History table
-* Event timeline
-* Actor information
-* Policy change details
-* Read-only audit interface
+- History table
+- Timeline view
+- Actor information
+- Policy change details
+- Read-only audit interface
 
 ---
 
@@ -272,18 +177,18 @@ Remaining:
 
 Implemented:
 
-* API integration
+- Delete confirmation dialog
+- Restore confirmation dialog
+- Permanent cleanup dialog
+- API integration
 
 Remaining:
 
-* Soft delete dialog
-* Restore workflow
-* Permanent cleanup
-* Deleted document visibility
+- Deleted document view inside library
 
 ---
 
-## Target Document Workflow
+## Target Workflow
 
 ```text
 Create Draft
@@ -307,27 +212,29 @@ Processing
 Ready
 ```
 
-The interface should clearly distinguish:
+Document lifecycle currently supports:
 
 ```text
 Draft
+Submitted
 Queued
 Processing
 Ready
 Failed
 Deleted
 ```
+
 ---
 
 # Future Roadmap
 
 | Phase | Focus |
 | --- | --- |
-| Phase 6 | Processing UI (queue status, OCR, extraction, chunking, indexing, retry handling) |
-| Phase 7 | Retrieval Interface (semantic search, streaming responses, citations, refusal states) |
-| Phase 8 | Search & Analytics (history, retrieval metrics, usage analytics) |
-| Phase 9 | Settings (organization, document policies, retrieval and model configuration) |
-| Phase 10 | UI Polish (notifications, dialogs, accessibility, responsive improvements, loading skeletons) |
+| Phase 6 | Document Processing UI (queue status, processing progress, retry handling) |
+| Phase 7 | Retrieval Interface (semantic search, citations, streaming responses) |
+| Phase 8 | Search & Analytics (search history, retrieval metrics, usage analytics) |
+| Phase 9 | Organization & Retrieval Settings |
+| Phase 10 | UI Polish (notifications, accessibility, responsive improvements, loading skeletons) |
 
 ---
 
@@ -369,8 +276,8 @@ frontend/
     │       ├── components/
     │       ├── CreateDocument.jsx
     │       ├── DocumentLibrary.jsx
-    │       ├── DocumentDetails.jsx
-    │       └── UploadDocument.jsx
+    │       ├── UploadDocument.jsx
+    │       └── DocumentDetails.jsx
     │
     ├── routes/
     │   ├── DocumentRoutes.jsx
@@ -390,7 +297,6 @@ frontend/
 ```text
 Document Library
     ↓
-Deleted documents
 Draft expiry
 Dashboard shortcut
 
@@ -402,28 +308,27 @@ Replace/Delete uploaded file
 
 Document Details
     ↓
-Processing & failure UI
-Delete / Restore shortcuts
+Processing & failure states
+Access history shortcut
 
 Access Management
     ↓
-Edit policy
-Temporary access
+Edit policies
 Scope configuration
 Validation improvements
 
 Access History
     ↓
-Audit timeline
-Policy changes
+Timeline
 Actor information
+Policy change details
 
 Deletion & Recovery
     ↓
-Soft delete
-Restore
-Permanent cleanup
+Deleted document view
 ```
+
+After completing these workflows, development will continue with **Phase 6 — Document Processing UI**.
 
 ---
 
@@ -434,14 +339,18 @@ Permanent cleanup
 | Frontend Foundation | ✅ Complete |
 | Authentication | ✅ Complete |
 | Dashboard | ✅ Complete |
-| Organization | ✅ Complete |
+| Organization Management | ✅ Complete |
 | Access & Administration | ✅ Complete |
 | Document API Layer | ✅ Complete |
-| Document Library | ~85% |
+| Document Library | ~90% |
 | Draft Upload Flow | ~85% |
-| Document Details | ~90% |
-| Access Management | ~60% |
-| Access History | ~20% |
-| Deletion & Recovery | ~10% |
+| Document Details | ~95% |
+| Access Management | ~75% |
+| Access History | ~25% |
+| Deletion & Recovery | ~80% |
 
-Phase 5 is now primarily focused on completing the remaining document-management workflows before moving to **Phase 6 — Document Processing UI**.
+---
+
+# Current Focus
+
+The frontend is focused on completing the remaining document management workflows before beginning **Phase 6 — Document Processing UI**, which will introduce real-time processing status, queue tracking, and document processing visualization.

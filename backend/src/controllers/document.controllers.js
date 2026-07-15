@@ -30,6 +30,7 @@ import {
 } from "../services/document.service.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import serializeBigInt from "../utils/serializeBigInt.js";
 
 export const createDocumentDraft = asyncHandler(async(req,res)=>{
     const {title,description,classification} = req.body;
@@ -86,7 +87,7 @@ export const getDocumentById = asyncHandler(async(req,res)=>{
 export const uploadDraft = asyncHandler(async (req, res) => {
     const { documentId } = req.params;
 
-    const document = await uploadDraftService(
+    const version = await uploadDraftService(
         req.user,
         documentId,
         req.file
@@ -96,7 +97,7 @@ export const uploadDraft = asyncHandler(async (req, res) => {
         new ApiResponse(
             200,
             "Draft uploaded successfully",
-            document
+            serializeBigInt(version)
         )
     );
 });

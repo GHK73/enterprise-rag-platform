@@ -1,3 +1,5 @@
+// backend/src/services/document/documentLifecycle.service.js
+
 import { randomUUID } from "crypto";
 import prisma from "../../config/prisma.js";
 import ApiError from "../../utils/ApiError.js";

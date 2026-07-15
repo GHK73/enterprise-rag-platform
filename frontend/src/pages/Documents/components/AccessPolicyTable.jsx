@@ -5,59 +5,60 @@ const AccessPolicyTable = ({
     onEdit,
     onDelete,
 }) => {
-    if (policies.length === 0) {
+    if (!policies || policies.length === 0) {
         return (
-            <p>
-                No access policies found.
-            </p>
+            <div className="document-empty-state">
+                <h3>No Access Policies</h3>
+
+                <p>
+                    This document does not have any
+                    access policies yet. Grant access
+                    to users, units, roles, or the
+                    organization using the form above.
+                </p>
+            </div>
         );
     }
 
     return (
-        <table className="document-version-table">
+        <div className="document-table-wrapper">
 
-            <thead>
+            <table className="document-version-table">
 
-                <tr>
+                <thead>
 
-                    <th>
-                        Subject
-                    </th>
+                    <tr>
 
-                    <th>
-                        Type
-                    </th>
+                        <th>Subject</th>
 
-                    <th>
-                        Permission
-                    </th>
+                        <th>Subject Type</th>
 
-                    <th>
-                        Temporary
-                    </th>
+                        <th>Permission</th>
 
-                    <th>
-                        Actions
-                    </th>
+                        <th>Temporary</th>
 
-                </tr>
+                        <th>Actions</th>
 
-            </thead>
+                    </tr>
 
-            <tbody>
+                </thead>
 
-                {policies.map((policy) => (
-                    <AccessPolicyRow
-                        key={policy.id}
-                        policy={policy}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                    />
-                ))}
+                <tbody>
 
-            </tbody>
+                    {policies.map((policy) => (
+                        <AccessPolicyRow
+                            key={policy.id}
+                            policy={policy}
+                            onEdit={onEdit}
+                            onDelete={onDelete}
+                        />
+                    ))}
 
-        </table>
+                </tbody>
+
+            </table>
+
+        </div>
     );
 };
 

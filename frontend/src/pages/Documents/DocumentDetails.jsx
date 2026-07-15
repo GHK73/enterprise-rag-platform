@@ -1,17 +1,24 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-
 import {
     getDocumentById,
     publishDocumentDraft,
     downloadDocument,
     getDocumentVersions,
     uploadDocumentVersion,
+    deleteDocument,
+    restoreDocument,
+    cleanupDeletedDocument,
 } from "../../api/document.api";
+import { useNavigate } from "react-router-dom";
 
+import DeleteDocumentDialog from "./components/DeleteDocumentDialog";
+import RestoreDocumentDialog from "./components/RestoreDocumentDialog";
+import CleanupDocumentDialog from "./components/CleanupDocumentDialog";
 import DocumentHeader from "./components/DocumentHeader";
 import StatusBadge from "./components/StatusBadge";
 import UploadCard from "./components/UploadCard";
+import DocumentAccessHistory from "./components/DocumentAccessHistory";
 import DocumentAccess from "./components/DocumentAccess.jsx";
 
 import "./DocumentDetails.css";
@@ -27,6 +34,7 @@ const ALLOWED_TYPES = [
 
 const DocumentDetails = () => {
     const { documentId } = useParams();
+    const navigate = useNavigate();
 
     const [document, setDocument] =
         useState(null);
@@ -57,6 +65,25 @@ const DocumentDetails = () => {
 
     const [pageError, setPageError] =
         useState("");
+        const [
+            deleting,
+            setDeleting,
+        ] = useState(false);
+        
+        const [
+            showDeleteDialog,
+            setShowDeleteDialog,
+        ] = useState(false);
+        
+        const [
+            showRestoreDialog,
+            setShowRestoreDialog,
+        ] = useState(false);
+        
+        const [
+            showCleanupDialog,
+            setShowCleanupDialog,
+        ] = useState(false);
 
     const [actionError, setActionError] =
         useState("");
@@ -164,6 +191,95 @@ const DocumentDetails = () => {
                 err?.response?.data?.message ||
                     "Failed to download version."
             );
+        }
+    };
+    
+    const handleDelete =
+    async () => {
+        try {
+
+            setDeleting(true);
+
+            await deleteDocument(
+                documentId
+            );
+
+            setShowDeleteDialog(
+                false
+            );
+
+            await loadDocument();
+
+        } catch (err) {
+
+            setActionError(
+                err?.response?.data
+                    ?.message ||
+                    "Failed to delete document."
+            );
+
+        } finally {
+
+            setDeleting(false);
+
+        }
+    };
+
+const handleRestore =
+    async () => {
+        try {
+
+            setDeleting(true);
+
+            await restoreDocument(
+                documentId
+            );
+
+            setShowRestoreDialog(
+                false
+            );
+
+            await loadDocument();
+
+        } catch (err) {
+
+            setActionError(
+                err?.response?.data
+                    ?.message ||
+                    "Failed to restore document."
+            );
+
+        } finally {
+
+            setDeleting(false);
+
+        }
+    };
+
+const handleCleanup =
+    async () => {
+        try {
+
+            setDeleting(true);
+
+            await cleanupDeletedDocument(
+                documentId
+            );
+
+            navigate("/documents");
+
+        } catch (err) {
+
+            setActionError(
+                err?.response?.data
+                    ?.message ||
+                    "Failed to permanently delete document."
+            );
+
+        } finally {
+
+            setDeleting(false);
+
         }
     };
 
@@ -307,6 +423,74 @@ const DocumentDetails = () => {
                 onPublish={handlePublish}
                 onDownload={handleDownload}
             />
+            <div className="document-actions-row">
+
+                {document.status !==
+                    "DELETED" && (
+
+                    <button
+                        className="danger-button"
+                        onClick={() =>
+                            setShowDeleteDialog(
+                                true
+                            )
+                        }
+                    >
+                        Delete
+                    </button>
+
+                )}
+
+                {document.status ===
+                    "DELETED" && (
+
+                    <>
+
+                        <button
+                            className="primary-button"
+                            onClick={() =>
+                                setShowRestoreDialog(
+                                    true
+                                )
+                            }
+                        >
+                            Restore
+                        </button>
+
+                        <button
+                            className="danger-button"
+                            onClick={() =>
+                                setShowCleanupDialog(
+                                    true
+                                )
+                            }
+                        >
+                            Delete Forever
+                        </button>
+
+                    </>
+
+                )}
+
+                </div>
+            {document.status === "QUEUED" && (
+                    <div className="document-status-banner info">
+                        This document has been queued for processing.
+                    </div>
+                )}
+
+                {document.status === "PROCESSING" && (
+                    <div className="document-status-banner info">
+                        Document processing is currently in progress.
+                    </div>
+                )}
+
+                {document.status === "FAILED" && (
+                    <div className="document-status-banner error">
+                        Processing failed.
+                        Please upload a new version or retry later.
+                    </div>
+                )}
 
             {actionError && (
                 <div className="document-error">
@@ -342,7 +526,7 @@ const DocumentDetails = () => {
 
                         <StatusBadge
                             status={
-                                document.lifecycle
+                                document.status
                             }
                         />
 
@@ -390,6 +574,9 @@ const DocumentDetails = () => {
 
                 <button
                     className="primary-button"
+                    disabled={
+                        document.status !== "READY"
+                    }
                     onClick={() =>
                         setShowUploadSection(
                             !showUploadSection
@@ -403,8 +590,7 @@ const DocumentDetails = () => {
 
             </div>
 
-            {showUploadSection && (
-
+            {document.status === "READY" &&showUploadSection && (
                 <div className="version-upload-section">
 
                     <UploadCard
@@ -534,7 +720,41 @@ const DocumentDetails = () => {
             <DocumentAccess
             documentId={documentId}
             />
+            <DocumentAccessHistory
+                documentId={documentId}
+            />
+            <DeleteDocumentDialog
+                open={showDeleteDialog}
+                loading={deleting}
+                onConfirm={handleDelete}
+                onCancel={() =>
+                    setShowDeleteDialog(
+                        false
+                    )
+                }
+            />
 
+            <RestoreDocumentDialog
+                open={showRestoreDialog}
+                loading={deleting}
+                onConfirm={handleRestore}
+                onCancel={() =>
+                    setShowRestoreDialog(
+                        false
+                    )
+                }
+            />
+
+            <CleanupDocumentDialog
+                open={showCleanupDialog}
+                loading={deleting}
+                onConfirm={handleCleanup}
+                onCancel={() =>
+                    setShowCleanupDialog(
+                        false
+                    )
+                }
+            />
         </div>
     );
 };

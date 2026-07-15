@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import {
+    useEffect,
+    useState,
+} from "react";
 
 import {
     getDocumentAccessPolicies,
     grantDocumentAccess,
+    updateDocumentAccessPolicy,
     revokeDocumentAccess,
 } from "../../../api/document.api";
 
@@ -32,6 +36,11 @@ const DocumentAccess = ({
     const [error, setError] =
         useState("");
 
+    const [
+        editingPolicy,
+        setEditingPolicy,
+    ] = useState(null);
+
     const loadAccessPolicies =
         async () => {
             try {
@@ -40,7 +49,9 @@ const DocumentAccess = ({
                         documentId
                     );
 
-                setPolicies(response);
+                setPolicies(
+                    response || []
+                );
             } catch {
                 setPolicies([]);
             }
@@ -62,62 +73,92 @@ const DocumentAccess = ({
                 ]);
 
                 setUnits(
-                    unitsResponse.data.data ||
-                        []
+                    unitsResponse.data
+                        .data || []
                 );
 
                 setMembers(
-                    membersResponse.data.data ||
-                        []
+                    membersResponse.data
+                        .data || []
                 );
             } catch {
                 setUnits([]);
-
                 setMembers([]);
             }
         };
 
-    const loadData = async () => {
-        try {
-            setLoading(true);
-
-            setError("");
-
+    const refreshData =
+        async () => {
             await Promise.all([
                 loadAccessPolicies(),
                 loadOrganizationData(),
             ]);
-        } catch (err) {
-            setError(
-                err?.response?.data
-                    ?.message ||
-                    "Failed to load access policies."
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
 
-    const handleGrantAccess =
-        async (accessData) => {
+    const loadData =
+        async () => {
             try {
-                setSaving(true);
+                setLoading(true);
+                setError("");
 
-                await grantDocumentAccess(
-                    documentId,
-                    accessData
-                );
-
-                await loadAccessPolicies();
+                await refreshData();
             } catch (err) {
                 setError(
                     err?.response?.data
                         ?.message ||
-                        "Failed to grant access."
+                        "Failed to load access policies."
+                );
+            } finally {
+                setLoading(false);
+            }
+        };
+
+    const handleSubmit =
+        async (accessData) => {
+            try {
+                setSaving(true);
+                setError("");
+
+                if (editingPolicy) {
+                    await updateDocumentAccessPolicy(
+                        editingPolicy.id,
+                        accessData
+                    );
+                } else {
+                    await grantDocumentAccess(
+                        documentId,
+                        accessData
+                    );
+                }
+
+                await refreshData();
+
+                setEditingPolicy(
+                    null
+                );
+            } catch (err) {
+                setError(
+                    err?.response?.data
+                        ?.message ||
+                        "Failed to save access policy."
                 );
             } finally {
                 setSaving(false);
             }
+        };
+
+    const handleEdit =
+        (policy) => {
+            setEditingPolicy(
+                policy
+            );
+        };
+
+    const handleCancelEdit =
+        () => {
+            setEditingPolicy(
+                null
+            );
         };
 
     const handleDelete =
@@ -131,12 +172,23 @@ const DocumentAccess = ({
             }
 
             try {
+                setError("");
+
                 await revokeDocumentAccess(
                     policy.id,
                     "Removed from frontend"
                 );
 
-                await loadAccessPolicies();
+                await refreshData();
+
+                if (
+                    editingPolicy?.id ===
+                    policy.id
+                ) {
+                    setEditingPolicy(
+                        null
+                    );
+                }
             } catch (err) {
                 setError(
                     err?.response?.data
@@ -152,9 +204,18 @@ const DocumentAccess = ({
 
     if (loading) {
         return (
-            <p>
-                Loading access policies...
-            </p>
+            <div className="document-card">
+
+                <h2>
+                    Access Management
+                </h2>
+
+                <p>
+                    Loading access
+                    policies...
+                </p>
+
+            </div>
         );
     }
 
@@ -162,7 +223,9 @@ const DocumentAccess = ({
         <div className="document-card">
 
             <h2>
-                Access Management
+                {editingPolicy
+                    ? "Edit Access Policy"
+                    : "Access Management"}
             </h2>
 
             {error && (
@@ -175,14 +238,29 @@ const DocumentAccess = ({
                 units={units}
                 members={members}
                 loading={saving}
+                editing={
+                    Boolean(
+                        editingPolicy
+                    )
+                }
+                initialValues={
+                    editingPolicy
+                }
+                onCancel={
+                    handleCancelEdit
+                }
                 onSubmit={
-                    handleGrantAccess
+                    handleSubmit
                 }
             />
 
+            <hr />
+
             <AccessPolicyTable
                 policies={policies}
-                onEdit={() => {}}
+                onEdit={
+                    handleEdit
+                }
                 onDelete={
                     handleDelete
                 }
