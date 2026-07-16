@@ -8,16 +8,19 @@ Backend reference: [`../backend/docs/DEVELOPMENT.md`](../backend/docs/DEVELOPMEN
 
 # Current Status
 
-**Active Phase:** Phase 1 — AI Service Foundation
+**Active Phase:** Phase 2 — Document Processing
 
 | Area | Status |
 | --- | --- |
-| FastAPI Foundation | ⏳ |
-| Configuration | ⏳ |
-| Document Processing API | ⏳ |
-| Document Extraction | ⏳ |
+| FastAPI Foundation | ✅ |
+| Configuration | ✅ |
+| Logging & Validation | ✅ |
+| Health Endpoint | ✅ |
+| Document Processing API | ✅ |
+| Download Pipeline | ✅ |
+| Content Extraction | 🚧 |
 | OCR Support | ⏳ |
-| Chunk Generation | ⏳ |
+| Chunk Generation | 🚧 |
 | Embedding Generation | ⏳ |
 | Vector Indexing | ⏳ |
 | Retrieval Pipeline | ⏳ |
@@ -27,11 +30,11 @@ Backend reference: [`../backend/docs/DEVELOPMENT.md`](../backend/docs/DEVELOPMEN
 
 # Purpose
 
-The AI Service is responsible for all AI-specific workloads within the Enterprise RAG Platform.
+The AI Service handles all AI-specific workloads for the Enterprise RAG Platform.
 
-Unlike the backend, it does not manage authentication, authorization, or business state.
+Unlike the backend, it is responsible only for document understanding and retrieval. Authentication, authorization, business logic, and application state remain the responsibility of the backend.
 
-Its responsibilities include:
+Responsibilities include:
 
 - Document processing
 - Content extraction
@@ -45,11 +48,9 @@ Its responsibilities include:
 - Prompt construction
 - LLM interaction
 
-The backend remains the source of truth for authorization.
-
 ---
 
-# Service Architecture
+# Architecture
 
 ```text
 Node.js Backend
@@ -57,33 +58,18 @@ Node.js Backend
         ▼
 FastAPI AI Service
         │
-        ├── Extraction
+        ├── Document Processing
+        ├── Content Extraction
         ├── OCR
-        ├── Chunking
-        ├── Embeddings
-        ├── Vector Search
+        ├── Chunk Generation
+        ├── Embedding Generation
+        ├── Vector Indexing
+        ├── Retrieval
         ├── Reranking
         └── Answer Generation
 ```
 
----
-
-# Current Architecture
-
-```text
-Backend
-        │
-        ▼
-Processing Dispatcher
-        │
-        ▼
-FastAPI
-        │
-        ▼
-Processing Service
-```
-
-The service will gradually evolve as additional processing stages are implemented.
+The service grows incrementally as additional processing stages are implemented.
 
 ---
 
@@ -113,74 +99,95 @@ uvicorn app.main:app --reload
 | HOST | Service host |
 | PORT | Service port |
 | LOG_LEVEL | Logging level |
-| EMBEDDING_MODEL | SentenceTransformer model |
-| QDRANT_URL | Vector database URL |
+| EMBEDDING_MODEL | Sentence Transformer model |
+| QDRANT_URL | Vector database |
 | QDRANT_API_KEY | Qdrant authentication |
 
 ---
 
-# Planned Development
+# Development Phases
 
-## Phase 1 — AI Service Foundation ⏳
+## Phase 1 — AI Service Foundation ✅
 
-Implemented goals:
+Completed:
 
 - FastAPI application
 - Configuration management
-- Health endpoint
-- Logging
+- Structured logging
+- Global exception handling
 - Request validation
-- Error handling
+- Health endpoint
+- API routing
+- Service lifecycle
 
 ---
 
-## Phase 2 — Document Processing ⏳
+## Phase 2 — Document Processing 🚧
 
-Goals:
+Pipeline
 
 ```text
 Upload
         ↓
 Validate
         ↓
-Extract Content
+Download
+        ↓
+Extract
         ↓
 Normalize
 ```
 
-Implemented goals:
+Current Progress
 
 - Processing endpoint
-- File validation
-- Processing pipeline
-- Temporary storage
+- Request validation
+- Temporary workspace
+- Document downloader
+- Processing service
+- Processing pipeline orchestration
+
+Remaining
+
+- Processing status tracking
+- Retry handling
+- Processing metrics
 
 ---
 
-## Phase 3 — Content Extraction ⏳
+## Phase 3 — Content Extraction 🚧
 
-Supported formats:
+Supported Formats
 
-```text
-PDF
-DOCX
-TXT
-```
+- PDF
+- DOCX
+- TXT
 
-Implemented goals:
+Current Progress
 
-- PyMuPDF integration
-- DOCX extraction
-- Plain text extraction
+- Extraction service
+- Format detection
+- PDF extractor
+- DOCX extractor
+- TXT extractor
+
+Planned
+
 - Metadata extraction
+- Table extraction
+- Image extraction
+- Page information
+- Scanned document detection
 
 ---
 
 ## Phase 4 — OCR ⏳
 
-Goals:
+Pipeline
 
 ```text
+Document
+        ↓
 Image Detection
         ↓
 OCR
@@ -188,36 +195,40 @@ OCR
 Merge Content
 ```
 
-Implemented goals:
+Planned Features
 
 - OCR fallback
 - Scanned PDF support
-- Image extraction
+- Image text extraction
+- OCR preprocessing
 
 ---
 
-## Phase 5 — Chunk Generation ⏳
+## Phase 5 — Chunk Generation 🚧
 
 Pipeline
 
 ```text
-Text
-        ↓
-Cleaning
+Extracted Text
         ↓
 Normalization
         ↓
 Chunk Generation
 ```
 
-Implemented goals:
+Current Progress
+
+- Text normalization
+- Configurable chunk size
+- Chunk overlap
+- Chunk metadata
+
+Planned
 
 - Recursive chunking
-- Configurable overlap
-- Metadata preservation
 - Section-aware chunking
-
----
+- Paragraph-aware chunking
+- Token-aware chunking
 
 ## Phase 6 — Embedding Generation ⏳
 
@@ -226,15 +237,16 @@ Pipeline
 ```text
 Chunks
         ↓
-Sentence Transformer
+Embedding Model
         ↓
-Embeddings
+Vector Embeddings
 ```
 
-Implemented goals:
+Planned Features
 
-- Batch embeddings
-- GPU support
+- Sentence Transformer integration
+- Batch embedding generation
+- GPU acceleration
 - CPU fallback
 - Embedding metadata
 
@@ -250,11 +262,12 @@ Embeddings
 Qdrant
 ```
 
-Implemented goals:
+Planned Features
 
-- Collection creation
+- Collection management
 - Incremental indexing
-- Metadata indexing
+- Document re-indexing
+- Metadata synchronization
 - Version replacement
 
 ---
@@ -270,16 +283,16 @@ Embedding
         ↓
 Vector Search
         ↓
-Hybrid Search
+Metadata Filtering
         ↓
 Reranking
 ```
 
-Implemented goals:
+Planned Features
 
 - Semantic retrieval
-- Metadata filtering
 - Hybrid retrieval
+- Permission-aware filtering
 - Cross-encoder reranking
 
 ---
@@ -291,8 +304,6 @@ Pipeline
 ```text
 Retrieved Chunks
         ↓
-Context Validation
-        ↓
 Prompt Construction
         ↓
 LLM
@@ -300,33 +311,35 @@ LLM
 Grounded Response
 ```
 
-Implemented goals:
+Planned Features
 
 - Prompt templates
 - Context reconstruction
 - Citation metadata
 - Streaming responses
+- Hallucination reduction
 
 ---
 
-## Phase 10 — Evaluation ⏳
+## Phase 10 — Evaluation & Monitoring ⏳
 
-Implemented goals:
+Planned Features
 
-- Retrieval metrics
+- Retrieval evaluation
 - Embedding quality
-- Hallucination evaluation
 - Citation validation
 - Latency monitoring
+- Processing metrics
+- AI service monitoring
 
 ---
 
-# Planned API
+# API
 
 ## Health
 
 ```text
-GET /api/v1/health
+GET     /api/v1/health
 ```
 
 ---
@@ -334,8 +347,8 @@ GET /api/v1/health
 ## Processing
 
 ```text
-POST /api/v1/process-document
-GET  /api/v1/process/:documentId
+POST    /api/v1/process-document
+GET     /api/v1/process/:documentId
 ```
 
 ---
@@ -343,7 +356,7 @@ GET  /api/v1/process/:documentId
 ## Retrieval
 
 ```text
-POST /api/v1/retrieve
+POST    /api/v1/retrieve
 ```
 
 ---
@@ -351,46 +364,19 @@ POST /api/v1/retrieve
 ## Generation
 
 ```text
-POST /api/v1/generate
-```
-
----
-
-# Planned Project Structure
-
-```text
-ai-service/
-│
-├── app/
-│   ├── api/
-│   ├── config/
-│   ├── schemas/
-│   ├── services/
-│   │   ├── extraction/
-│   │   ├── chunking/
-│   │   ├── embedding/
-│   │   ├── retrieval/
-│   │   ├── reranking/
-│   │   ├── generation/
-│   │   └── vector/
-│   │
-│   ├── utils/
-│   └── main.py
-│
-├── tests/
-│
-├── requirements.txt
-└── README.md
+POST    /api/v1/generate
 ```
 
 ---
 
 # Engineering Principles
 
-The AI Service never decides authorization.
+The AI Service never determines authorization.
 
 ```text
 Backend
+        ↓
+Authentication
         ↓
 Authorization
         ↓
@@ -399,28 +385,39 @@ Authorized Documents
 AI Service
 ```
 
-Only content already approved by the backend may be processed or retrieved.
+Only content approved by the backend is processed or retrieved.
 
 The AI Service is stateless.
 
-Persistent application state remains within PostgreSQL and Qdrant.
+Persistent application state remains in:
+
+- PostgreSQL (application data)
+- Qdrant (vector index)
+
+The processing pipeline is modular so that extraction, OCR, chunking, embeddings, retrieval, and generation can evolve independently without changing the overall architecture.
 
 ---
 
 # Next Development Step
 
-## Phase 1 — AI Service Foundation
-
-Backend Integration
+## Current Focus
 
 ```text
-Node.js Backend
+Download
         ↓
-HTTP Request
+Extraction
         ↓
-FastAPI
+Normalization
         ↓
-Health Endpoint
+Chunk Generation
 ```
 
-Once the service foundation is complete, document processing endpoints will be implemented and integrated with the backend processing pipeline.
+Next milestones:
+
+- Complete content extraction
+- Improve chunk generation
+- Implement embedding generation
+- Integrate Qdrant
+- Build retrieval pipeline
+
+Once embedding generation and vector indexing are complete, the AI service will be capable of processing enterprise documents for semantic retrieval, enabling Phase 8 (Retrieval) and Phase 9 (Retrieval-Augmented Generation).
