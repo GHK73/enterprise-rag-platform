@@ -2,6 +2,7 @@
 
 import { randomUUID } from "crypto";
 import prisma from "../../config/prisma.js";
+import {dispatchDocumentProcessing,} from "./documentProcessingDispatcher.service.js";
 import ApiError from "../../utils/ApiError.js";
 import { validateFile } from "../../utils/fileValidation.js";
 import {
@@ -474,44 +475,31 @@ export const deleteDraftUpload = async(
     };
 };
 
-export const publishDraft = async(
-    user,
-    documentId
-)=>{
-    const {document} =
-        await validateDraftForPublication(
-            user,
-            documentId
-        );
-
+export const publishDraft = async(user,documentId)=>{
+    const {document} =await validateDraftForPublication(user,documentId);
     validateDocumentTransition(
         document.status,
         "SUBMITTED"
     );
 
-    return prisma.$transaction(async(tx)=>{
-
-        const policies =
-            await createInitialDocumentAccessPolicies(
-                tx,
-                user,
-                document
-            );
-
-        await createInitialDocumentAccessAudit(
-            tx,
-            user,
-            policies
-        );
-
-        return tx.document.update({
-            where:{id:document.id,},
+    const publishedDocument = await prisma.$transaction(async(tx)=>{
+        const policies =await createInitialDocumentAccessPolicies(tx,user,document);
+        await createInitialDocumentAccessAudit(tx,user,policies);
+    
+        return await tx.document.update({
+            where:{ id: document.id },
             data:{
                 status:"SUBMITTED",
                 submittedAt:new Date(),
             },
         });
+    
     });
+    await dispatchDocumentProcessing({
+        documentId: publishedDocument.id,
+        versionId: publishedDocument.currentVersionId,
+    });
+    return publishedDocument;
 };
 
 export const softDeleteDocument = async(
