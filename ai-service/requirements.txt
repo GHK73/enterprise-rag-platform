@@ -19,3 +19,7 @@ torch>=2.7.0
 qdrant-client==1.15.1
 
 orjson==3.11.0
+httpx
+
+PyMuPDF
+python-docx
