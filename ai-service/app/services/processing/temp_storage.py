@@ -8,7 +8,7 @@ class TemporaryStorage:
     def create_workspace(self)->Path:
         return Path(tempfile.mkdtemp(prefix="rag_document_"))
 
-    def cleanup(self,workspace: Path):
+    def cleanup(self,workspace: Path)->None:
         if workspace.exists():
             shutil.rmtree(workspace, ignore_errors=True,)
 

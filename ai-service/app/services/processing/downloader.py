@@ -2,15 +2,20 @@
 
 from pathlib import Path
 import httpx 
+from app.core.exceptions import ProcessingException
 
-class DocumentDownloader:
-    async def download(self,file_url:str, destination:Path)->Path:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(file_url)
-            response.raise_for_status()
+class DownloaderService:
+    DEFAULT_TIMEOUT = 60
+    async def download(self, url: str,destination:Path)->Path:
+        try:
+            async with httpx.AsyncClient(follow_redirects=True,timeout=self.DEFAULT_TIMEOUT,) as client:
+                async with client.stream("GET",url) as response:
+                    response.raise_for_status()
+                    with destination.open("wb") as file:
+                        async for chunk in response.aiter_bytes():
+                            file.write(chunk)
+            return destination
+        except Exception as error:
+            raise ProcessingException("Failed to download document") from error 
 
-        file_path = destination / "document"
-        file_path.write_bytes(response.content)
-        return file_path 
-
-document_downloader = DocumentDownloader()
+downloader_service = DownloaderService()

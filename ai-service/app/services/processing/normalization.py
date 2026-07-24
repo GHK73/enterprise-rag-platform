@@ -1,14 +1,26 @@
-# ai-service/app/services/processing/normalization.py
+# ai-serice/app/services/processing/normalization.py
 
-import re 
-import unicodedata 
+from abc import ABC, abstractmethod
+from app.schemas.document import Document
+from app.services.processing.normalization import normalization_service
 
-class TextNormalizationService:
-    async def normalize(self, text: str,)->str:
-        text = unicodedata.nomalize("NFKC",text,)
-        text = text.replace("\r\n","\n")
-        text = re.sub(fr"\n{3,}","\n\n",text,)
-        text = re.sub(r"[ \t]+"," ",text,)
-        return text.strip()
 
-normalization_service = TextNormalizationService()
+class BaseExtractor(ABC):
+    @abstractmethod
+    async def read(self, file_path) -> Document:
+        pass
+
+    async def extract(self, file_path) -> Document:
+
+        document = await self.read(file_path)
+
+        for page in document.pages:
+
+            for block in page.blocks:
+
+                if block.block_type == "TEXT":
+                    block.text = await normalization_service.normalize(
+                        block.text
+                    )
+
+        return document
