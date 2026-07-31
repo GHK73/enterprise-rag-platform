@@ -19,8 +19,9 @@ Backend reference: [`../backend/docs/DEVELOPMENT.md`](../backend/docs/DEVELOPMEN
 | Document Processing API | ✅ |
 | Download Pipeline | ✅ |
 | Content Extraction | 🚧 |
-| OCR Support | ⏳ |
+| Document Normalization | 🚧 |
 | Chunk Generation | 🚧 |
+| OCR Support | ⏳ |
 | Embedding Generation | ⏳ |
 | Vector Indexing | ⏳ |
 | Retrieval Pipeline | ⏳ |
@@ -30,50 +31,64 @@ Backend reference: [`../backend/docs/DEVELOPMENT.md`](../backend/docs/DEVELOPMEN
 
 # Purpose
 
-The AI Service handles all AI-specific workloads for the Enterprise RAG Platform.
+The AI Service is responsible for all AI-related workloads within the Enterprise RAG Platform.
 
-Unlike the backend, it is responsible only for document understanding and retrieval. Authentication, authorization, business logic, and application state remain the responsibility of the backend.
+Unlike the backend, it does not manage authentication, authorization, organizations, or business logic. Those responsibilities remain entirely within the backend.
 
-Responsibilities include:
+The AI Service focuses on understanding enterprise documents and enabling semantic retrieval through modular AI pipelines.
+
+Core responsibilities include:
 
 - Document processing
 - Content extraction
 - OCR
-- Text normalization
+- Document normalization
 - Chunk generation
 - Embedding generation
 - Vector indexing
-- Retrieval
+- Semantic retrieval
 - Reranking
 - Prompt construction
 - LLM interaction
 
 ---
 
-# Architecture
+# High-Level Architecture
 
 ```text
-Node.js Backend
-        │
-        ▼
-FastAPI AI Service
-        │
-        ├── Document Processing
-        ├── Content Extraction
-        ├── OCR
-        ├── Chunk Generation
-        ├── Embedding Generation
-        ├── Vector Indexing
-        ├── Retrieval
-        ├── Reranking
-        └── Answer Generation
-```
+                    Enterprise RAG Platform
 
-The service grows incrementally as additional processing stages are implemented.
+                 +---------------------------+
+                 |      Node.js Backend      |
+                 +---------------------------+
+                           │
+          Authentication / Authorization
+                           │
+                Document & Permission APIs
+                           │
+                           ▼
+                 +---------------------------+
+                 |     FastAPI AI Service    |
+                 +---------------------------+
+                           │
+         ┌─────────────────┼─────────────────┐
+         │                 │                 │
+         ▼                 ▼                 ▼
+   Document          Embedding         Retrieval
+   Processing         Generation        Pipeline
+         │                 │                 │
+         └─────────────────┼─────────────────┘
+                           │
+                           ▼
+                      Qdrant Vector DB
+                           │
+                           ▼
+                      Grounded Response
+```
 
 ---
 
-# Local Setup
+# Local Development
 
 ```bash
 cd ai-service
@@ -93,63 +108,59 @@ uvicorn app.main:app --reload
 
 | Variable | Purpose |
 | --- | --- |
-| APP_NAME | Service name |
-| APP_VERSION | API version |
+| APP_NAME | AI Service name |
+| APP_VERSION | Service version |
 | ENVIRONMENT | Development / Production |
-| HOST | Service host |
-| PORT | Service port |
+| HOST | Server host |
+| PORT | Server port |
 | LOG_LEVEL | Logging level |
 | EMBEDDING_MODEL | Sentence Transformer model |
-| QDRANT_URL | Vector database |
+| QDRANT_URL | Qdrant server URL |
 | QDRANT_API_KEY | Qdrant authentication |
 
 ---
 
-# Development Phases
+# Development Roadmap
 
 ## Phase 1 — AI Service Foundation ✅
 
-Completed:
+### Goal
 
-- FastAPI application
+Establish a production-ready FastAPI service that integrates with the Enterprise RAG backend.
+
+### Completed
+
+- FastAPI application setup
+- Project structure
 - Configuration management
+- Environment loading
 - Structured logging
-- Global exception handling
+- Exception handling
 - Request validation
 - Health endpoint
 - API routing
-- Service lifecycle
+- Service lifecycle management
 
 ---
 
 ## Phase 2 — Document Processing 🚧
 
-Pipeline
+### Goal
 
-```text
-Upload
-        ↓
-Validate
-        ↓
-Download
-        ↓
-Extract
-        ↓
-Normalize
-```
+Build the document processing pipeline responsible for preparing uploaded documents for AI workloads.
 
-Current Progress
+### Completed
 
-- Processing endpoint
+- Processing API
 - Request validation
 - Temporary workspace
-- Document downloader
+- Document download pipeline
 - Processing service
-- Processing pipeline orchestration
+- Pipeline orchestration
 
-Remaining
+### In Progress
 
-- Processing status tracking
+- Processing status management
 - Retry handling
 - Processing metrics
 
@@ -157,267 +168,353 @@ Remaining
 
 ## Phase 3 — Content Extraction 🚧
 
-Supported Formats
+### Goal
+
+Extract structured information from enterprise documents while preserving layout and metadata.
+
+### Supported Formats
 
 - PDF
 - DOCX
 - TXT
 
-Current Progress
+### Completed
 
-- Extraction service
-- Format detection
+- Base extractor
 - PDF extractor
 - DOCX extractor
 - TXT extractor
+- Table extraction module
+- Docling integration
+- Extraction orchestration
 
-Planned
+### Planned
 
-- Metadata extraction
-- Table extraction
+- Metadata enhancement
 - Image extraction
-- Page information
-- Scanned document detection
+- Figure extraction
+- Formula extraction
+- Chart detection
+- Page layout preservation
+- Reading order reconstruction
 
 ---
 
 ## Phase 4 — OCR ⏳
 
-Pipeline
+### Goal
 
-```text
-Document
-        ↓
-Image Detection
-        ↓
-OCR
-        ↓
-Merge Content
-```
+Support scanned documents and image-based PDFs.
 
-Planned Features
+### Planned
 
 - OCR fallback
-- Scanned PDF support
-- Image text extraction
-- OCR preprocessing
+- Scanned PDF detection
+- Image preprocessing
+- OCR text extraction
+- OCR confidence scoring
+- Reading order merging
 
 ---
 
 ## Phase 5 — Chunk Generation 🚧
 
-Pipeline
+### Goal
 
-```text
-Extracted Text
-        ↓
-Normalization
-        ↓
-Chunk Generation
-```
+Convert extracted content into retrieval-ready chunks while preserving document structure.
 
-Current Progress
+### Completed
 
-- Text normalization
+- Content normalization
 - Configurable chunk size
 - Chunk overlap
 - Chunk metadata
 
-Planned
+### Planned
 
 - Recursive chunking
 - Section-aware chunking
 - Paragraph-aware chunking
+- Table-aware chunking
 - Token-aware chunking
+- Semantic chunk optimization
 
+---
 ## Phase 6 — Embedding Generation ⏳
 
-Pipeline
+### Goal
 
-```text
-Chunks
-        ↓
-Embedding Model
-        ↓
-Vector Embeddings
-```
+Generate high-quality vector embeddings from document chunks for semantic search.
 
-Planned Features
+### Planned
 
-- Sentence Transformer integration
+- Sentence Transformers integration
 - Batch embedding generation
 - GPU acceleration
 - CPU fallback
-- Embedding metadata
+- Embedding caching
+- Metadata preservation
+- Batch processing optimization
 
 ---
 
 ## Phase 7 — Vector Indexing ⏳
 
-Pipeline
+### Goal
 
-```text
-Embeddings
-        ↓
-Qdrant
-```
+Store document embeddings in Qdrant for efficient semantic retrieval.
 
-Planned Features
+### Planned
 
 - Collection management
+- Document indexing
 - Incremental indexing
-- Document re-indexing
+- Re-indexing support
 - Metadata synchronization
 - Version replacement
+- Batch upserts
+- Collection optimization
 
 ---
 
-## Phase 8 — Retrieval ⏳
+## Phase 8 — Retrieval Pipeline ⏳
 
-Pipeline
+### Goal
 
-```text
-User Query
-        ↓
-Embedding
-        ↓
-Vector Search
-        ↓
-Metadata Filtering
-        ↓
-Reranking
-```
+Retrieve the most relevant document chunks for a given query.
 
-Planned Features
+### Planned
 
-- Semantic retrieval
-- Hybrid retrieval
-- Permission-aware filtering
+- Query embedding generation
+- Semantic vector search
+- Metadata filtering
+- Permission-aware retrieval
+- Hybrid search
 - Cross-encoder reranking
+- Similarity score normalization
+- Top-k retrieval optimization
 
 ---
 
 ## Phase 9 — Retrieval-Augmented Generation ⏳
 
-Pipeline
+### Goal
 
-```text
-Retrieved Chunks
-        ↓
-Prompt Construction
-        ↓
-LLM
-        ↓
-Grounded Response
-```
+Generate grounded responses using retrieved enterprise knowledge.
 
-Planned Features
+### Planned
 
 - Prompt templates
 - Context reconstruction
-- Citation metadata
+- Citation generation
+- Source attribution
 - Streaming responses
 - Hallucination reduction
+- Multi-document context support
+- Conversation history integration
 
 ---
 
 ## Phase 10 — Evaluation & Monitoring ⏳
 
-Planned Features
+### Goal
 
+Measure system quality, retrieval accuracy, and production performance.
+
+### Planned
+
+- Processing metrics
 - Retrieval evaluation
-- Embedding quality
+- Embedding quality evaluation
 - Citation validation
 - Latency monitoring
-- Processing metrics
+- Error tracking
 - AI service monitoring
+- Performance dashboards
 
 ---
 
-# API
+# API Endpoints
 
 ## Health
 
 ```text
-GET     /api/v1/health
+GET    /api/v1/health
 ```
 
----
-
-## Processing
+## Document Processing
 
 ```text
-POST    /api/v1/process-document
-GET     /api/v1/process/:documentId
+POST   /api/v1/process-document
+GET    /api/v1/process/:documentId
 ```
-
----
 
 ## Retrieval
 
 ```text
-POST    /api/v1/retrieve
+POST   /api/v1/retrieve
 ```
-
----
 
 ## Generation
 
 ```text
-POST    /api/v1/generate
+POST   /api/v1/generate
+```
+
+---
+
+# Processing Workflow
+
+```text
+Upload Document
+        │
+        ▼
+Validation
+        │
+        ▼
+Download
+        │
+        ▼
+Content Extraction
+        │
+        ▼
+Normalization
+        │
+        ▼
+Chunk Generation
+        │
+        ▼
+Embedding Generation
+        │
+        ▼
+Vector Indexing (Qdrant)
+        │
+        ▼
+Semantic Retrieval
+        │
+        ▼
+Prompt Construction
+        │
+        ▼
+LLM Response
 ```
 
 ---
 
 # Engineering Principles
 
-The AI Service never determines authorization.
+### Backend Owns Authorization
+
+The AI Service never authenticates users or determines document permissions.
 
 ```text
-Backend
-        ↓
-Authentication
-        ↓
-Authorization
-        ↓
+Client
+   │
+   ▼
+Backend Authentication
+   │
+Backend Authorization
+   │
 Authorized Documents
-        ↓
+   │
+   ▼
 AI Service
 ```
 
-Only content approved by the backend is processed or retrieved.
-
-The AI Service is stateless.
-
-Persistent application state remains in:
-
-- PostgreSQL (application data)
-- Qdrant (vector index)
-
-The processing pipeline is modular so that extraction, OCR, chunking, embeddings, retrieval, and generation can evolve independently without changing the overall architecture.
+Only documents explicitly authorized by the backend are processed or retrieved.
 
 ---
 
-# Next Development Step
+### Stateless Architecture
+
+The AI Service remains stateless.
+
+Persistent data is stored externally.
+
+| Component | Storage |
+| --- | --- |
+| Application Data | PostgreSQL |
+| Vector Embeddings | Qdrant |
+| Document Storage | Backend / Object Storage |
+
+---
+
+### Modular Design
+
+Each processing stage is isolated and independently replaceable.
+
+```text
+Downloader
+      │
+      ▼
+Extractors
+      │
+      ▼
+Normalization
+      │
+      ▼
+Chunking
+      │
+      ▼
+Embeddings
+      │
+      ▼
+Vector Indexing
+      │
+      ▼
+Retrieval
+      │
+      ▼
+Generation
+```
+
+This modular architecture allows individual components to evolve without affecting the overall pipeline.
+
+---
+
+# Current Progress
+
+## Completed
+
+- FastAPI service foundation
+- Configuration management
+- Structured logging
+- Health endpoint
+- Document processing API
+- Download pipeline
+- Base extractor architecture
+- PDF extractor
+- DOCX extractor
+- TXT extractor
+- Table extraction
+- Docling integration
+- Extraction orchestration
+- Content normalization
+- Chunk generation
+
+---
 
 ## Current Focus
 
-```text
-Download
-        ↓
-Extraction
-        ↓
-Normalization
-        ↓
-Chunk Generation
-```
-
-Next milestones:
-
 - Complete content extraction
-- Improve chunk generation
-- Implement embedding generation
-- Integrate Qdrant
-- Build retrieval pipeline
+- Improve OCR support
+- Enhance structured document extraction
+- Prepare embedding pipeline
 
-Once embedding generation and vector indexing are complete, the AI service will be capable of processing enterprise documents for semantic retrieval, enabling Phase 8 (Retrieval) and Phase 9 (Retrieval-Augmented Generation).
+---
+
+## Upcoming Milestones
+
+1. Embedding generation
+2. Qdrant integration
+3. Vector indexing
+4. Retrieval pipeline
+5. Reranking
+6. Retrieval-Augmented Generation
+7. Evaluation & monitoring
+
+---
+
+# Long-Term Vision
+
+The Enterprise RAG AI Service is designed as a modular, production-ready AI platform capable of processing large-scale enterprise knowledge bases while supporting secure, permission-aware semantic retrieval and grounded response generation. Each phase builds incrementally on the previous one, enabling independent evolution of extraction, chunking, embeddings, indexing, retrieval, and generation without requiring architectural changes.
