@@ -59,3 +59,5 @@ class NormalizationService:
         value = value.replace("\n", " ")
         value = re.sub(r"\s+", " ", value)
         return value.strip()
+
+normalization_service = NormalizationService()

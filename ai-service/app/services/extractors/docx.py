@@ -4,10 +4,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from docx import Document as DocxDocument
-from app.schemas.document import(
+from app.schemas.document import (
     BlockType,
     Document,
+    DocumentMetadata,
     DocumentPage,
+    DocumentType,
     ImageBlock,
     TableBlock,
     TextBlock,
@@ -39,17 +41,21 @@ class DocxExtractor(BaseExtractor):
 
     # Metadata 
 
-    def _extract_metadata(self,doc: DocxDocument,path: Path)->dict:
+    def _extract_metadata(self,doc: DocxDocument,path: Path,) -> DocumentMetadata:
         props = doc.core_properties
-        return {
-            "filename":path.name,
-            "title":props.title,
-            "author":props.author,
-            "subject":props.subject,
-            "creator":props.creator,
-            "keywords":props.keywords,
-            "comments":props.comments,
-        }
+
+        return DocumentMetadata(
+            filename=path.name,
+            document_type=DocumentType.DOCX,
+            title=props.title,
+            author=props.author,
+            metadata={
+                "subject": props.subject,
+                "creator": props.author,
+                "keywords": props.keywords,
+                "comments": props.comments,
+            },
+        )
 
     # Paragraphs
     def _extract_paragraphs(self,doc: DocxDocument,) -> list[TextBlock]:

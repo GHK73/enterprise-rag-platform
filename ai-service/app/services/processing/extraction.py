@@ -1,3 +1,4 @@
+# ai-service/app/services/processing/extraction.py
 from __future__ import annotations
 
 import logging
@@ -5,7 +6,7 @@ from pathlib import Path
 
 from app.schemas.document import Document
 from app.services.extractors.docling import DoclingExtractor
-from app.services.extractors.docx import DOCXExtractor
+from app.services.extractors.docx import DocxExtractor
 from app.services.extractors.pdf import PDFExtractor
 from app.services.extractors.txt import TXTExtractor
 
@@ -18,7 +19,7 @@ class ExtractionService:
 
         self.extractors = {
             ".pdf": PDFExtractor(),
-            ".docx": DOCXExtractor(),
+            ".docx": DocxExtractor(),
             ".txt": TXTExtractor(),
         }
         self.docling = DoclingExtractor()
@@ -40,10 +41,15 @@ class ExtractionService:
 
     def _merge(self,document: Document,docling_document: Document,) -> Document:
         for index, page in enumerate(docling_document.pages):
+
             if index >= len(document.pages):
                 document.pages.append(page)
                 continue
 
-            document.pages[index].blocks.extend(page.blocks)
-        document.metadata.update(docling_document.metadata)
+            document.pages[index].blocks.extend(
+                page.blocks
+            )
+
         return document
+
+extraction_service = ExtractionService()

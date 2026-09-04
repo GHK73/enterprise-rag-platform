@@ -4,10 +4,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from docling.document_converter import DocumentConverter
-from app.schemas.document import(
+from app.schemas.document import (
     BlockType,
     Document,
+    DocumentMetadata,
     DocumentPage,
+    DocumentType,
     FigureBlock,
     ImageBlock,
     TableBlock,
@@ -30,14 +32,21 @@ class DoclingExtractor(BaseExtractor):
         try:
             result=self.converter.convert(str(path))
             doc=result.document
-            document=Document(
-                metadata={
-                    "filename":path.name,
-                    "source":"docling",
-                }
+            document = Document(
+                metadata=DocumentMetadata(
+                    filename=path.name,
+                    document_type=(
+                        DocumentType.PDF
+                        if path.suffix.lower() == ".pdf"
+                        else DocumentType.DOCX
+                    ),
+                    metadata={
+                        "source": "docling",
+                    },
+                )
             )
             page=DocumentPage(page_number=1)
-            for item in doc.iterate_items():
+            for item, _ in doc.iterate_items():
                 block = self._convert_item(item)
                 if block is not None:
                     page.blocks.append(block)

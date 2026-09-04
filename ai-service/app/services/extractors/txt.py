@@ -3,10 +3,12 @@
 from __future__ import annotations
 import logging
 from pathlib import Path
-from app.schemas.document import(
+from app.schemas.document import (
     BlockType,
     Document,
+    DocumentMetadata,
     DocumentPage,
+    DocumentType,
     TextBlock,
 )
 from app.services.extractors.base import BaseExtractor
@@ -35,12 +37,15 @@ class TXTExtractor(BaseExtractor):
                         text=line,
                     )
                 )
-            document=Document(
+            document = Document(
                 pages=[page],
-                metadata={
-                    "filename":path.name,
-                    "encoding": "utf-8",
-                },
+                metadata=DocumentMetadata(
+                    filename=path.name,
+                    document_type=DocumentType.TXT,
+                    metadata={
+                        "encoding": "utf-8",
+                    },
+                ),
             )
             self.log_success(path,start)
             return document

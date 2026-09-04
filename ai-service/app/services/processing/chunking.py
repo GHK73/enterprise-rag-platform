@@ -83,3 +83,5 @@ class ChunkingService:
                 BlockType.CODE,
             }
         )
+
+chunking_service = ChunkingService()

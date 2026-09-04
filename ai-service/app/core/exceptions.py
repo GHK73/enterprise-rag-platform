@@ -8,6 +8,13 @@ from fastapi.exceptions import RequestValidationError
 
 logger = logging.getLogger("uvicorn.error")
 
+class ProcessingException(Exception):
+    """Raised when document processing fails."""
+    
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
 def register_exception_handlers(app: FastAPI):
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
