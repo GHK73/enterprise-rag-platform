@@ -1,4 +1,4 @@
-from .services import EmbeddingService, embedding_service
+from .service import EmbeddingService, embedding_service
 
 __all__ = [
     "EmbeddingService",
