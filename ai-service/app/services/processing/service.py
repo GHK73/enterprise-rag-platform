@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 from app.services.processing.extraction import extraction_service
 from app.services.processing.normalization import normalization_service
 from app.services.processing.chunking import chunking_service
+from app.services.embedding import embedding_service
 
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,7 @@ class DocumentProcessingService:
                 "Document normalization completed",
             )
 
-            # 4. Chunk
+           # 4. Chunk
             chunks = chunking_service.chunk(
                 document
             )
@@ -83,7 +84,17 @@ class DocumentProcessingService:
                 len(chunks),
             )
 
-            # 5. Return response
+            # 5. Generate embeddings
+            embedded_chunks = embedding_service.embed_chunks(
+                chunks
+            )
+
+            logger.info(
+                "Generated embeddings for %d chunks",
+                len(embedded_chunks),
+            )
+
+            # 6. Return response
             return ProcessDocumentResponse(
                 success=True,
                 message="Document processed successfully.",
