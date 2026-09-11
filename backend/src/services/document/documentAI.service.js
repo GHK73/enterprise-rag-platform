@@ -15,7 +15,7 @@ async function buildProcessingPayload(document, version) {
 
 async function processDocumentWithAI(payload) {
     const response = await axios.post(
-        `${config.ai.url}/process-document`,
+        `${config.ai.url}/api/v1/process-document`,
         payload
     );
 

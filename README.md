@@ -18,6 +18,8 @@ Unauthorized content must never reach the LLM.
 
 The platform combines enterprise organization management, document lifecycle management, access control, retrieval infrastructure, and AI generation into one system.
 
+Current implementation includes organization management, document versioning, access policies, background document-processing orchestration, and AI-service vector indexing. Authorized retrieval, hybrid search, reranking, and grounded answer generation remain planned work.
+
 ---
 
 # What the Platform Does
@@ -31,8 +33,7 @@ Organizations can:
 * Upload and version enterprise documents
 * Control who can access each document
 * Process and index organizational knowledge
-* Search authorized content using hybrid retrieval
-* Generate grounded answers with source citations
+* Plan for authorized hybrid retrieval and grounded answers with citations
 
 ---
 
@@ -78,10 +79,10 @@ FastAPI AI Service
         ├── Document Processing
         ├── Chunking
         ├── Embeddings
-        └── Reranking
+        └── Version-aware vector indexing
 
 Qdrant
-        └── Vector Retrieval
+        └── Vector storage (authorized retrieval pending)
 
 LLM
         └── Grounded Answer Generation
@@ -91,10 +92,10 @@ Each component has a separate responsibility:
 
 * **PostgreSQL** is the source of truth for application state and authorization.
 * **Amazon S3** stores original and versioned files.
-* **Redis and BullMQ** support caching and asynchronous processing.
+* **Redis and BullMQ** provide the document-processing queue when enabled.
 * **FastAPI** handles AI and document-processing workloads.
-* **Qdrant** stores vectors for semantic retrieval.
-* **The LLM** receives only authorized and validated context.
+* **Qdrant** stores version-aware document vectors; authorized retrieval remains pending.
+* **The LLM** will receive only authorized and validated context when generation is implemented.
 
 ---
 
@@ -138,7 +139,7 @@ The platform also protects shared organization state using transaction-safe muta
 
 # Document and Knowledge Lifecycle
 
-Documents are planned to move through the following lifecycle:
+Documents move through the following backend lifecycle; end-to-end indexing verification is still in progress:
 
 ~~~text
 Upload
@@ -240,6 +241,12 @@ Caching and Background Jobs
 # Project Documentation
 
 Detailed implementation decisions and development progress are maintained separately:
+
+Additional implementation documentation:
+
+- `docs/ai-service.md` — AI-service implementation and handoff details
+- `docs/frontendDevelopment.md` — frontend architecture and development guide
+- `docs/frontendDevelopmentLog.md` — frontend implementation progress
 
 ~~~text
 README.md

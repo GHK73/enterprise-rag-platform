@@ -13,8 +13,8 @@ Prisma schema: `backend/prisma/schema.prisma`
 ```text
 PostgreSQL  → Application and authorization source of truth
 Amazon S3   → Draft and versioned file storage
-Qdrant      → Embeddings and retrieval metadata (planned)
-Redis       → Background jobs and caching (planned)
+Qdrant      → Embeddings and retrieval metadata (vector indexing implemented; authorized retrieval pending)
+Redis       → Background jobs and caching (queue implementation present; deployment verification pending)
 ```
 
 Large files and vectors are not stored in PostgreSQL.

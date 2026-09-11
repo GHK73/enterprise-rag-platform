@@ -21,7 +21,7 @@ async function addDocumentProcessingJob({documentId, versionId}){
 
 async function getProcessingJOb(jobId){
     if(!config.redis.enabled) return null;
-    return await documentProcessingQueue.getJob(jonId);
+    return await documentProcessingQueue.getJob(jobId);
 }
 
 async function removeProcessingJob(jobId){

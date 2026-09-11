@@ -22,8 +22,8 @@ function startDocumentWorker(){
             connection,
         }
     );
-    documentWorker.on("completed",(job,error)=>{
-        console.lot(`Document processing completed: ${job.id}`);
+    documentWorker.on("completed",(job)=>{
+        console.log(`Document processing completed: ${job.id}`);
     });
     documentWorker.on("failed",(job,error)=>{
         console.error(`Document processing failed: ${job?.id}`,error);

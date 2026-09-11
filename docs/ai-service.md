@@ -23,14 +23,14 @@ The AI service lives in `ai-service/`. Its current purpose is to convert an uplo
 - PDF, DOCX, and TXT extraction, with optional Docling enrichment.
 - Content normalization and page-based character chunking.
 - Sentence Transformer embedding generation with CPU fallback and CUDA detection.
-- Qdrant collection creation, payload indexing, deterministic point IDs, upsert, inspection, deletion, and basic vector search methods.
+- Qdrant collection creation, payload indexing, version-aware deterministic point IDs, upsert, inspection, deletion utilities, and basic vector search methods.
 - Backend helper for building a presigned S3 download payload and calling the AI service.
+- Registered document-processing endpoint at `POST /api/v1/process-document`.
 
 ### In Progress
 
-- Document-processing API integration: the route implementation exists, but its router is not registered in `app/api/index.py`.
 - End-to-end verification using real documents, Qdrant, and the backend processing flow.
-- Finalizing document-version behavior: the service has version-level operations, but the active processing flow deletes all vectors for a document before re-indexing.
+- Version-preserving uploads: processing stores points with both `document_id` and `version_id`, so prior versions remain indexed.
 
 ### Remaining
 
@@ -53,8 +53,7 @@ Presigned document URL
   -> create chunks
   -> generate Sentence Transformer embeddings
   -> ensure Qdrant collection and indexes exist
-  -> delete existing vectors for the document
-  -> upsert new Qdrant points
+  -> upsert Qdrant points for the document version
   -> remove temporary files
 ```
 
@@ -67,7 +66,7 @@ ai-service/
   app/
     main.py                         FastAPI app and lifespan
     api/
-      index.py                      `/api/v1` router; currently includes health only
+      index.py                      `/api/v1` router; includes health and processing routes
       health.py                     GET `/api/v1/health`
       processing.py                 POST `/process-document` route definition
     config/
@@ -104,7 +103,7 @@ ai-service/
   test_pdf_extractor.py             PDF extraction tests
 ```
 
-Note: `app/services/processing/__intit__.py` appears to be misspelled, and `app/api/__` is an unusual placeholder file. Check imports before changing package behavior.
+Note: `app/api/__` is an unusual placeholder file. Check imports before changing package behavior.
 
 ## FastAPI Routes
 
@@ -113,15 +112,8 @@ Available now:
 ```text
 GET /
 GET /api/v1/health
-```
-
-Defined but not registered:
-
-```text
 POST /api/v1/process-document
 ```
-
-`app/api/processing.py` defines the processing route, but `app/api/index.py` imports and includes only the health router. Register the processing router before expecting this endpoint to work.
 
 The intended processing request is:
 
@@ -141,9 +133,9 @@ It:
 
 1. Creates a presigned S3 download URL using `getDownloadUrlFromS3(version.storageKey)`.
 2. Builds `document_id`, `version_id`, and `file_url`.
-3. Sends the payload to `${config.ai.url}/process-document`.
+3. Sends the payload to `${config.ai.url}/api/v1/process-document`.
 
-Check the configured `config.ai.url` before integration testing. The backend path and the FastAPI route must agree: the FastAPI route is intended to be under `/api/v1`, while the backend helper currently calls `/process-document` directly.
+`config.ai.url` must contain only the AI service base URL, without a trailing `/api/v1` path.
 
 ## Processing Details
 
@@ -186,11 +178,11 @@ Collection behavior:
 - Creates the collection if missing.
 - Uses cosine distance.
 - Creates payload indexes for `document_id`, `version_id`, and `chunk_id`.
-- Creates deterministic UUIDv5 point IDs from document ID, version ID, and chunk ID.
+- Creates deterministic UUIDv5 point IDs from document ID, version ID, and chunk ID, keeping versions separate.
 - Stores `document_id`, `version_id`, `chunk_id`, `page_number`, `text`, `block_ids`, and metadata in each payload.
 - Supports upsert, unfiltered vector search, version inspection, version deletion, document deletion, and client close.
 
-Important current behavior: `DocumentProcessingService.process_document()` calls `delete_document(document_id)` before upserting. Therefore processing a new version removes all prior indexed vectors for that document. Although the vector store has version-level methods, historical document versions are not currently retained by the processing flow.
+`DocumentProcessingService.process_document()` does not delete vectors before upserting. Each point is stored with its `document_id` and `version_id`, so processing a new version preserves prior indexed versions. Reprocessing an identical document/version/chunk combination overwrites that matching point. The standalone `delete_version()` and `delete_document()` methods are not part of the normal upload flow.
 
 ## Configuration
 
@@ -231,13 +223,12 @@ Main dependencies include FastAPI, httpx, PyMuPDF, python-docx, Sentence Transfo
 
 ## Current Gaps and Recommended Next Work
 
-1. Register `processing_router` in `app/api/index.py` and align its route with the backend URL.
-2. Add an end-to-end test using a local or test Qdrant collection and a real sample document.
-3. Decide version semantics. Use `delete_version(document_id, version_id)` if historical indexed versions must remain queryable.
-4. Add processing status reporting, retries, structured error responses, and metrics.
-5. Create a retrieval endpoint that accepts only backend-authorized document/version filters and passes those filters to Qdrant.
-6. Add hybrid search and reranking after filtered retrieval works.
-7. Add grounded LLM generation, citations, and evaluation only after authorization-safe retrieval is complete.
+1. Add an end-to-end test using a local or test Qdrant collection and a real sample document.
+2. Define same-version reprocessing semantics. Because normal processing does not delete vectors, chunks that are no longer produced by a reprocessed version remain indexed unless an explicit cleanup workflow is introduced.
+3. Add processing status reporting, retries, structured error responses, and metrics.
+4. Create a retrieval endpoint that accepts only backend-authorized document/version filters and passes those filters to Qdrant.
+5. Add hybrid search and reranking after filtered retrieval works.
+6. Add grounded LLM generation, citations, and evaluation only after authorization-safe retrieval is complete.
 
 ## Constraints for Future Changes
 

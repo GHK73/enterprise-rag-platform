@@ -71,35 +71,6 @@ class QdrantVectorStore:
             )
 
         await self._ensure_payload_indexes()
-      
-        exists = await self.client.collection_exists(
-            collection_name=self.collection_name,
-        )
-
-        if exists:
-            logger.info(
-                "Qdrant collection already exists: %s",
-                self.collection_name,
-            )
-            return
-
-        logger.info(
-            "Creating Qdrant collection: %s",
-            self.collection_name,
-        )
-
-        await self.client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(
-                size=self.vector_size,
-                distance=Distance.COSINE,
-            ),
-        )
-
-        logger.info(
-            "Qdrant collection created: %s",
-            self.collection_name,
-        )
 
     async def _ensure_payload_indexes(self) -> None:
    

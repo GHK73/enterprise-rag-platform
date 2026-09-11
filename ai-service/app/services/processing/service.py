@@ -102,10 +102,8 @@ class DocumentProcessingService:
             # 6. Ensure Qdrant collection exists
             await qdrant_vector_store.ensure_collection()
 
-            await qdrant_vector_store.delete_document(
-                document_id=request.document_id
-            )
-
+            # Point IDs include the document, version, and chunk IDs, so an
+            # upload preserves prior versions and only replaces matching points.
             await qdrant_vector_store.upsert_chunks(
                 document_id=request.document_id,
                 version_id=request.version_id,

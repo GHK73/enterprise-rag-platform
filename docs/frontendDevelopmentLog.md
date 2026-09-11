@@ -124,13 +124,13 @@ Implemented:
 - Delete workflow
 - Restore workflow
 - Permanent cleanup workflow
+- Queued, processing, and failed-state messages
+- Access history display
 - Loading and error states
 
 Remaining:
 
-- Processing status visualization
-- Failed processing UI
-- Access history shortcut
+- Real-time processing-status updates
 
 ---
 
@@ -162,10 +162,10 @@ Remaining:
 Implemented:
 
 - API integration
+- Access history table
 
 Remaining:
 
-- History table
 - Timeline view
 - Actor information
 - Policy change details
@@ -344,7 +344,7 @@ After completing these workflows, development will continue with **Phase 6 — D
 | Document API Layer | ✅ Complete |
 | Document Library | ~90% |
 | Draft Upload Flow | ~85% |
-| Document Details | ~95% |
+| Document Details | ~100% |
 | Access Management | ~75% |
 | Access History | ~25% |
 | Deletion & Recovery | ~80% |
@@ -353,4 +353,4 @@ After completing these workflows, development will continue with **Phase 6 — D
 
 # Current Focus
 
-The frontend is focused on completing the remaining document management workflows before beginning **Phase 6 — Document Processing UI**, which will introduce real-time processing status, queue tracking, and document processing visualization.
+The frontend is focused on completing the remaining document-management workflows before beginning **Phase 6 — Document Processing UI**, which will introduce real-time status updates, queue tracking, retry controls, and richer processing visualization.

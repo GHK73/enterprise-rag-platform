@@ -535,20 +535,20 @@ PATCH   /api/v1/invitations/:invitationId/revoke
 
 ### Backend Infrastructure
 
-- Redis queue integration
-- BullMQ workers
-- Processing dispatcher
+- Redis queue integration (implemented; deployment verification pending)
+- BullMQ workers (implemented; deployment verification pending)
+- Processing dispatcher (implemented)
 - Processing retries
 - Processing status tracking
 - Dead-letter queue
 
 ### AI Service
 
-- FastAPI processing service
-- Document extraction
+- FastAPI processing service (implemented)
+- Document extraction (implemented)
 - OCR support
-- Chunk generation
-- Embedding generation
+- Chunk generation (implemented)
+- Embedding generation and Qdrant indexing (implemented)
 - Processing response handling
 
 ---
@@ -557,9 +557,9 @@ PATCH   /api/v1/invitations/:invitationId/revoke
 
 ### Vector Indexing
 
-- Qdrant integration
-- Incremental indexing
-- Document re-indexing
+- Qdrant integration (implemented for version-aware indexing)
+- Authorized retrieval filters
+- Document re-indexing semantics
 - Metadata synchronization
 
 ### Retrieval
@@ -754,7 +754,7 @@ Document Status Update
 
 ### Backend
 
-- Complete BullMQ integration
+- Verify BullMQ integration in the deployment environment
 - Worker retry handling
 - Dead-letter queue
 - Processing metrics
@@ -762,14 +762,12 @@ Document Status Update
 
 ### AI Service
 
-- FastAPI project setup
-- AI service configuration
-- Health endpoint
-- Document processing endpoint
+- End-to-end AI-service processing verification with a test Qdrant collection
+- Same-version reprocessing policy
 
 ```text
-POST /process-document
-GET  /health
+POST /api/v1/process-document
+GET  /api/v1/health
 ```
 
 ### Processing Pipeline
@@ -802,4 +800,4 @@ FastAPI
 Qdrant
 ```
 
-Once the AI service is operational, the backend processing pipeline will be complete and Phase 7 (Retrieval Infrastructure) can begin.
+The processing pipeline is implemented but requires end-to-end verification. Phase 7 can begin after authorized retrieval filtering is designed and tested.

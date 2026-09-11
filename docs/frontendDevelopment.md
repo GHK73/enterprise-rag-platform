@@ -176,7 +176,7 @@ Logged In
 
 ## Application Layout
 
-Protected application pages should share consistent navigation and content structure.
+Protected application pages should share consistent navigation and content structure. The current implementation uses `PublicLayout` for both public and protected route branches; it supplies the shared `Navbar` and page outlet. A separate `ApplicationLayout` has not been introduced yet.
 
 Current protected areas include:
 
@@ -185,12 +185,12 @@ Dashboard
 Organization
 Permissions
 Invitations
+Documents
 ```
 
 Future protected areas include:
 
 ```text
-Documents
 Retrieval
 Analytics
 Settings
@@ -332,9 +332,13 @@ Current examples:
 /organization
 /permissions
 /invitations
+/documents
+/documents/new
+/documents/:documentId/upload
+/documents/:documentId
 ```
 
-Future protected routes should be added only when implementation begins.
+Document routes are implemented. Retrieval, analytics, and settings routes should be added only when their implementation begins.
 
 ---
 
@@ -648,6 +652,8 @@ Backend Document APIs Ready
 → Access History
 → Download and Delete Flows
 ```
+
+The document-management UI now implements this workflow, including version history, document access, access history, restore, and permanent-cleanup actions. Document processing status and retrieval UI remain future work.
 
 Do not build UI against speculative API contracts.
 
