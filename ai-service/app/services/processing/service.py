@@ -1,6 +1,7 @@
 # ai-sevice/app/services/procesing.service.py
-
 import logging
+from pathlib import Path
+from urllib.parse import urlparse
 
 from app.schemas.processing import (
     ProcessDocumentRequest,
@@ -9,13 +10,11 @@ from app.schemas.processing import (
 
 from .downloader import downloader_service
 from .temp_storage import temporary_storage
-from pathlib import Path
-from urllib.parse import urlparse
-
 from app.services.processing.extraction import extraction_service
 from app.services.processing.normalization import normalization_service
 from app.services.processing.chunking import chunking_service
 from app.services.embedding import embedding_service
+from app.services.vectorstore import qdrant_vector_store
 
 
 logger = logging.getLogger(__name__)
@@ -37,7 +36,11 @@ class DocumentProcessingService:
         workspace = temporary_storage.create_workspace()
 
         try:
-            url_path = Path(urlparse(str(request.file_url)).path)
+            # 1. Download
+            url_path = Path(
+                urlparse(str(request.file_url)).path
+            )
+
             suffix = url_path.suffix.lower()
 
             if not suffix:
@@ -74,7 +77,7 @@ class DocumentProcessingService:
                 "Document normalization completed",
             )
 
-           # 4. Chunk
+            # 4. Chunk
             chunks = chunking_service.chunk(
                 document
             )
@@ -85,8 +88,10 @@ class DocumentProcessingService:
             )
 
             # 5. Generate embeddings
-            embedded_chunks = embedding_service.embed_chunks(
-                chunks
+            embedded_chunks = (
+                embedding_service.embed_chunks(
+                    chunks
+                )
             )
 
             logger.info(
@@ -94,7 +99,22 @@ class DocumentProcessingService:
                 len(embedded_chunks),
             )
 
-            # 6. Return response
+            # 6. Ensure Qdrant collection exists
+            await qdrant_vector_store.ensure_collection()
+
+            # 7. Index embeddings in Qdrant Cloud
+            await qdrant_vector_store.upsert_chunks(
+                document_id=request.document_id,
+                version_id=request.version_id,
+                embedded_chunks=embedded_chunks,
+            )
+
+            logger.info(
+                "Indexed %d chunks into Qdrant Cloud",
+                len(embedded_chunks),
+            )
+
+            # 8. Return response
             return ProcessDocumentResponse(
                 success=True,
                 message="Document processed successfully.",
@@ -104,14 +124,15 @@ class DocumentProcessingService:
 
         except Exception:
             logger.exception(
-                "Document processing failed: document=%s version=%s",
+                "Document processing failed: "
+                "document=%s version=%s",
                 request.document_id,
                 request.version_id,
             )
             raise
 
         finally:
-            # 6. Cleanup
+            # 9. Cleanup
             temporary_storage.cleanup(
                 workspace
             )

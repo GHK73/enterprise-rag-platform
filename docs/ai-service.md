@@ -3,7 +3,7 @@ Implementation progress for the Enterprise RAG Platform AI Service.
 Backend reference: [`../backend/docs/DEVELOPMENT.md`](../backend/docs/DEVELOPMENT.md)
 ---
 # Current Status
-**Active Phase:** Phase 2 — Document Processing
+**Active Phase:** Phase 7 — Vector Indexing
 | Area | Status |
 | --- | --- |
 | FastAPI Foundation | ✅ |
@@ -16,8 +16,8 @@ Backend reference: [`../backend/docs/DEVELOPMENT.md`](../backend/docs/DEVELOPMEN
 | Document Normalization | 🚧 |
 | Chunk Generation | 🚧 |
 | OCR Support | ⏳ |
-| Embedding Generation | ⏳ |
-| Vector Indexing | ⏳ |
+| Embedding Generation | ✅ |
+| Vector Indexing | 🚧 |
 | Retrieval Pipeline | ⏳ |
 | RAG Pipeline | ⏳ |
 ---
@@ -40,40 +40,40 @@ Core responsibilities include:
 ---
 # High-Level Architecture
 ```text
-                    Enterprise RAG Platform
-                 +---------------------------+
-                 |      Node.js Backend      |
-                 +---------------------------+
-                           │
-          Authentication / Authorization
-                           │
-                Document & Permission APIs
-                           │
-                           ▼
-                 +---------------------------+
-                 |     FastAPI AI Service    |
-                 +---------------------------+
-                           │
-         ┌─────────────────┼─────────────────┐
-         │                 │                 │
-         ▼                 ▼                 ▼
-   Document          Embedding         Retrieval
-   Processing         Generation        Pipeline
-         │                 │                 │
-         └─────────────────┼─────────────────┘
-                           │
-                           ▼
-                      Qdrant Vector DB
-                           │
-                           ▼
-                      Grounded Response
+                    Enterprise RAG Platform
+                 +---------------------------+
+                 |      Node.js Backend      |
+                 +---------------------------+
+                              │
+                  Authentication / Authorization
+                              │
+                     Document & Permission APIs
+                              │
+                              ▼
+                 +---------------------------+
+                 |     FastAPI AI Service    |
+                 +---------------------------+
+                              │
+             ┌────────────────┼────────────────┐
+             │                │                │
+             ▼                ▼                ▼
+       Document          Embedding         Retrieval
+       Processing         Generation        Pipeline
+             │                │                │
+             └────────────────┼────────────────┘
+                              │
+                              ▼
+                       Qdrant Cloud
+                              │
+                              ▼
+                       Grounded Response
 ```
 ---
 # Local Development
 ```bash
 cd ai-service
 python -m venv venv
-venv\Scripts\activate
+venv\Scriptsctivate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
@@ -88,8 +88,9 @@ uvicorn app.main:app --reload
 | PORT | Server port |
 | LOG_LEVEL | Logging level |
 | EMBEDDING_MODEL | Sentence Transformer model |
-| QDRANT_URL | Qdrant server URL |
-| QDRANT_API_KEY | Qdrant authentication |
+| QDRANT_URL | Qdrant Cloud cluster URL |
+| QDRANT_API_KEY | Qdrant Cloud authentication |
+| QDRANT_COLLECTION | Qdrant Cloud collection name |
 ---
 # Development Roadmap
 ## Phase 1 — AI Service Foundation ✅
@@ -117,10 +118,16 @@ Build the document processing pipeline responsible for preparing uploaded docume
 - Document download pipeline
 - Processing service
 - Pipeline orchestration
+- Extraction integration
+- Normalization integration
+- Chunking integration
+- Embedding integration
+- Qdrant indexing integration
 ### In Progress
 - Processing status management
 - Retry handling
 - Processing metrics
+- End-to-end processing verification
 ---
 ## Phase 3 — Content Extraction 🚧
 ### Goal
@@ -165,6 +172,8 @@ Convert extracted content into retrieval-ready chunks while preserving document 
 - Configurable chunk size
 - Chunk overlap
 - Chunk metadata
+- Deterministic chunk IDs
+- Oversized chunk handling
 ### Planned
 - Recursive chunking
 - Section-aware chunking
@@ -173,30 +182,99 @@ Convert extracted content into retrieval-ready chunks while preserving document 
 - Token-aware chunking
 - Semantic chunk optimization
 ---
-## Phase 6 — Embedding Generation ⏳
+## Phase 6 — Embedding Generation ✅
 ### Goal
 Generate high-quality vector embeddings from document chunks for semantic search.
-### Planned
+### Completed
 - Sentence Transformers integration
+- `all-MiniLM-L6-v2` embedding model
 - Batch embedding generation
-- GPU acceleration
+- GPU detection
 - CPU fallback
+- Normalized embeddings
+- Automatic embedding dimension detection
+- Chunk embedding generation
+- Embedding integration with document processing
+### Current Configuration
+```text
+Model: all-MiniLM-L6-v2
+Vector Size: 384
+Normalization: Enabled
+```
+### Planned Improvements
 - Embedding caching
-- Metadata preservation
 - Batch processing optimization
+- Additional embedding model evaluation
+- Embedding performance monitoring
 ---
-## Phase 7 — Vector Indexing ⏳
+## Phase 7 — Vector Indexing 🚧
 ### Goal
-Store document embeddings in Qdrant for efficient semantic retrieval.
-### Planned
-- Collection management
-- Document indexing
+Store document embeddings in Qdrant Cloud for efficient semantic retrieval.
+### Completed
+- Qdrant Cloud configuration
+- Qdrant Cloud authentication
+- Async Qdrant client integration
+- Collection existence checking
+- Collection creation
+- Dynamic vector dimension configuration
+- Cosine similarity configuration
+- Deterministic Qdrant point IDs
+- Chunk payload construction
+- Batch upsert implementation
+- Qdrant Cloud connection verification
+- Vector search implementation
+- Integration with document processing pipeline
+### Current Qdrant Structure
+Each indexed chunk stores:
+```text
+Point
+├── Vector
+└── Payload
+    ├── document_id
+    ├── version_id
+    ├── chunk_id
+    ├── page_number
+    ├── text
+    ├── block_ids
+    └── metadata
+```
+### Current Vector Configuration
+```text
+Database: Qdrant Cloud
+Collection: QDRANT_COLLECTION
+Embedding Model: all-MiniLM-L6-v2
+Vector Size: 384
+Distance: COSINE
+```
+### Current Indexing Flow
+```text
+Document
+   ↓
+Download
+   ↓
+Extraction
+   ↓
+Normalization
+   ↓
+Chunking
+   ↓
+Embedding Generation
+   ↓
+Qdrant Cloud
+   ↓
+Batch Upsert
+```
+### Remaining Work
+- End-to-end indexing verification with a real document
+- Verify stored points and payloads
+- Verify vector search against indexed chunks
 - Incremental indexing
 - Re-indexing support
 - Metadata synchronization
 - Version replacement
-- Batch upserts
-- Collection optimization
+- Deleted document handling
+- Indexing failure recovery
+- Batch and collection optimization
 ---
 ## Phase 8 — Retrieval Pipeline ⏳
 ### Goal
@@ -240,54 +318,54 @@ Measure system quality, retrieval accuracy, and production performance.
 # API Endpoints
 ## Health
 ```text
-GET    /api/v1/health
+GET    /api/v1/health
 ```
 ## Document Processing
 ```text
-POST   /api/v1/process-document
-GET    /api/v1/process/:documentId
+POST   /api/v1/process-document
+GET    /api/v1/process/:documentId
 ```
 ## Retrieval
 ```text
-POST   /api/v1/retrieve
+POST   /api/v1/retrieve
 ```
 ## Generation
 ```text
-POST   /api/v1/generate
+POST   /api/v1/generate
 ```
 ---
 # Processing Workflow
 ```text
 Upload Document
-        │
-        ▼
+        │
+        ▼
 Validation
-        │
-        ▼
+        │
+        ▼
 Download
-        │
-        ▼
+        │
+        ▼
 Content Extraction
-        │
-        ▼
+        │
+        ▼
 Normalization
-        │
-        ▼
+        │
+        ▼
 Chunk Generation
-        │
-        ▼
+        │
+        ▼
 Embedding Generation
-        │
-        ▼
-Vector Indexing (Qdrant)
-        │
-        ▼
+        │
+        ▼
+Vector Indexing (Qdrant Cloud)
+        │
+        ▼
 Semantic Retrieval
-        │
-        ▼
+        │
+        ▼
 Prompt Construction
-        │
-        ▼
+        │
+        ▼
 LLM Response
 ```
 ---
@@ -296,55 +374,56 @@ LLM Response
 The AI Service never authenticates users or determines document permissions.
 ```text
 Client
-   │
-   ▼
+   │
+   ▼
 Backend Authentication
-   │
+   │
+   ▼
 Backend Authorization
-   │
+   │
+   ▼
 Authorized Documents
-   │
-   ▼
+   │
+   ▼
 AI Service
 ```
 Only documents explicitly authorized by the backend are processed or retrieved.
----
+The backend remains the source of truth for authorization. Qdrant is only used for vector indexing and retrieval infrastructure.
 ### Stateless Architecture
 The AI Service remains stateless.
 Persistent data is stored externally.
 | Component | Storage |
 | --- | --- |
 | Application Data | PostgreSQL |
-| Vector Embeddings | Qdrant |
+| Vector Embeddings | Qdrant Cloud |
 | Document Storage | Backend / Object Storage |
----
 ### Modular Design
 Each processing stage is isolated and independently replaceable.
 ```text
 Downloader
-      │
-      ▼
+     │
+     ▼
 Extractors
-      │
-      ▼
+     │
+     ▼
 Normalization
-      │
-      ▼
+     │
+     ▼
 Chunking
-      │
-      ▼
+     │
+     ▼
 Embeddings
-      │
-      ▼
+     │
+     ▼
 Vector Indexing
-      │
-      ▼
+     │
+     ▼
 Retrieval
-      │
-      ▼
+     │
+     ▼
 Generation
 ```
-This modular architecture allows individual components to evolve without affecting the overall pipeline.
+This modular architecture allows individual components to evolve without affecting the overall system.
 ---
 # Current Progress
 ## Completed
@@ -354,30 +433,38 @@ This modular architecture allows individual components to evolve without affecti
 - Health endpoint
 - Document processing API
 - Download pipeline
-- Base extractor architecture
-- PDF extractor
-- DOCX extractor
-- TXT extractor
-- Table extraction
-- Docling integration
-- Extraction orchestration
+- Content extraction components
 - Content normalization
 - Chunk generation
----
+- Deterministic chunk IDs
+- Embedding generation
+- Sentence Transformer integration
+- Batch embedding generation
+- GPU / CPU device selection
+- Normalized embeddings
+- Qdrant Cloud configuration
+- Qdrant Cloud connection
+- Qdrant collection management
+- Qdrant chunk indexing implementation
+- Qdrant vector search implementation
+- Embedding-to-Qdrant processing integration
 ## Current Focus
-- Complete content extraction
-- Improve OCR support
-- Enhance structured document extraction
-- Prepare embedding pipeline
----
+- End-to-end Qdrant indexing verification
+- Verify stored vectors and payloads
+- Verify vector search using real document chunks
+- Complete remaining Phase 7 indexing features
+- Prepare permission-aware retrieval
 ## Upcoming Milestones
-1. Embedding generation
-2. Qdrant integration
-3. Vector indexing
+1. End-to-end Qdrant indexing verification
+2. Incremental indexing
+3. Re-indexing and version replacement
 4. Retrieval pipeline
-5. Reranking
-6. Retrieval-Augmented Generation
-7. Evaluation & monitoring
+5. Permission-aware retrieval
+6. Hybrid retrieval
+7. Reranking
+8. Retrieval-Augmented Generation
+9. Evaluation and monitoring
 ---
 # Long-Term Vision
-The Enterprise RAG AI Service is designed as a modular, production-ready AI platform capable of processing large-scale enterprise knowledge bases while supporting secure, permission-aware semantic retrieval and grounded response generation. Each phase builds incrementally on the previous one, enabling independent evolution of extraction, chunking, embeddings, indexing, retrieval, and generation without requiring architectural changes.
+The Enterprise RAG AI Service is designed as a modular, production-ready AI platform capable of processing large-scale enterprise knowledge bases while supporting secure, permission-aware semantic retrieval and grounded response generation.
+Each phase builds incrementally on the previous one, enabling independent evolution of extraction, chunking, embeddings, indexing, retrieval, and generation without requiring architectural changes.
