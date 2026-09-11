@@ -27,36 +27,44 @@ async function markProcessingFailed(documentId,error) {
     return await updateProcessingStatus(documentId,"FAILED",error?.message ?? "Document processing failed.");
 }
 
-async function processDocument({documentId,versionId,}) {
+async function processDocument({ documentId, versionId }) {
     try {
-        await updateProcessingStatus(documentId,"PROCESSING");
+        await updateProcessingStatus(documentId, "PROCESSING");
 
-        const document =await prisma.document.findUnique({
-                where: {id: documentId,},
-            });
+        const document = await prisma.document.findUnique({
+            where: {
+                id: documentId,
+            },
+        });
 
-        const version =await prisma.documentVersion.findUnique({
-                where: {id: versionId,},
-            });
+        const version = await prisma.documentVersion.findUnique({
+            where: {
+                id: versionId,
+            },
+        });
 
         if (!document || !version) {
-            throw new ApiError(404,"Document or version not found.");
+            throw new ApiError(
+                404,
+                "Document or version not found."
+            );
         }
 
-        const payload =await buildProcessingPayload({
-                document,
-                version,
-            });
+        const payload = await buildProcessingPayload(
+            document,
+            version
+        );
 
-        const response =await processDocumentWithAI(payload);
+        const response = await processDocumentWithAI(
+            payload
+        );
+
         await handleProcessingSuccess(response);
+
         await markProcessingReady(documentId);
     } catch (error) {
         await handleProcessingFailure(error);
-        await markProcessingFailed(
-            documentId,
-            error
-        );
+        await markProcessingFailed(documentId, error);
         throw error;
     }
 }

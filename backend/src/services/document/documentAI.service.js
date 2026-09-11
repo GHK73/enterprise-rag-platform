@@ -1,30 +1,19 @@
-// backend/src/services/document/documentAI.service.js
-
 import axios from "axios";
+
 import config from "../../config/config.js";
+import { getDownloadUrlFromS3 } from "../s3.service.js";
 
-async function buildProcessingPayload(document,version){
+async function buildProcessingPayload(document, version) {
+    const fileUrl = await getDownloadUrlFromS3(version.storageKey);
+
     return {
-        documentId:document.id,
-        versionId:version.id,
-
-        organizationId:document.organizationId,
-        classification:document.classification,
-
-        storage:{
-            bucket:version.storageBucket,
-            key:version.storageKey,
-        },
+        document_id: document.id,
+        version_id: version.id,
+        file_url: fileUrl,
     };
 }
 
-async function processDocumentWithAI(document,version){
-    const payload =
-        await buildProcessingPayload(
-            document,
-            version
-        );
-
+async function processDocumentWithAI(payload) {
     const response = await axios.post(
         `${config.ai.url}/process-document`,
         payload
@@ -33,15 +22,15 @@ async function processDocumentWithAI(document,version){
     return response.data;
 }
 
-async function handleProcessingSuccess(response){
+async function handleProcessingSuccess(response) {
     return response;
 }
 
-async function handleProcessingFailure(error){
+async function handleProcessingFailure(error) {
     throw error;
 }
 
-export{
+export {
     buildProcessingPayload,
     processDocumentWithAI,
     handleProcessingSuccess,

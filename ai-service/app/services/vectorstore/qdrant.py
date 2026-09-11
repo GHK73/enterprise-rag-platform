@@ -6,6 +6,10 @@ from uuid import UUID, uuid5
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PayloadSchemaType,
     PointStruct,
     VectorParams,
 )
@@ -34,9 +38,40 @@ class QdrantVectorStore:
 
     async def ensure_collection(self) -> None:
         """
-        Ensure the Qdrant Cloud collection exists.
+        Ensure the Qdrant Cloud collection exists and contains
+        the payload indexes required for document filtering.
         """
 
+        exists = await self.client.collection_exists(
+            collection_name=self.collection_name,
+        )
+
+        if not exists:
+            logger.info(
+                "Creating Qdrant collection: %s",
+                self.collection_name,
+            )
+
+            await self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=self.vector_size,
+                    distance=Distance.COSINE,
+                ),
+            )
+
+            logger.info(
+                "Qdrant collection created: %s",
+                self.collection_name,
+            )
+        else:
+            logger.info(
+                "Qdrant collection already exists: %s",
+                self.collection_name,
+            )
+
+        await self._ensure_payload_indexes()
+      
         exists = await self.client.collection_exists(
             collection_name=self.collection_name,
         )
@@ -65,6 +100,50 @@ class QdrantVectorStore:
             "Qdrant collection created: %s",
             self.collection_name,
         )
+
+    async def _ensure_payload_indexes(self) -> None:
+   
+        payload_indexes = {
+            "document_id": PayloadSchemaType.KEYWORD,
+            "version_id": PayloadSchemaType.KEYWORD,
+            "chunk_id": PayloadSchemaType.KEYWORD,
+        }
+
+        collection_info = (
+            await self.client.get_collection(
+                collection_name=self.collection_name,
+            )
+        )
+
+        existing_indexes = (
+            collection_info.payload_schema
+        )
+
+        for field_name, field_schema in payload_indexes.items():
+
+            if field_name in existing_indexes:
+                logger.info(
+                    "Qdrant payload index already exists: %s",
+                    field_name,
+                )
+                continue
+
+            logger.info(
+                "Creating Qdrant payload index: %s",
+                field_name,
+            )
+
+            await self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name=field_name,
+                field_schema=field_schema,
+                wait=True,
+            )
+
+            logger.info(
+                "Qdrant payload index created: %s",
+                field_name,
+            )
 
     async def upsert_chunks(
         self,
@@ -127,6 +206,183 @@ class QdrantVectorStore:
             len(points),
         )
 
+    async def get_version_points(
+        self,
+        document_id: str,
+        version_id: str,
+        limit: int = 100,
+    ) -> list[dict]:
+           
+
+        if not document_id:
+            raise ValueError(
+                "Document ID cannot be empty."
+            )
+
+        if not version_id:
+            raise ValueError(
+                "Version ID cannot be empty."
+            )
+
+        if limit <= 0:
+            raise ValueError(
+                "Limit must be greater than 0."
+            )
+
+        result = await self.client.scroll(
+            collection_name=self.collection_name,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(
+                            value=document_id,
+                        ),
+                    ),
+                    FieldCondition(
+                        key="version_id",
+                        match=MatchValue(
+                            value=version_id,
+                        ),
+                    ),
+                ],
+            ),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        points, _ = result
+
+        indexed_chunks: list[dict] = []
+
+        for point in points:
+            payload = point.payload or {}
+
+            indexed_chunks.append(
+                {
+                    "point_id": str(point.id),
+                    "chunk_id": payload.get(
+                        "chunk_id",
+                        "",
+                    ),
+                    "document_id": payload.get(
+                        "document_id",
+                        "",
+                    ),
+                    "version_id": payload.get(
+                        "version_id",
+                        "",
+                    ),
+                    "page_number": payload.get(
+                        "page_number",
+                        0,
+                    ),
+                    "text": payload.get(
+                        "text",
+                        "",
+                    ),
+                    "block_ids": payload.get(
+                        "block_ids",
+                        [],
+                    ),
+                    "metadata": payload.get(
+                        "metadata",
+                        {},
+                    ),
+                }
+            )
+
+        logger.info(
+            "Retrieved indexed chunks: "
+            "document=%s version=%s count=%d",
+            document_id,
+            version_id,
+            len(indexed_chunks),
+        )
+
+        return indexed_chunks
+
+    async def delete_version(
+        self,
+        document_id: str,
+        version_id: str,
+    ) -> None:
+        """
+        Delete all indexed chunks belonging to a document version.
+        """
+
+        if not document_id:
+            raise ValueError(
+                "Document ID cannot be empty."
+            )
+
+        if not version_id:
+            raise ValueError(
+                "Version ID cannot be empty."
+            )
+
+        await self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(
+                            value=document_id,
+                        ),
+                    ),
+                    FieldCondition(
+                        key="version_id",
+                        match=MatchValue(
+                            value=version_id,
+                        ),
+                    ),
+                ],
+            ),
+            wait=True,
+        )
+
+        logger.info(
+            "Deleted indexed version: "
+            "document=%s version=%s",
+            document_id,
+            version_id,
+        )
+
+    async def delete_document(
+        self,
+        document_id: str,
+    ) -> None:
+        """
+        Delete all indexed chunks belonging to a document.
+        """
+
+        if not document_id:
+            raise ValueError(
+                "Document ID cannot be empty."
+            )
+
+        await self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(
+                            value=document_id,
+                        ),
+                    ),
+                ],
+            ),
+            wait=True,
+        )
+
+        logger.info(
+            "Deleted all indexed chunks for document=%s",
+            document_id,
+        )
+    
     async def search(
         self,
         query_vector: list[float],

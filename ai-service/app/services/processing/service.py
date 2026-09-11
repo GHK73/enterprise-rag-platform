@@ -102,12 +102,15 @@ class DocumentProcessingService:
             # 6. Ensure Qdrant collection exists
             await qdrant_vector_store.ensure_collection()
 
-            # 7. Index embeddings in Qdrant Cloud
+            await qdrant_vector_store.delete_document(
+                document_id=request.document_id
+            )
+
             await qdrant_vector_store.upsert_chunks(
                 document_id=request.document_id,
                 version_id=request.version_id,
                 embedded_chunks=embedded_chunks,
-            )
+)
 
             logger.info(
                 "Indexed %d chunks into Qdrant Cloud",

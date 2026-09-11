@@ -33,7 +33,7 @@ const validDocumentTransitions = {
     SUBMITTED:["QUEUED"],
     QUEUED:["PROCESSING"],
     PROCESSING:["READY","FAILED"],
-    READY:["DELETED"],
+    READY: ["QUEUED", "DELETED"],
 };
 
 const isDraftExpired = (document)=>{
@@ -686,11 +686,11 @@ export const getDocumentVersionById = async(
     return version;
 };
 
-export const uploadDocumentVersion = async(
+export const uploadDocumentVersion = async (
     user,
     documentId,
     file
-)=>{
+) => {
     validateFile(file);
 
     const document = await getActiveDocument(
@@ -698,7 +698,7 @@ export const uploadDocumentVersion = async(
         documentId
     );
 
-    if(document.status !== "READY"){
+    if (document.status !== "READY") {
         throw new ApiError(
             400,
             "New versions can only be uploaded for published documents."
@@ -713,21 +713,20 @@ export const uploadDocumentVersion = async(
 
     let uploadedObject = null;
 
-    try{
+    try {
+        uploadedObject = await uploadFileToS3(
+            file,
+            objectKey
+        );
 
-        uploadedObject =
-            await uploadFileToS3(
-                file,
-                objectKey
-            );
-
-        return await prisma.$transaction(async(tx)=>{
-
+        const version = await prisma.$transaction(async (tx) => {
             const latestVersion =
                 await tx.documentVersion.findFirst({
-                    where:{documentId,},
-                    orderBy:{
-                        versionNumber:"desc",
+                    where: {
+                        documentId,
+                    },
+                    orderBy: {
+                        versionNumber: "desc",
                     },
                 });
 
@@ -738,9 +737,8 @@ export const uploadDocumentVersion = async(
 
             const version =
                 await tx.documentVersion.create({
-                    data:{
-                        id:versionId,
-
+                    data: {
+                        id: versionId,
                         documentId,
 
                         versionNumber,
@@ -769,26 +767,34 @@ export const uploadDocumentVersion = async(
                 });
 
             await tx.document.update({
-                where:{id:documentId,},
-                data:{
-                    currentVersionId:
-                        version.id,
-                    updatedAt:new Date(),
+                where: {
+                    id: documentId,
+                },
+                data: {
+                    currentVersionId: version.id,
+                    status: "QUEUED",
+                    processingError: null,
+                    updatedAt: new Date(),
                 },
             });
 
             return version;
-
         });
 
-    }catch(error){
+        await dispatchDocumentProcessing({
+            documentId,
+            versionId: version.id,
+        });
 
-        if(uploadedObject){
-            try{
+        return version;
+
+    } catch (error) {
+        if (uploadedObject) {
+            try {
                 await deleteFileFromS3(
                     objectKey
                 );
-            }catch{}
+            } catch {}
         }
 
         throw error;
