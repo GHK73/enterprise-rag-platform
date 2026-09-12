@@ -1,162 +1,154 @@
 # ai-service/app/services/extractors/base.py
 
 from __future__ import annotations
-
 import logging
-import mimetypes
-import os
-import time
-import uuid
-from abc import ABC, abstractmethod
 from pathlib import Path
+import camelot
+import pdfplumber
 
-from app.schemas.document import Document
-
+from app.schemas.document import BlockType, TableBlock
+from app.services.extractors.base import BaseExtractor
 
 logger = logging.getLogger(__name__)
 
 
-class BaseExtractor(ABC):
-    """
-    Base class for all document extractors.
+class TableExtractor(BaseExtractor):
+    SUPPORTED_EXTENSIONS = {".pdf"}
 
-    Every extractor must inherit from this class and implement
-    the extract() method.
+    def extract(
+        self,
+        file_path: str | Path,
+        page_number: int | None = None,
+    ) -> list[TableBlock]:
+        path = self.validate_file(file_path)
 
-    Responsibilities:
-        - File validation
-        - Extension validation
-        - Logging
-        - Timing
-        - Utility helpers
-    """
+        if page_number is not None and page_number < 1:
+            raise ValueError("page_number must be >= 1")
 
-    #: Supported file extensions.
-    SUPPORTED_EXTENSIONS: set[str] = set()
+        tables = self._extract_with_camelot(path, page_number)
 
-    def __init__(self) -> None:
-        self.logger = logger
+        if tables:
+            return tables
 
-    ###########################################################################
-    # Public API
-    ###########################################################################
+        return self._extract_with_pdfplumber(path, page_number)
 
-    @abstractmethod
-    def extract(self, file_path: str | Path) -> Document:
-        """
-        Extract a document.
+    def _extract_with_camelot(
+        self,
+        file_path: str | Path,
+        page_number: int | None,
+    ) -> list[TableBlock]:
+        blocks: list[TableBlock] = []
 
-        Parameters
-        ----------
-        file_path : str | Path
+        try:
+            pages = "all" if page_number is None else str(page_number)
 
-        Returns
-        -------
-        Document
-        """
-        raise NotImplementedError
-
-    ###########################################################################
-    # Validation
-    ###########################################################################
-
-    def validate_file(self, file_path: str | Path) -> Path:
-        """
-        Validate input file before extraction.
-        """
-
-        path = Path(file_path)
-
-        if not path.exists():
-            raise FileNotFoundError(f"File does not exist: {path}")
-
-        if not path.is_file():
-            raise ValueError(f"Not a file: {path}")
-
-        if path.stat().st_size == 0:
-            raise ValueError("Input file is empty.")
-
-        extension = path.suffix.lower()
-
-        if extension not in self.SUPPORTED_EXTENSIONS:
-            raise ValueError(
-                f"Unsupported file type '{extension}'. "
-                f"Supported: {sorted(self.SUPPORTED_EXTENSIONS)}"
+            tables = camelot.read_pdf(
+                str(file_path),
+                pages=pages,
+                flavor="stream",
             )
 
-        return path
+            for table in tables:
+                data = table.df.fillna("").values.tolist()
 
-    ###########################################################################
-    # Helper Functions
-    ###########################################################################
+                if not data:
+                    continue
 
-    @staticmethod
-    def get_extension(file_path: str | Path) -> str:
-        return Path(file_path).suffix.lower()
+                headers = [str(value) for value in data[0]]
+                rows = [
+                    [str(value) for value in row]
+                    for row in data[1:]
+                ]
 
-    @staticmethod
-    def get_filename(file_path: str | Path) -> str:
-        return Path(file_path).name
+                blocks.append(
+                    TableBlock(
+                        block_id=self.generate_block_id("table"),
+                        block_type=BlockType.TABLE,
+                        page_number=table.page,
+                        headers=headers,
+                        rows=rows,
+                        metadata={
+                            "accuracy": table.accuracy,
+                            "whitespace": table.whitespace,
+                            "parser": "camelot",
+                        },
+                    )
+                )
 
-    @staticmethod
-    def get_file_size(file_path: str | Path) -> int:
-        return Path(file_path).stat().st_size
+        except Exception as error:
+            logger.warning(
+                "Camelot extraction failed for %s: %s",
+                file_path,
+                error,
+            )
 
-    @staticmethod
-    def get_mime_type(file_path: str | Path) -> str:
-        mime, _ = mimetypes.guess_type(str(file_path))
-        return mime or "application/octet-stream"
+        return blocks
 
-    @staticmethod
-    def generate_block_id(prefix: str = "block") -> str:
-        """
-        Generate a unique block identifier.
-        """
-        return f"{prefix}_{uuid.uuid4().hex}"
-
-    # Logging Helpers
-    def log_start(self, file_path: str | Path) -> float:
-        self.logger.info(
-            "Starting extraction: %s",
-            file_path,
-        )
-        return time.perf_counter()
-
-    def log_success(
+    def _extract_with_pdfplumber(
         self,
         file_path: str | Path,
-        start_time: float,
-    ) -> None:
-        elapsed = time.perf_counter() - start_time
+        page_number: int | None,
+    ) -> list[TableBlock]:
+        blocks: list[TableBlock] = []
 
-        self.logger.info(
-            "Extraction completed (%s) in %.2f seconds",
-            file_path,
-            elapsed,
-        )
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                if page_number is not None:
+                    if page_number > len(pdf.pages):
+                        raise ValueError(
+                            f"Page {page_number} does not exist in PDF."
+                        )
 
-    def log_failure(
-        self,
-        file_path: str | Path,
-        exc: Exception,
-    ) -> None:
-        self.logger.exception(
-            "Extraction failed for %s: %s",
-            file_path,
-            exc,
-        )
+                    pages = [
+                        (
+                            page_number,
+                            pdf.pages[page_number - 1],
+                        )
+                    ]
+                else:
+                    pages = enumerate(
+                        pdf.pages,
+                        start=1,
+                    )
 
-    # Cleanup
-    def cleanup(self) -> None:
-        """
-        Override if extractor creates temporary files.
-        """
-        return
+                for page_no, page in pages:
+                    tables = page.extract_tables()
 
-    # Context Manager
-    def __enter__(self):
-        return self
+                    for table in tables:
+                        if not table:
+                            continue
 
-    def __exit__(self, exc_type, exc, tb):
-        self.cleanup()
-        return False
+                        headers = [
+                            str(value) if value is not None else ""
+                            for value in table[0]
+                        ]
+
+                        rows = [
+                            [
+                                str(value) if value is not None else ""
+                                for value in row
+                            ]
+                            for row in table[1:]
+                        ]
+
+                        blocks.append(
+                            TableBlock(
+                                block_id=self.generate_block_id("table"),
+                                block_type=BlockType.TABLE,
+                                page_number=page_no,
+                                headers=headers,
+                                rows=rows,
+                                metadata={
+                                    "parser": "pdfplumber",
+                                },
+                            )
+                        )
+
+        except Exception as error:
+            logger.warning(
+                "pdfplumber extraction failed for %s: %s",
+                file_path,
+                error,
+            )
+
+        return blocks

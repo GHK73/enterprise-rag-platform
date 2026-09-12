@@ -1,13 +1,12 @@
 # ai-sevice/app/services/procesing.service.py
+from __future__ import annotations
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
-
 from app.schemas.processing import (
     ProcessDocumentRequest,
     ProcessDocumentResponse,
 )
-
 from .downloader import downloader_service
 from .temp_storage import temporary_storage
 from app.services.processing.extraction import extraction_service
@@ -15,7 +14,6 @@ from app.services.processing.normalization import normalization_service
 from app.services.processing.chunking import chunking_service
 from app.services.embedding import embedding_service
 from app.services.vectorstore import qdrant_vector_store
-
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +35,7 @@ class DocumentProcessingService:
 
         try:
             # 1. Download
-            url_path = Path(
-                urlparse(str(request.file_url)).path
-            )
-
+            url_path = Path(urlparse(str(request.file_url)).path)
             suffix = url_path.suffix.lower()
 
             if not suffix:
@@ -59,9 +54,7 @@ class DocumentProcessingService:
             )
 
             # 2. Extract
-            document = extraction_service.extract(
-                file_path
-            )
+            document = extraction_service.extract(file_path)
 
             logger.info(
                 "Extracted document with %d pages",
@@ -69,30 +62,32 @@ class DocumentProcessingService:
             )
 
             # 3. Normalize
-            document = normalization_service.normalize(
-                document
-            )
+            document = normalization_service.normalize(document)
 
             logger.info(
                 "Document normalization completed",
             )
 
             # 4. Chunk
-            chunks = chunking_service.chunk(
-                document
-            )
+            chunks = chunking_service.chunk(document)
 
             logger.info(
                 "Created %d chunks",
                 len(chunks),
             )
 
-            # 5. Generate embeddings
-            embedded_chunks = (
-                embedding_service.embed_chunks(
-                    chunks
+            if not chunks:
+                raise ValueError(
+                    "Document produced no searchable text chunks."
                 )
-            )
+
+            # 5. Generate embeddings
+            embedded_chunks = embedding_service.embed_chunks(chunks)
+
+            if len(embedded_chunks) != len(chunks):
+                raise RuntimeError(
+                    "Embedding count does not match chunk count."
+                )
 
             logger.info(
                 "Generated embeddings for %d chunks",
@@ -102,17 +97,23 @@ class DocumentProcessingService:
             # 6. Ensure Qdrant collection exists
             await qdrant_vector_store.ensure_collection()
 
-            # Point IDs include the document, version, and chunk IDs, so an
-            # upload preserves prior versions and only replaces matching points.
+            # 7. Index this document version.
+            #
+            # Qdrant point IDs include document_id, version_id,
+            # and chunk_id. Therefore different versions are stored
+            # independently and previous versions are preserved.
             await qdrant_vector_store.upsert_chunks(
                 document_id=request.document_id,
                 version_id=request.version_id,
                 embedded_chunks=embedded_chunks,
-)
+            )
 
             logger.info(
-                "Indexed %d chunks into Qdrant Cloud",
+                "Indexed %d chunks into Qdrant Cloud: "
+                "document=%s version=%s",
                 len(embedded_chunks),
+                request.document_id,
+                request.version_id,
             )
 
             # 8. Return response
@@ -133,10 +134,8 @@ class DocumentProcessingService:
             raise
 
         finally:
-            # 9. Cleanup
-            temporary_storage.cleanup(
-                workspace
-            )
+            # 9. Cleanup temporary workspace
+            temporary_storage.cleanup(workspace)
 
 
 processing_service = DocumentProcessingService()

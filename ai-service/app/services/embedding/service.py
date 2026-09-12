@@ -9,21 +9,16 @@ from app.services.processing.chunking import Chunk
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class EmbeddedChunk:
     chunk: Chunk
     embedding: list[float]
 
-
 class EmbeddingService:
     """
-    Responsible for converting document chunks into vector embeddings.
-
-    The service is intentionally independent of Qdrant.
-
+    Convert document chunks into vector embeddings.
+    The service is independent of Qdrant.
     Pipeline:
-
         Chunk
           ↓
         text
@@ -41,6 +36,10 @@ class EmbeddingService:
         batch_size: int = 32,
         device: str | None = None,
     ) -> None:
+        if not model_name.strip():
+            raise ValueError(
+                "model_name cannot be empty."
+            )
 
         if batch_size <= 0:
             raise ValueError(
@@ -49,7 +48,6 @@ class EmbeddingService:
 
         self.model_name = model_name
         self.batch_size = batch_size
-
         self.device = self._resolve_device(device)
 
         logger.info(
@@ -63,10 +61,17 @@ class EmbeddingService:
             device=self.device,
         )
 
-        self.dimension = self.model.get_sentence_embedding_dimension()
+        dimension = self.model.get_sentence_embedding_dimension()
+
+        if dimension is None or dimension <= 0:
+            raise RuntimeError(
+                "Embedding model returned an invalid dimension."
+            )
+
+        self.dimension = dimension
 
         logger.info(
-            "Embedding model loaded: model=%s dimension=%s device=%s",
+            "Embedding model loaded: model=%s dimension=%d device=%s",
             self.model_name,
             self.dimension,
             self.device,
@@ -76,8 +81,12 @@ class EmbeddingService:
         self,
         device: str | None,
     ) -> str:
-
         if device:
+            if device == "cuda" and not torch.cuda.is_available():
+                raise RuntimeError(
+                    "CUDA was explicitly requested but is not available."
+                )
+
             return device
 
         if torch.cuda.is_available():
@@ -90,10 +99,9 @@ class EmbeddingService:
         texts: list[str],
     ) -> list[list[float]]:
         """
-        Generate embeddings for a list of texts.
+        Generate normalized embeddings for a list of texts.
 
-        Embeddings are generated in batches to avoid unnecessarily
-        large memory usage.
+        Embeddings are generated in batches to control memory usage.
         """
 
         if not texts:
@@ -125,6 +133,19 @@ class EmbeddingService:
 
         result = embeddings.tolist()
 
+        if len(result) != len(cleaned_texts):
+            raise RuntimeError(
+                "Embedding count does not match input text count."
+            )
+
+        for index, embedding in enumerate(result):
+            if len(embedding) != self.dimension:
+                raise RuntimeError(
+                    "Embedding dimension mismatch at index "
+                    f"{index}: expected {self.dimension}, "
+                    f"got {len(embedding)}."
+                )
+
         logger.info(
             "Embedding generation completed: count=%d dimension=%d",
             len(result),
@@ -145,32 +166,25 @@ class EmbeddingService:
         if not chunks:
             return []
 
-        texts = [
-            chunk.text
-            for chunk in chunks
-        ]
-
-        embeddings = self.embed_texts(texts)
+        embeddings = self.embed_texts(
+            [chunk.text for chunk in chunks]
+        )
 
         if len(chunks) != len(embeddings):
             raise RuntimeError(
                 "Embedding count does not match chunk count."
             )
 
-        embedded_chunks: list[EmbeddedChunk] = []
-
-        for chunk, embedding in zip(
-            chunks,
-            embeddings,
-        ):
-            embedded_chunks.append(
-                EmbeddedChunk(
-                    chunk=chunk,
-                    embedding=embedding,
-                )
+        return [
+            EmbeddedChunk(
+                chunk=chunk,
+                embedding=embedding,
             )
-
-        return embedded_chunks
+            for chunk, embedding in zip(
+                chunks,
+                embeddings,
+            )
+        ]
 
     def embed_chunk(
         self,
@@ -179,6 +193,11 @@ class EmbeddingService:
         """
         Generate an embedding for a single chunk.
         """
+
+        if not chunk.text.strip():
+            raise ValueError(
+                "Cannot embed an empty chunk."
+            )
 
         embeddings = self.embed_texts(
             [chunk.text]
