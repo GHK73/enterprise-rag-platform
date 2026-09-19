@@ -30,7 +30,23 @@ export default {
         enabled: process.env.REDIS_ENABLED === "true",
         url: process.env.REDIS_URL,
     },
+
     ai: {
         url: process.env.AI_SERVICE_URL,
+    },
+
+    llm: {
+        provider: process.env.LLM_PROVIDER || "bedrock",
+        modelId:
+            process.env.LLM_MODEL_ID ||
+            "amazon.nova-pro-v1:0",
+        region:
+            process.env.AWS_REGION || "us-east-1",
+        maxTokens: Number(
+            process.env.LLM_MAX_TOKENS || 1000
+        ),
+        temperature: Number(
+            process.env.LLM_TEMPERATURE || 0
+        ),
     },
 };

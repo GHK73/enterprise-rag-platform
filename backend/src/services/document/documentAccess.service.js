@@ -826,3 +826,163 @@ export const authorizeDocumentAction = async(user,documentId,action)=>{
         "Access denied."
     );
 };
+
+const getUserUnitHierarchy = async (organizationId, userUnitId) => {
+    const units = await prisma.organizationUnit.findMany({
+        where: {
+            organizationId,
+        },
+        select: {
+            id: true,
+            parentId: true,
+        },
+    });
+
+    const parentMap = new Map(
+        units.map(unit => [unit.id, unit.parentId])
+    );
+
+    const unitIds = new Set();
+    let currentUnitId = userUnitId;
+
+    while (currentUnitId) {
+        unitIds.add(currentUnitId);
+        currentUnitId = parentMap.get(currentUnitId) ?? null;
+    }
+
+    return unitIds;
+};
+
+export const authorizeQueryDocuments = async(user,documentIds)=>{
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            403,
+            "User does not belong to an organization"
+        );
+    }
+
+    if(!documentIds?.length){
+        return [];
+    }
+
+    const documents = await prisma.document.findMany({
+        where:{
+            id:{in:documentIds},
+            organizationId:user.unit.organizationId,
+            isDeleted:false,
+        },
+        select:{
+            id:true,
+        },
+    });
+
+    if(!documents.length){
+        return [];
+    }
+
+    const policies =
+        await prisma.documentAccessPolicy.findMany({
+            where:{
+                documentId:{
+                    in:documents.map(document=>document.id),
+                },
+                action:"QUERY",
+                organizationId:user.unit.organizationId,
+                isActive:true,
+            },
+        });
+
+    const userUnitHierarchy =
+        await getUserUnitHierarchy(
+            user.unit.organizationId,
+            user.unitId
+        );
+
+    const authorizedDocumentIds = [];
+
+    for(const document of documents){
+
+        const documentPolicies =
+            policies.filter(
+                policy=>policy.documentId===document.id
+            );
+
+        const activePolicies =
+            documentPolicies.filter(
+                isDocumentAccessPolicyActive
+            );
+
+        const matches = [];
+
+        for(const policy of activePolicies){
+
+            switch(policy.subjectType){
+
+                case "ORGANIZATION":
+
+                    if(
+                        policy.subjectOrganizationId ===
+                        user.unit.organizationId
+                    ){
+                        matches.push(policy);
+                    }
+
+                    break;
+
+                case "UNIT":
+
+                    if(
+                        policy.scope === "UNIT_ONLY" &&
+                        policy.subjectUnitId === user.unitId
+                    ){
+                        matches.push(policy);
+                    }
+
+                    if(
+                        policy.scope === "UNIT_AND_DESCENDANTS" &&
+                        userUnitHierarchy.has(policy.subjectUnitId)
+                    ){
+                        matches.push(policy);
+                    }
+
+                    break;
+
+                case "ROLE":
+
+                    if(
+                        policy.subjectRole === user.role
+                    ){
+                        matches.push(policy);
+                    }
+
+                    break;
+
+                case "USER":
+
+                    if(
+                        policy.subjectUserId === user.id
+                    ){
+                        matches.push(policy);
+                    }
+
+                    break;
+            }
+        }
+
+        const hasDeny =
+            matches.some(
+                policy=>policy.effect==="DENY"
+            );
+
+        const hasAllow =
+            matches.some(
+                policy=>policy.effect==="ALLOW"
+            );
+
+        if(!hasDeny && hasAllow){
+            authorizedDocumentIds.push(document.id);
+        }
+    }
+
+    return authorizedDocumentIds;
+};

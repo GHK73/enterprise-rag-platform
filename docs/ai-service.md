@@ -12,7 +12,7 @@ backend/     Node.js + Express API, Prisma, S3, Redis/BullMQ
 ai-service/  FastAPI document-processing and vector-indexing service
 ```
 
-The AI service lives in `ai-service/`. Its current purpose is to convert an uploaded document into Qdrant vectors. It does not currently provide a complete retrieval or RAG-generation API.
+The AI service lives in `ai-service/`. Its purpose is to convert documents into Qdrant vectors and provide candidate retrieval. It does not perform authorization or RAG generation itself; the backend applies document-access policies after retrieval and before any LLM use.
 
 ## Architecture Overview
 
@@ -29,18 +29,26 @@ Backend (Node.js)
       → Generate embeddings (Sentence Transformer)
       → Upsert into Qdrant (version-aware deterministic point IDs)
       → Cleanup temporary workspace
-      ← ProcessDocumentResponse { success, message, document_id, version_id }
+    ← ProcessDocumentResponse { success, message, document_id, version_id }
 ```
 
-### Retrieval Flow (implemented but not routed)
+### Retrieval Flow (route registered; authorization deferred to backend)
 
 ```text
-User Query
-  → RetrievalService.retrieve(RetrievalRequest)
-    → Embed query text
-    → Search Qdrant by vector (top_k filtered)
-    → Return RetrievalResult[] with scores and metadata
+Backend Query (POST /api/v1/query)
+  → AI Service (FastAPI)
+    → POST /api/v1/retrieve { query, top_k }
+      → RetrievalService.retrieve_candidates(RetrievalRequest)
+        → Embed query text
+        → Search Qdrant by vector (candidate_limit = min(top_k * 5, 200))
+        → Return RetrievalResult[] with scores and metadata
+    ← RetrievalResponse { query, results[] }
+  → Backend authorizes document_ids via policy checks
+  → Backend filters candidates to authorized documents
+  → Backend reranks and generates answer with LLM
 ```
+
+The AI service intentionally retrieves **more** candidates than the requested `top_k` (multiplied by `CANDIDATE_MULTIPLIER = 5`, capped at `MAX_CANDIDATES = 200`). Authorization is performed entirely by the backend after retrieval; the AI service does not filter by document access. The `RetrievalService` exposes helper methods (`get_candidate_document_ids`, `filter_authorized_candidates`, `select_top_k`) for the backend to use if it chooses to delegate filtering logic.
 
 ### Directory Structure
 
@@ -64,20 +72,21 @@ ai-service/
     │   ├── logger.py             # Structured logging setup
     │   ├── chunking.py           # ChunkingConfig (CHUNK_SIZE=1000, CHUNK_OVERLAP=200, MIN_CHUNK_SIZE=100)
     │   └── schemas/
-    │       └── api.py            # ApiResponse schema (success, message, data)
+    │       └── api.py            # ApiResponse schema (currently empty)
     ├── api/
-    │   ├── index.py              # /api/v1 router, includes health + processing routes
+    │   ├── index.py              # /api/v1 router; includes health, processing, retrieval routes
     │   ├── health.py             # GET /api/v1/health → ApiResponse
     │   ├── processing.py         # POST /api/v1/process-document → ProcessDocumentResponse
-    │   └── __                    # Placeholder empty file (check imports before changes)
+    │   ├── retrieval.py          # POST /api/v1/retrieve → RetrievalResponse (NEW)
+    │   └── _                     # Placeholder empty file (check imports before changes)
     ├── schemas/
     │   ├── document.py           # Domain models: BlockType, DocumentType, Document, DocumentPage, etc.
     │   ├── processing.py         # ProcessDocumentRequest, ProcessDocumentResponse
     │   ├── chunk.py              # DocumentChunk schema (legacy, not used in main pipeline)
     │   ├── retrieval.py          # RetrievalRequest, RetrievalResult, RetrievalResponse
-    │   ├── retrieval/            # Retrieval package (service implemented, route not registered)
+    │   ├── retrieval/            # Legacy retrieval package — see Known Issues
     │   │   ├── __init__.py       # Exports RetrievalService, retrieval_service
-    │   │   └── service.py        # RetrievalService: embed query → search Qdrant → return results
+    │   │   └── service.py        # OLD RetrievalService location (retrieve method)
     │   └── api.py                # Empty
     └── services/
         ├── processing/           # Download, extract, normalize, chunk, embed, index pipeline
@@ -89,7 +98,7 @@ ai-service/
         │   ├── downloader.py     # DownloaderService (httpx streaming, 60s timeout, ProcessingException)
         │   └── temp_storage.py   # TemporaryStorage (mkdtemp + shutil.rmtree)
         ├── extractors/           # Document format extractors
-        │   ├── base.py           # TableExtractor (camelot primary, pdfplumber fallback)
+        │   ├── base.py           # TableExtractor (camelot primary, pdfplumber fallback) — see Known Issues
         │   ├── table.py          # Standalone TableExtractor (camelot primary, pdfplumber fallback)
         │   ├── pdf.py            # PDFExtractor (PyMuPDF: text, images, tables)
         │   ├── docx.py           # DocxExtractor (python-docx: paragraphs, tables, images)
@@ -98,15 +107,17 @@ ai-service/
         ├── embedding/            # Embedding generation
         │   ├── __init__.py       # Exports EmbeddingService, embedding_service
         │   └── service.py        # EmbeddingService + EmbeddedChunk dataclass
-        └── vectorstore/          # Qdrant vector database operations
-            ├── __init__.py       # Exports QdrantVectorStore, qdrant_vector_store
-            ├── qdrant.py         # QdrantVectorStore (full CRUD + search)
-            └── test_qdrant.py    # End-to-end Qdrant verification (Phase 7)
+        ├── vectorstore/          # Qdrant vector database operations
+        │   ├── __init__.py       # Exports QdrantVectorStore, qdrant_vector_store
+        │   ├── qdrant.py         # QdrantVectorStore (full CRUD + search)
+        │   └── test_qdrant.py    # End-to-end Qdrant verification (Phase 7)
+        └── retrieval/            # Retrieval service (NEW)
+            └── service.py        # RetrievalService: candidate retrieval + authorization helpers
 ```
 
 ## AI Service Responsibilities
 
-Implemented pipeline:
+Implemented pipelines:
 
 ```text
 Presigned document URL
@@ -121,6 +132,15 @@ Presigned document URL
   → remove temporary workspace (TemporaryStorage)
 ```
 
+Retrieval (candidate-based, authorization deferred):
+
+```text
+User query
+  → embed query text (EmbeddingService)
+  → search Qdrant by vector (top_k * 5 candidates, capped at 200)
+  → return RetrievalResult[] with scores and metadata
+```
+
 The service must not make business authorization decisions. The backend is intended to determine which documents and versions a user may process or retrieve.
 
 ## Important File Map
@@ -132,24 +152,26 @@ ai-service/
     core/
       exceptions.py                 ProcessingException + global error handlers (422/500)
     api/
-      index.py                      /api/v1 router; includes health and processing routes
+      index.py                      /api/v1 router; includes health, processing, retrieval routes
       health.py                     GET /api/v1/health → ApiResponse
       processing.py                 POST /api/v1/process-document → ProcessDocumentResponse
+      retrieval.py                  POST /api/v1/retrieve → RetrievalResponse (NEW)
     config/
       config.py                     Settings for main app and health endpoint (lru_cache)
       settings.py                   Settings for Qdrant vector store
       logger.py                     Logging setup
       chunking.py                   ChunkingConfig (CHUNK_SIZE=1000, CHUNK_OVERLAP=200, MIN_CHUNK_SIZE=100)
       schemas/
-        api.py                      ApiResponse schema (success, message, data)
+        api.py                      ApiResponse schema (currently empty)
     schemas/
       processing.py                 ProcessDocumentRequest and ProcessDocumentResponse
       document.py                   Internal document, page, and block models
       chunk.py                      DocumentChunk schema (legacy)
       retrieval.py                  RetrievalRequest, RetrievalResult, RetrievalResponse
-      retrieval/
-        __init__.py                 RetrievalService, retrieval_service
-        service.py                  Embed query, search Qdrant, return results
+      retrieval/                    Legacy retrieval package (see Known Issues)
+        __init__.py                 Exports RetrievalService, retrieval_service
+        service.py                  OLD RetrievalService location (retrieve method)
+      api.py                        Empty
     services/
       processing/
         service.py                  Orchestrates the entire processing pipeline
@@ -169,13 +191,15 @@ ai-service/
         service.py                  Sentence Transformer embedding with device resolution and EmbeddedChunk output
       vectorstore/
         qdrant.py                   Async Qdrant collection, upsert, search, version inspection, deletion
+      retrieval/
+        service.py                  RetrievalService: candidate retrieval + authorization helpers (NEW)
   requirements.txt                  Python dependencies
   test_chunking.py                  Chunking tests
   test_pdf_extractor.py             PDF extraction tests
   test_processing.py                Processing pipeline test
 ```
 
-Note: `app/api/__` is an unusual placeholder file. Check imports before changing package behavior.
+Note: `app/api/_` is an unusual placeholder file. Check imports before changing package behavior.
 
 ## FastAPI Routes
 
@@ -185,29 +209,7 @@ Available now:
 GET /
 GET /api/v1/health
 POST /api/v1/process-document
-```
-
-Retrieval service is implemented (`app/schemas/retrieval/service.py`) but no route is registered yet.
-
-The intended processing request is:
-
-```json
-{
-  "document_id": "application-document-id",
-  "version_id": "immutable-version-id",
-  "file_url": "https://short-lived-presigned-url/document.pdf"
-}
-```
-
-The intended processing response is:
-
-```json
-{
-  "success": true,
-  "message": "Document processed successfully.",
-  "document_id": "application-document-id",
-  "version_id": "immutable-version-id"
-}
+POST /api/v1/retrieve
 ```
 
 ## Backend Integration
@@ -221,6 +223,14 @@ It:
 3. Sends the payload to `${config.ai.url}/api/v1/process-document`.
 
 `config.ai.url` must contain only the AI service base URL, without a trailing `/api/v1` path.
+
+The backend query flow lives in `backend/src/services/query/`:
+
+- `queryAI.service.js` — calls `POST ${config.ai.url}/api/v1/retrieve` with `{ query, top_k }`, returning the raw `RetrievalResponse` from the AI service.
+- `query.service.js` (`retrieveAuthorizedCandidates`) — orchestrates: call AI service → collect candidate document IDs → `authorizeQueryDocuments(user, documentIds)` from `documentAccess.service.js` → filter candidates to authorized documents → rerank → check evidence sufficiency → build context → build RAG prompt → generate answer with LLM → output-guard.
+- `query.controller.js` (`queryDocuments`) — Express handler at `POST /api/v1/query`, validates input, calls `retrieveAuthorizedCandidates`, returns `{ query, answer, sources, evidence, usedLLM, outputGuardPassed }`.
+
+The query route is registered in `backend/src/routes/index.js` as `router.use("/query", queryRoutes)`.
 
 ## Processing Details
 
@@ -312,6 +322,24 @@ Operations:
 
 `DocumentProcessingService.process_document()` does not delete vectors before upserting. Each point is stored with its `document_id` and `version_id`, so processing a new version preserves prior indexed versions. Reprocessing an identical document/version/chunk combination overwrites that matching point. The standalone `delete_version()` and `delete_document()` methods are not part of the normal upload flow.
 
+### Retrieval Service
+
+`RetrievalService` (in `app/services/retrieval/service.py`) handles candidate retrieval for the `/retrieve` route.
+
+```text
+CANDIDATE_MULTIPLIER: 5      # Fetch top_k * 5 candidates
+MAX_CANDIDATES:      200     # Hard cap on candidate count
+```
+
+Methods:
+
+- `retrieve_candidates(request)` — embeds the query, searches Qdrant with `candidate_limit = min(top_k * 5, 200)`, returns `RetrievalResult[]`. Authorization is NOT performed here.
+- `get_candidate_document_ids(candidates)` — extracts unique document IDs from results (for backend authorization).
+- `filter_authorized_candidates(candidates, authorized_document_ids)` — filters candidates to only those from authorized documents.
+- `select_top_k(candidates, top_k)` — returns the top-K candidates after authorization.
+
+**Decision**: The service retrieves more candidates than `top_k` because backend authorization narrows the set. The AI service returns all candidates with their `document_id`; the backend then calls `authorizeQueryDocuments` to determine which documents the user can access, filters, and selects the final top-K. This keeps authorization in the backend where access policies live.
+
 ## Configuration
 
 Create `ai-service/.env`:
@@ -372,13 +400,26 @@ Three test scripts are provided:
 1. Add an end-to-end test using a local or test Qdrant collection and a real sample document.
 2. Define same-version reprocessing semantics. Because normal processing does not delete vectors, chunks that are no longer produced by a reprocessed version remain indexed unless an explicit cleanup workflow is introduced.
 3. Add processing status reporting, retries, structured error responses, and metrics.
-4. Register the retrieval route (`/api/v1/retrieve`) that uses `RetrievalService` with backend-authorized document/version filters.
-5. Add hybrid search and reranking after filtered retrieval works.
-6. Add grounded LLM generation, citations, and evaluation only after authorization-safe retrieval is complete.
-7. Consolidate `app/config/config.py` and `app/config/settings.py` into a single settings module.
-8. Remove legacy `app/schemas/chunk.py` (`DocumentChunk`) and `app/schemas/retrieval.py` in favor of the `retrieval/` package.
-9. Enforce `MIN_CHUNK_SIZE` from `ChunkingConfig` in the chunking logic.
-10. Resolve duplicate entries in `requirements.txt` (httpx, PyMuPDF, python-docx appear twice).
+4. ~~Register the retrieval route (`/api/v1/retrieve`) that uses `RetrievalService` with backend-authorized document/version filters.~~ — **Done**: route registered, candidate-based retrieval implemented in `app/services/retrieval/service.py`.
+5. Create an API for chunking documents and storing them. No `chunk-and-store` endpoint exists yet. When implemented, it should accept already-extracted text content, build a `Document`, chunk it, embed, and upsert into Qdrant — skipping download, extraction, and normalization.
+6. Add hybrid search and reranking after filtered retrieval works.
+7. Add grounded LLM generation, citations, and evaluation only after authorization-safe retrieval is complete.
+8. Consolidate `app/config/config.py` and `app/config/settings.py` into a single settings module.
+9. Remove legacy `app/schemas/chunk.py` (`DocumentChunk`) in favor of the `Chunk` dataclass in `app/services/processing/chunking.py`.
+10. Enforce `MIN_CHUNK_SIZE` from `ChunkingConfig` in the chunking logic.
+11. Resolve duplicate entries in `requirements.txt` (httpx, PyMuPDF, python-docx appear twice).
+
+## Known Issues
+
+These are pre-existing problems in the current code that block the service from starting. Address before relying on any route.
+
+1. **Retrieval package conflict**: `app/schemas/retrieval.py` (module with `RetrievalRequest`, `RetrievalResult`, `RetrievalResponse`) and `app/schemas/retrieval/` (a package directory with `__init__.py` and `service.py`) coexist in the same directory. Python resolves `app.schemas.retrieval` to the **package**, which only exports `RetrievalService` and `retrieval_service` from its `__init__.py`. The schema classes (`RetrievalRequest`, etc.) are therefore **not importable** from `app.schemas.retrieval`, breaking `app/api/retrieval.py` and `app/services/retrieval/service.py`. **Fix**: delete the `app/schemas/retrieval/` package directory; the service has already been relocated to `app/services/retrieval/service.py`.
+
+2. **Circular self-import in extractors**: `app/services/extractors/base.py` contains `from app.services.extractors.base import BaseExtractor` — a self-import that triggers `ImportError: cannot import name 'BaseExtractor' from partially initialized module`. The `BaseExtractor` class is not defined anywhere; it must be defined in `base.py` and the self-import removed. This blocks `extraction.py` and therefore `DocumentProcessingService`, preventing both `process-document` and `retrieve` from working.
+
+3. **Empty `app/schemas/api.py`**: The file is empty (0 bytes) but `app/api/health.py` imports `ApiResponse` from it. The `ApiResponse` Pydantic model (`success`, `message`, `data` fields) must be defined in this file. This blocks the health route and all routes registered through `app/api/index.py`.
+
+4. **Missing `__init__.py` in `app/services/retrieval/`**: The new retrieval service directory has no `__init__.py`, relying on Python namespace packages. While functional, this is inconsistent with `embedding/`, `vectorstore/`, and `processing/` subdirectories which all have `__init__.py`. Add `app/services/retrieval/__init__.py` exporting `RetrievalService` and `retrieval_service`.
 
 ## Constraints for Future Changes
 

@@ -19,8 +19,8 @@ Database design: [`docs/DATABASE.md`](DATABASE.md)
 | Organization Synchronization | ✅ |
 | Concurrency Protection | ✅ |
 | Document Management | ✅ |
-| Document Processing Infrastructure | ⏳ |
-| AI Processing Service | ⏳ |
+| Document Processing Infrastructure | ✅ |
+| AI Processing Service | ✅ |
 
 ---
 
@@ -49,6 +49,11 @@ npm run dev
 | `REDIS_ENABLED` | Enable or disable Redis queue |
 | `REDIS_URL` | Managed Redis connection |
 | `AI_SERVICE_URL` | FastAPI AI service endpoint |
+| `LLM_PROVIDER` | LLM provider (default: bedrock) |
+| `LLM_MODEL_ID` | LLM model ID (default: amazon.nova-pro-v1:0) |
+| `LLM_REGION` | AWS region for Bedrock (defaults to `AWS_REGION`) |
+| `LLM_MAX_TOKENS` | Maximum tokens for LLM responses (default: 1000) |
+| `LLM_TEMPERATURE` | LLM temperature (default: 0) |
 
 API base path:
 
@@ -225,6 +230,8 @@ QUEUED
 PROCESSING
     ↓
 READY
+    ↓
+DELETED (Soft Delete)
 
 DRAFT
     ↓
@@ -236,10 +243,10 @@ FAILED
 
 READY
     ↓
-DELETED (Soft Delete)
+QUEUED (New version upload)
 ```
 
-Documents are immutable after publication. New uploads create new document versions instead of replacing existing files.
+Documents are immutable after publication. New version uploads create new document versions and transition READY → QUEUED for reprocessing.
 
 ---
 
@@ -345,6 +352,68 @@ Implemented:
 - Policy updates
 - Policy history
 - Append-only audit log
+- `authorizeDocumentAction(user, documentId, action)` — validates a single document action (QUERY, VIEW, DOWNLOAD, MANAGE_ACCESS) against active policies with DENY precedence
+- `authorizeQueryDocuments(user, documentIds)` — batch-authorizes document IDs for QUERY access, using `getUserUnitHierarchy` to resolve the user's organizational unit hierarchy for subject matching
+
+#### Query Pipeline (Phase 7)
+
+The query pipeline is implemented in `backend/src/services/query/`. The entry point is `POST /api/v1/query` (`query.controller.js` → `queryDocuments`).
+
+```text
+User Query (query, topK)
+        ↓
+queryCache.service.js — check Redis cache (300s TTL)
+        ↓
+queryAI.service.js — POST /api/v1/retrieve { query, top_k }
+        ↓
+query.service.js — retrieveAuthorizedCandidates(user, query, topK)
+        ↓
+authorizeQueryDocuments(user, documentIds) — filter to authorized docs
+        ↓
+reranking.service.js — score-based rerank to topK
+        ↓
+evidence.service.js — check sufficiency (text, score, candidates)
+        ↓
+contextGuard.service.js — buildSafeContext (sanitize + bound context)
+        ↓
+prompt.service.js — buildRAGPrompt (system + user prompt)
+        ↓
+llm.service.js — Bedrock Converse API (amazon.nova-pro-v1:0)
+        ↓
+answerValidation.service.js — validate source citations
+        ↓
+outputGuardrail.service.js — filter unsafe patterns
+        ↓
+Answer + sources + evidence + usedLLM + outputGuardPassed
+```
+
+Query response shape:
+
+```json
+{
+  "query": "user question",
+  "answer": "grounded response",
+  "sources": [{ "index": 1, "chunkId": "...", "documentId": "...", ... }],
+  "evidence": { "sufficient": true, "reason": "SUFFICIENT_EVIDENCE" },
+  "usedLLM": true,
+  "outputGuardPassed": true
+}
+```
+
+Service files:
+
+- `queryAI.service.js` — calls `${config.ai.url}/api/v1/retrieve` with 5-minute timeout
+- `query.service.js` — `retrieveAuthorizedCandidates` orchestrator
+- `reranking.service.js` — `rerankCandidates(candidates, topK)` (score-based sort + slice)
+- `contextGuard.service.js` — `buildSafeContext(candidates)` (4000 char/chunk, 18000 total, sanitizes null chars and normalizes line endings)
+- `context.service.js` — `buildContext(candidates)` (alternative, 3000 char/chunk, 12000 total)
+- `prompt.service.js` — `buildSystemPrompt()` (14 security rules) + `buildRAGPrompt(query, context)`
+- `evidence.service.js` — `checkEvidenceSufficiency(candidates)` (NO_AUTHORIZED_EVIDENCE, NO_USABLE_EVIDENCE, LOW_RELEVANCE)
+- `answer.service.js` — `generateQueryAnswer(result)` (skips LLM if insufficient evidence)
+- `answerValidation.service.js` — `validateGeneratedAnswer(answer, sources)` (checks [Source N] citations)
+- `outputGuardrail.service.js` — `validateGeneratedAnswer(answer)` (filters system prompt, developer message, hidden instructions, chain-of-thought patterns)
+- `queryCache.service.js` — `getCachedQuery`/`setCachedQuery` (Redis, 300s TTL, namespace `rag:retrieval:{topK}:{query}`)
+- `llm.service.js` — `generateAnswer(prompt)` via AWS Bedrock Runtime Converse API
 
 #### Document Lifecycle
 
@@ -527,6 +596,14 @@ PATCH   /api/v1/invitations/accept/:token
 PATCH   /api/v1/invitations/:invitationId/revoke
 ```
 
+## Query
+
+```text
+POST    /api/v1/query
+```
+
+Query documents with RAG. Accepts `{ query, topK }` (default 5, max 20). Returns `{ query, answer, sources, evidence, usedLLM, outputGuardPassed }`. Requires authentication.
+
 ---
 
 # Planned Development
@@ -542,6 +619,16 @@ PATCH   /api/v1/invitations/:invitationId/revoke
 - Processing status tracking
 - Dead-letter queue
 
+Backend processing services (`backend/src/services/document/`):
+
+- `documentLifecycle.service.js` — draft management, publication, version upload, lifecycle transitions, soft delete/restore/cleanup
+- `documentProcessingDispatcher.service.js` — `dispatchDocumentProcessing()` (Redis → BullMQ or direct)
+- `documentProcessing.service.js` — `processDocument()` orchestrator (status updates, AI call, success/failure handling)
+- `documentQueue.service.js` — `initializeDocumentQueue`, `addDocumentProcessingJob`, `getProcessingJOb`, `removeProcessingJob`
+- `documentAI.service.js` — `buildProcessingPayload`, `processDocumentWithAI`, `handleProcessingSuccess`, `handleProcessingFailure`
+- `documentHelpers.js` — `validateOrganizationMembership`, `getDocument`, `getActiveDocument`, `getDraftDocument`, `getDeletedDocument`, `getDocumentWithVersions`, `getDocumentAccessPolicy`, etc.
+- `documentAccess.service.js` — access policy CRUD + `authorizeDocumentAction` + `authorizeQueryDocuments`
+
 ### AI Service
 
 - FastAPI processing service (implemented)
@@ -553,25 +640,26 @@ PATCH   /api/v1/invitations/:invitationId/revoke
 
 ---
 
-## Phase 7 — Retrieval Infrastructure ⏳
+## Phase 7 — Retrieval Infrastructure ✅
 
 ### Vector Indexing
 
 - Qdrant integration (implemented for version-aware indexing)
-- Authorized retrieval filters
-- Document re-indexing semantics
-- Metadata synchronization
+- Authorized retrieval filters (implemented via `authorizeQueryDocuments`)
+- Document re-indexing semantics (pending — see Current Gaps)
+- Metadata synchronization (not yet needed; vector payload mirrors document version)
 
 ### Retrieval
 
-- Hybrid retrieval
-- Metadata filtering
-- Permission-aware retrieval
-- Semantic reranking
+- Vector similarity search (implemented via `/api/v1/retrieve` on the AI service)
+- Permission-aware retrieval (implemented — candidates filtered by document access policy before LLM use)
+- Semantic reranking (implemented — score-based reranking in `rerankCandidates`)
+- Hybrid retrieval (planned)
+- Metadata filtering (planned)
 
 ---
 
-## Phase 8 — Retrieval-Augmented Generation ⏳
+## Phase 8 — Retrieval-Augmented Generation ✅
 
 ### Query Pipeline
 
@@ -580,28 +668,49 @@ User Query
         ↓
 Authentication
         ↓
-Authorization
+Authentication & Authorization
         ↓
-Hybrid Retrieval
+Vector Retrieval (AI service /api/v1/retrieve)
         ↓
-Reranking
+Document Authorization (authorizeQueryDocuments)
         ↓
-Prompt Construction
+Reranking (score-based)
         ↓
-LLM
+Evidence Sufficiency Check
         ↓
-Grounded Response
+Context Reconstruction (buildSafeContext, 18K char max)
         ↓
-Citations
+Prompt Construction (system prompt + RAG prompt)
+        ↓
+LLM (Bedrock Converse API)
+        ↓
+Answer Validation (source citation check)
+        ↓
+Output Guardrail (unsafe pattern filter)
+        ↓
+Grounded Response + Citations
 ```
 
 Implemented goals:
 
-- Context reconstruction
+- Vector retrieval with candidate multiplier (top_k * 5, capped at 200)
+- Document authorization via PostgreSQL policies before LLM use
+- Score-based reranking (`rerankCandidates`)
+- Evidence sufficiency check before LLM invocation
+- Context reconstruction with safe chunking and sanitization (`buildSafeContext`)
+- System prompt with 14 security rules (prompt injection, knowledge boundary, etc.)
+- RAG prompt construction (`buildRAGPrompt`)
+- Bedrock LLM integration via Converse API
+- Source citation validation (`answerValidation.service.js`)
+- Output guardrail filtering unsafe patterns (`outputGuardrail.service.js`)
+- Redis query caching (300s TTL)
+- Evidence-based fallback (skips LLM when insufficient evidence)
+
+Planned goals:
+
 - Streaming responses
-- Final authorization validation
-- Hallucination reduction
-- Source citations
+- Hybrid retrieval (BM25 + vector)
+- Semantic reranking (cross-encoder)
 
 ---
 
@@ -666,7 +775,8 @@ backend/
     │   ├── health.controller.js
     │   ├── invitation.controller.js
     │   ├── organization.controller.js
-    │   └── permission.controller.js
+    │   ├── permission.controller.js
+    │   └── query.controller.js
     │
     ├── middleware/
     │   ├── auth.middleware.js
@@ -681,7 +791,8 @@ backend/
     │   ├── index.js
     │   ├── invitation.routes.js
     │   ├── organization.routes.js
-    │   └── permission.routes.js
+    │   ├── permission.routes.js
+    │   └── query.routes.js
     │
     ├── services/
     │   ├── auth.service.js
@@ -691,14 +802,28 @@ backend/
     │   ├── permission.service.js
     │   ├── s3.service.js
     │   │
-    │   └── document/
-    │       ├── documentAccess.service.js
-    │       ├── documentAI.service.js
-    │       ├── documentHelpers.js
-    │       ├── documentLifecycle.service.js
-    │       ├── documentProcessing.service.js
-    │       ├── documentProcessingDispatcher.service.js
-    │       └── documentQueue.service.js
+    │   ├── document/
+    │   │   ├── documentAccess.service.js
+    │   │   ├── documentAI.service.js
+    │   │   ├── documentHelpers.js
+    │   │   ├── documentLifecycle.service.js
+    │   │   ├── documentProcessing.service.js
+    │   │   ├── documentProcessingDispatcher.service.js
+    │   │   └── documentQueue.service.js
+    │   │
+    │   └── query/
+    │       ├── answer.service.js
+    │       ├── answerValidation.service.js
+    │       ├── context.service.js
+    │       ├── contextGuard.service.js
+    │       ├── evidence.service.js
+    │       ├── llm.service.js
+    │       ├── outputGuardrail.service.js
+    │       ├── prompt.service.js
+    │       ├── query.service.js
+    │       ├── queryAI.service.js
+    │       ├── queryCache.service.js
+    │       └── reranking.service.js
     │
     ├── workers/
     │   └── document.worker.js
@@ -709,7 +834,8 @@ backend/
         ├── asyncHandler.js
         ├── fileValidation.js
         ├── jwt.js
-        └── password.js
+        ├── password.js
+        └── serializeBigInt.js
 ```
 
 ---
@@ -717,7 +843,7 @@ backend/
 # Current Processing Architecture
 
 ```text
-Publish Document
+Document Publication
         │
         ▼
 Database Transaction
@@ -743,8 +869,21 @@ Document Processing
 FastAPI AI Service
         │
         ▼
-Document Status Update
+Document Status Update (READY or FAILED)
 ```
+
+```text
+New Version Upload (on READY documents)
+        │
+        ▼
+Database Transaction (status → QUEUED)
+        │
+        ▼
+Processing Dispatcher
+        ...
+```
+
+The worker processes one document at a time. New version uploads on READY documents trigger the same dispatcher flow.
 
 ---
 
@@ -764,10 +903,12 @@ Document Status Update
 
 - End-to-end AI-service processing verification with a test Qdrant collection
 - Same-version reprocessing policy
+- Resolve known import issues (see ai-service.md Known Issues)
 
 ```text
 POST /api/v1/process-document
 GET  /api/v1/health
+POST /api/v1/retrieve
 ```
 
 ### Processing Pipeline
@@ -788,16 +929,32 @@ Embedding Generation
 Return Processing Result
 ```
 
+## Phase 7 — Query (Completed)
+
+The query pipeline is implemented end-to-end:
+
+- POST /api/v1/query with authentication
+- Redis query caching (300s TTL)
+- Document authorization via PostgreSQL access policies
+- Score-based reranking
+- Evidence sufficiency checks before LLM invocation
+- Bedrock LLM integration with security-focused system prompt
+- Source citation validation and output guardrails
+
 ### Next Milestone
 
 ```text
 Node.js Backend
         ↓
-BullMQ
+Authentication & Authorization
         ↓
-FastAPI
+Document Access Policies (PostgreSQL)
+        ↓
+Vector Retrieval (FastAPI /retrieve)
+        ↓
+Redis (Query Cache + Processing Queue)
         ↓
 Qdrant
 ```
 
-The processing pipeline is implemented but requires end-to-end verification. Phase 7 can begin after authorized retrieval filtering is designed and tested.
+Phase 7 (authorized retrieval) is implemented. Phases 9–10 (reliability, evaluation, monitoring) and Phase 11 (deployment) remain.

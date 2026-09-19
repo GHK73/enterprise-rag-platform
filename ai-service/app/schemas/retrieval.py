@@ -1,7 +1,6 @@
 # ai-service/app/schemas/retrieval.py
 from pydantic import BaseModel, Field
 
-
 class RetrievalRequest(BaseModel):
     query: str = Field(
         min_length=1,
@@ -12,9 +11,8 @@ class RetrievalRequest(BaseModel):
         default=5,
         ge=1,
         le=50,
-        description="Number of chunks to retrieve",
+        description="Number of authorized chunks to return",
     )
-
 
 class RetrievalResult(BaseModel):
     chunk_id: str
@@ -29,7 +27,6 @@ class RetrievalResult(BaseModel):
     metadata: dict = Field(
         default_factory=dict
     )
-
 
 class RetrievalResponse(BaseModel):
     query: str

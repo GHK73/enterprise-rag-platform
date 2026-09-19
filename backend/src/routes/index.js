@@ -7,6 +7,7 @@ import organizationRoutes from "./organization.routes.js";
 import permissionRoutes from "./permission.routes.js";
 import invitationRoutes from "./invitation.routes.js";
 import documentRoutes from "./document.routes.js";
+import queryRoutes from "./query.routes.js";
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use("/organization", organizationRoutes);
 router.use("/permissions", permissionRoutes);
 router.use("/invitations", invitationRoutes);
 router.use("/documents",documentRoutes);
+router.use("/query", queryRoutes);
 
 export default router;
