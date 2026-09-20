@@ -9,6 +9,7 @@ async function buildProcessingPayload(document, version) {
     return {
         document_id: document.id,
         version_id: version.id,
+        organization_id: document.organizationId,
         file_url: fileUrl,
     };
 }

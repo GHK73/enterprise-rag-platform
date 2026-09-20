@@ -1,89 +1,74 @@
+// backend/src/services/query/query.service.js
 import { retrieveFromAI } from "./queryAI.service.js";
 import { rerankCandidates } from "./reranking.service.js";
-import {
-    authorizeQueryDocuments,
-} from "../document/documentAccess.service.js";
+import { authorizeQueryDocuments } from "../document/documentAccess.service.js";
 import { buildSafeContext } from "./contextGuard.service.js";
 import { buildRAGPrompt } from "./prompt.service.js";
-import {
-    getCachedQuery,
-    setCachedQuery,
-} from "./queryCache.service.js";
-import {
-    checkEvidenceSufficiency,
-} from "./evidence.service.js";
+import { getCachedQuery, setCachedQuery } from "./queryCache.service.js";
+import { checkEvidenceSufficiency } from "./evidence.service.js";
 import { generateQueryAnswer } from "./answer.service.js";
-import {
-    validateGeneratedAnswer as validateOutputGuard,
-} from "./outputGuard.service.js";
+import { validateGeneratedAnswer as validateOutputGuard } from "./outputGuardrail.service.js";
 
-export const retrieveAuthorizedCandidates = async (
-    user,
-    query,
-    topK = 5
-) => {
-    let retrievalResponse =
-        await getCachedQuery(query, topK);
+export const retrieveAuthorizedCandidates = async (user, query, topK = 5) => {
+    const organizationId = user?.unit?.organizationId;
 
+    if (!organizationId) {
+        throw new Error("User organization could not be determined.");
+    }
+
+    let retrievalResponse = await getCachedQuery(
+        organizationId,
+        query,
+        topK
+    );
     const cacheHit = Boolean(retrievalResponse);
 
     if (!retrievalResponse) {
-        retrievalResponse =
-            await retrieveFromAI(
-                query,
-                topK
-            );
+        retrievalResponse = await retrieveFromAI(
+            query,
+            topK,
+            organizationId
+        );
     }
 
-    const candidates =
-        retrievalResponse.results || [];
+    const candidates = retrievalResponse.results || [];
 
     const documentIds = [
         ...new Set(
             candidates
-                .map(
-                    (candidate) =>
-                        candidate.document_id
-                )
+                .map((candidate) => candidate.document_id)
                 .filter(Boolean)
         ),
     ];
 
-    const authorizedDocumentIds =
-        await authorizeQueryDocuments(
-            user,
-            documentIds
-        );
+    const authorizedDocumentIds = await authorizeQueryDocuments(
+        user,
+        documentIds
+    );
 
-    const authorizedIdSet =
-        new Set(authorizedDocumentIds);
+    const authorizedIdSet = new Set(authorizedDocumentIds);
 
-    const authorizedCandidates =
-        candidates.filter(
-            (candidate) =>
-                authorizedIdSet.has(
-                    candidate.document_id
-                )
-        );
+    const authorizedCandidates = candidates.filter(
+        (candidate) => authorizedIdSet.has(candidate.document_id)
+    );
 
     if (!cacheHit) {
         await setCachedQuery(
+            organizationId,
             query,
             topK,
             authorizedCandidates
         );
     }
 
-    const rerankedCandidates =
-        rerankCandidates(
-            authorizedCandidates,
-            topK
-        );
+    const rerankedCandidates = rerankCandidates(
+        authorizedCandidates,
+        topK
+    );
 
-    const evidence =
-        checkEvidenceSufficiency(
-            rerankedCandidates
-        );
+    const evidence = checkEvidenceSufficiency(
+        rerankedCandidates
+    );
 
     if (!evidence.sufficient) {
         return {
@@ -92,38 +77,31 @@ export const retrieveAuthorizedCandidates = async (
             context: "",
             sources: [],
             prompt: null,
-            answer:
-                "I couldn't find sufficient information in the authorized documents to answer this question.",
+            answer: "I couldn't find sufficient information in the authorized documents to answer this question.",
             evidence,
             requiresGeneration: false,
             usedLLM: false,
         };
     }
 
-    const {
-        context,
-        sources,
-    } = buildSafeContext(
+    const { context, sources } = buildSafeContext(
         rerankedCandidates
     );
 
-    const prompt =
-        buildRAGPrompt(
-            retrievalResponse.query,
-            context
-        );
+    const prompt = buildRAGPrompt(
+        retrievalResponse.query,
+        context
+    );
 
-    const answerResult =
-        await generateQueryAnswer({
-            evidence,
-            prompt,
-            sources,
-        });
+    const answerResult = await generateQueryAnswer({
+        evidence,
+        prompt,
+        sources,
+    });
 
-    const guardedAnswer =
-        validateOutputGuard(
-            answerResult.answer
-        );
+    const guardedAnswer = validateOutputGuard(
+        answerResult.answer
+    );
 
     return {
         query: retrievalResponse.query,
@@ -135,7 +113,6 @@ export const retrieveAuthorizedCandidates = async (
         evidence,
         requiresGeneration: false,
         usedLLM: answerResult.usedLLM,
-        outputGuardPassed:
-            guardedAnswer.safe,
+        outputGuardPassed: guardedAnswer.safe,
     };
 };

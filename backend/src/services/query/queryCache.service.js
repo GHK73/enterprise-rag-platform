@@ -1,20 +1,24 @@
+// backend/src/services/query/queryCache.service.js
 import { connection } from "../../config/bullmq.js";
 import config from "../../config/config.js";
 
 const QUERY_CACHE_TTL = 300;
 
 const buildCacheKey = (
+    organizationId,
     query,
     topK
 ) => {
     return [
         "rag:retrieval",
+        organizationId,
         topK,
         query.trim().toLowerCase(),
     ].join(":");
 };
 
 export const getCachedQuery = async (
+    organizationId,
     query,
     topK
 ) => {
@@ -27,6 +31,7 @@ export const getCachedQuery = async (
 
     try {
         const key = buildCacheKey(
+            organizationId,
             query,
             topK
         );
@@ -50,6 +55,7 @@ export const getCachedQuery = async (
 };
 
 export const setCachedQuery = async (
+    organizationId,
     query,
     topK,
     result
@@ -63,6 +69,7 @@ export const setCachedQuery = async (
 
     try {
         const key = buildCacheKey(
+            organizationId,
             query,
             topK
         );

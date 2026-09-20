@@ -1,3 +1,4 @@
+# ai-service/app/services/retrieval/service.py
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,8 @@ class RetrievalService:
     ) -> list[RetrievalResult]:
 
         logger.info(
-            "Candidate retrieval started: query=%s top_k=%d",
+            "Candidate retrieval started: organization=%s query=%s top_k=%d",
+            request.organization_id,
             request.query,
             request.top_k,
         )
@@ -40,6 +42,7 @@ class RetrievalService:
 
         candidates = await qdrant_vector_store.search(
             query_vector=query_embedding,
+            organization_id=request.organization_id,
             limit=candidate_limit,
         )
 
@@ -58,7 +61,9 @@ class RetrievalService:
         ]
 
         logger.info(
-            "Candidate retrieval completed: requested=%d returned=%d",
+            "Candidate retrieval completed: "
+            "organization=%s requested=%d returned=%d",
+            request.organization_id,
             candidate_limit,
             len(results),
         )

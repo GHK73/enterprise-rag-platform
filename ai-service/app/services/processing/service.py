@@ -1,4 +1,4 @@
-# ai-sevice/app/services/procesing.service.py
+# ai-sevice/app/services/procesing/service.py
 from __future__ import annotations
 import logging
 from pathlib import Path
@@ -103,6 +103,7 @@ class DocumentProcessingService:
             # and chunk_id. Therefore different versions are stored
             # independently and previous versions are preserved.
             await qdrant_vector_store.upsert_chunks(
+                organization_id=request.organization_id,
                 document_id=request.document_id,
                 version_id=request.version_id,
                 embedded_chunks=embedded_chunks,

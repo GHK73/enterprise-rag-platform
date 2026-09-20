@@ -1,10 +1,16 @@
 # ai-service/app/schemas/retrieval.py
 from pydantic import BaseModel, Field
 
+
 class RetrievalRequest(BaseModel):
     query: str = Field(
         min_length=1,
         description="User search query",
+    )
+
+    organization_id: str = Field(
+        min_length=1,
+        description="Organization requesting retrieval",
     )
 
     top_k: int = Field(

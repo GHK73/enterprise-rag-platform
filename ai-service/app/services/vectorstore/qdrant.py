@@ -75,6 +75,7 @@ class QdrantVectorStore:
     async def _ensure_payload_indexes(self) -> None:
    
         payload_indexes = {
+            "organization_id": PayloadSchemaType.KEYWORD,
             "document_id": PayloadSchemaType.KEYWORD,
             "version_id": PayloadSchemaType.KEYWORD,
             "chunk_id": PayloadSchemaType.KEYWORD,
@@ -118,6 +119,7 @@ class QdrantVectorStore:
 
     async def upsert_chunks(
         self,
+        organization_id: str,
         document_id: str,
         version_id: str,
         embedded_chunks: list[EmbeddedChunk],
@@ -126,6 +128,10 @@ class QdrantVectorStore:
         Store document chunk embeddings in Qdrant Cloud.
         """
 
+        if not organization_id:
+            raise ValueError(
+                "Organization ID cannot be empty."
+            )
         if not embedded_chunks:
             logger.info(
                 "No chunks to index: document=%s version=%s",
@@ -146,6 +152,7 @@ class QdrantVectorStore:
             )
 
             payload = {
+                "organization_id": organization_id,
                 "document_id": document_id,
                 "version_id": version_id,
                 "chunk_id": chunk.chunk_id,
@@ -357,15 +364,21 @@ class QdrantVectorStore:
     async def search(
         self,
         query_vector: list[float],
+        organization_id: str,
         limit: int = 5,
     ) -> list[dict]:
         """
-        Search Qdrant Cloud using a query embedding.
+        Search Qdrant Cloud for chunks belonging to one organization.
         """
 
         if not query_vector:
             raise ValueError(
                 "Query vector cannot be empty."
+            )
+
+        if not organization_id:
+            raise ValueError(
+                "Organization ID cannot be empty."
             )
 
         if limit <= 0:
@@ -376,6 +389,16 @@ class QdrantVectorStore:
         results = await self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="organization_id",
+                        match=MatchValue(
+                            value=organization_id,
+                        ),
+                    ),
+                ],
+            ),
             limit=limit,
             with_payload=True,
         )
@@ -420,12 +443,12 @@ class QdrantVectorStore:
             )
 
         logger.info(
-            "Qdrant search completed: results=%d",
+            "Qdrant search completed: organization=%s results=%d",
+            organization_id,
             len(retrieved_chunks),
         )
 
         return retrieved_chunks
-
     @staticmethod
     def _create_point_id(
         document_id: str,

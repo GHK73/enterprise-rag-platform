@@ -7,10 +7,37 @@ import camelot
 import pdfplumber
 
 from app.schemas.document import BlockType, TableBlock
-from app.services.extractors.base import BaseExtractor
 
 logger = logging.getLogger(__name__)
 
+class BaseExtractor:
+
+    SUPPORTED_EXTENSIONS: set[str] = set()
+
+    def validate_file(self, file_path: str | Path) -> Path:
+        path = Path(file_path)
+
+        if not path.exists():
+            raise FileNotFoundError(
+                f"File not found: {path}"
+            )
+
+        if not path.is_file():
+            raise ValueError(
+                f"Path is not a file: {path}"
+            )
+
+        if path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
+            raise ValueError(
+                f"Unsupported file extension: {path.suffix}"
+            )
+
+        return path
+
+    def generate_block_id(self, prefix: str) -> str:
+        import uuid
+
+        return f"{prefix}_{uuid.uuid4().hex}"
 
 class TableExtractor(BaseExtractor):
     SUPPORTED_EXTENSIONS = {".pdf"}
