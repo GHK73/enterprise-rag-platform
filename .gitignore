@@ -34,3 +34,4 @@ coverage/
 
 # Vector DB
 qdrant_storage/
+.kilo/

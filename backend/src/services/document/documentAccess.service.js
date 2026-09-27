@@ -853,42 +853,54 @@ const getUserUnitHierarchy = async (organizationId, userUnitId) => {
     return unitIds;
 };
 
-export const authorizeQueryDocuments = async(user,documentIds)=>{
-    if(!user.unitId || !user.unit){
+export const authorizeQueryDocuments = async (
+    user,
+    documentIds
+) => {
+    if (!user.unitId || !user.unit) {
         throw new ApiError(
             403,
             "User does not belong to an organization"
         );
     }
 
-    if(!documentIds?.length){
+    if (!documentIds?.length) {
         return [];
     }
 
     const documents = await prisma.document.findMany({
-        where:{
-            id:{in:documentIds},
-            organizationId:user.unit.organizationId,
-            isDeleted:false,
+        where: {
+            id: {
+                in: documentIds,
+            },
+            organizationId: user.unit.organizationId,
+            isDeleted: false,
+            status: "READY",
+            currentVersionId: {
+                not: null,
+            },
         },
-        select:{
-            id:true,
+        select: {
+            id: true,
+            currentVersionId: true,
         },
     });
 
-    if(!documents.length){
+    if (!documents.length) {
         return [];
     }
 
     const policies =
         await prisma.documentAccessPolicy.findMany({
-            where:{
-                documentId:{
-                    in:documents.map(document=>document.id),
+            where: {
+                documentId: {
+                    in: documents.map(
+                        (document) => document.id
+                    ),
                 },
-                action:"QUERY",
-                organizationId:user.unit.organizationId,
-                isActive:true,
+                action: "QUERY",
+                organizationId: user.unit.organizationId,
+                isActive: true,
             },
         });
 
@@ -900,11 +912,11 @@ export const authorizeQueryDocuments = async(user,documentIds)=>{
 
     const authorizedDocumentIds = [];
 
-    for(const document of documents){
-
+    for (const document of documents) {
         const documentPolicies =
             policies.filter(
-                policy=>policy.documentId===document.id
+                (policy) =>
+                    policy.documentId === document.id
             );
 
         const activePolicies =
@@ -914,73 +926,68 @@ export const authorizeQueryDocuments = async(user,documentIds)=>{
 
         const matches = [];
 
-        for(const policy of activePolicies){
-
-            switch(policy.subjectType){
-
+        for (const policy of activePolicies) {
+            switch (policy.subjectType) {
                 case "ORGANIZATION":
-
-                    if(
+                    if (
                         policy.subjectOrganizationId ===
                         user.unit.organizationId
-                    ){
+                    ) {
                         matches.push(policy);
                     }
-
                     break;
 
                 case "UNIT":
-
-                    if(
+                    if (
                         policy.scope === "UNIT_ONLY" &&
                         policy.subjectUnitId === user.unitId
-                    ){
+                    ) {
                         matches.push(policy);
                     }
 
-                    if(
-                        policy.scope === "UNIT_AND_DESCENDANTS" &&
-                        userUnitHierarchy.has(policy.subjectUnitId)
-                    ){
+                    if (
+                        policy.scope ===
+                            "UNIT_AND_DESCENDANTS" &&
+                        userUnitHierarchy.has(
+                            policy.subjectUnitId
+                        )
+                    ) {
                         matches.push(policy);
                     }
-
                     break;
 
                 case "ROLE":
-
-                    if(
+                    if (
                         policy.subjectRole === user.role
-                    ){
+                    ) {
                         matches.push(policy);
                     }
-
                     break;
 
                 case "USER":
-
-                    if(
+                    if (
                         policy.subjectUserId === user.id
-                    ){
+                    ) {
                         matches.push(policy);
                     }
-
                     break;
             }
         }
 
-        const hasDeny =
-            matches.some(
-                policy=>policy.effect==="DENY"
-            );
+        const hasDeny = matches.some(
+            (policy) => policy.effect === "DENY"
+        );
 
-        const hasAllow =
-            matches.some(
-                policy=>policy.effect==="ALLOW"
-            );
+        const hasAllow = matches.some(
+            (policy) => policy.effect === "ALLOW"
+        );
 
-        if(!hasDeny && hasAllow){
-            authorizedDocumentIds.push(document.id);
+        if (!hasDeny && hasAllow) {
+            authorizedDocumentIds.push({
+                documentId: document.id,
+                currentVersionId:
+                    document.currentVersionId,
+            });
         }
     }
 
