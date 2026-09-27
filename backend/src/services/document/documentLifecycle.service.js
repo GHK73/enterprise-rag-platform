@@ -329,6 +329,9 @@ export const getDocuments = async(user)=>{
         where:{
             organizationId:user.unit.organizationId,
             isDeleted:false,
+            status: {
+                not: "EXPIRED"
+            }
         },
         orderBy:{
             createdAt:"desc",

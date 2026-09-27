@@ -697,7 +697,7 @@ export const getDocumentAccessPolicies = async(
     user,
     documentId
 )=>{
-    await getDocument(
+    await getActiveDocument(
         user,
         documentId
     );
@@ -714,7 +714,7 @@ export const getDocumentAccessHistory = async(
     user,
     documentId
 )=>{
-    await getDocument(
+    await getActiveDocument(
         user,
         documentId
     );

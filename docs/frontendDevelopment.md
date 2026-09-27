@@ -506,42 +506,12 @@ Select File
 The UI must distinguish:
 
 ```text
-DRAFT
-≠
-SUBMITTED
-≠
-PROCESSING
-≠
-READY
-≠
-DELETED
+DRAFT ≠ SUBMITTED ≠ QUEUED ≠ PROCESSING ≠ READY ≠ FAILED ≠ EXPIRED ≠ DELETED
 ```
 
-A draft may remain temporarily in storage while configuration is completed.
+Lifecycle state transitions are documented in [`docs/DATABASE.md`](DATABASE.md) — Document Lifecycle. The frontend displays lifecycle state but does not determine authoritative state transitions.
 
-The interface should clearly show draft expiry.
-
-## Document Lifecycle
-
-```text
-DRAFT
-→ SUBMITTED
-→ QUEUED
-→ PROCESSING
-→ READY
-```
-
-Additional states:
-
-```text
-PROCESSING → FAILED
-
-DRAFT → EXPIRED
-
-READY → DELETED
-```
-
-The frontend displays lifecycle state but does not determine authoritative state transitions.
+A draft that is not published within 24 hours expires (`EXPIRED`); the backend rejects access to expired documents with 404, so the UI should treat them as not found and offer cleanup via the expired-drafts endpoint.
 
 ## Current Implementation
 
@@ -561,11 +531,11 @@ Filter state:
 ```text
 search        → case-insensitive match on title or description
 classification→ ALL | GENERAL | INTERNAL | CONFIDENTIAL | RESTRICTED
-lifecycle     → ALL | DRAFT | SUBMITTED | QUEUED | PROCESSING | READY | FAILED | EXPIRED | DELETED
+lifecycle     → ALL | DRAFT | SUBMITTED | QUEUED | PROCESSING | READY | FAILED | DELETED
 showDeleted   → boolean, reveals rows with status DELETED
 ```
 
-The library table shows title, description, classification, status badge, current version number, and last updated date, with a per-row link to document details. A draft whose `draftExpiresAt` is in the past is flagged as expired in the table.
+The library table shows title, description, classification, status badge, current version number, and last updated date, with a per-row link to document details.
 
 Document details branches on six statuses:
 
@@ -594,25 +564,9 @@ Validation is MIME-based; there is no extension check and no `accept` attribute 
 
 # 16. Document Access UI
 
-Document access is separate from administrative permission management.
+Document access is separate from administrative permission management. Access subjects, actions, DENY precedence, and the policy payload contract are documented in [`docs/DATABASE.md`](DATABASE.md) — Document Access & Authorization and Service Invariants.
 
-Access subjects:
-
-```text
-ORGANIZATION
-UNIT
-ROLE
-USER
-```
-
-Access actions:
-
-```text
-QUERY
-VIEW
-DOWNLOAD
-MANAGE_ACCESS
-```
+Access subjects are `ORGANIZATION`, `UNIT`, `ROLE`, `USER` and actions are `QUERY`, `VIEW`, `DOWNLOAD`, `MANAGE_ACCESS`.
 
 The interface should eventually support:
 
@@ -632,7 +586,7 @@ The frontend must not assume that a user's administrative role automatically gra
 
 ## Access Policy Payload Contract
 
-The access form must build a payload that matches the backend contract exactly. A generic `subjectId` is not accepted; each subject type maps to its own field.
+The form builds a payload that matches the backend contract. Each subject type maps to its own field. See [`docs/DATABASE.md`](DATABASE.md) — Service Invariants for subject field requirements.
 
 ```text
 {
@@ -700,27 +654,9 @@ The frontend displays lifecycle state but never decides authoritative transition
 
 # 17. Access History UI
 
-Access history is append-only.
+Access history is append-only. Audit record fields are documented in [`docs/DATABASE.md`](DATABASE.md) — DocumentAccessAudit.
 
-The frontend may display:
-
-```text
-Actor
-Subject
-Event Type
-Previous State
-New State
-Reason
-Timestamp
-```
-
-The interface must not provide edit or delete operations for audit records.
-
-Current access state and historical events should remain visually distinct.
-
-## Current Implementation
-
-`DocumentAccessHistory` loads `GET /documents/:documentId/access/history` on mount and renders a read-only table:
+The frontend renders a read-only table:
 
 ```text
 Event    → entry.eventType
@@ -730,7 +666,7 @@ Date     → createdAt, formatted with toLocaleString()
 Reason   → reason, or "-"
 ```
 
-The table is append-only in the UI: there are no edit or delete controls, and an empty history renders a placeholder row. Loading and error states are rendered inside the card.
+The interface must not provide edit or delete operations for audit records. Loading, error, and empty states are rendered inside the card.
 
 Not yet displayed:
 

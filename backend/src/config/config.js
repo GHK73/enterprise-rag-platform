@@ -1,5 +1,3 @@
-// backend/src/config/config.js
-
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -28,7 +26,10 @@ export default {
 
     redis: {
         enabled: process.env.REDIS_ENABLED === "true",
-        url: process.env.REDIS_URL,
+        host: process.env.REDIS_HOST,
+        port: Number(process.env.REDIS_PORT || 6379),
+        username: process.env.REDIS_USERNAME,
+        password: process.env.REDIS_PASSWORD,
     },
 
     ai: {

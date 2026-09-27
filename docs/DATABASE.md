@@ -2,7 +2,7 @@
 
 Database design for the Enterprise Retrieval-Augmented Generation (RAG) Platform.
 
-**Current phase:** Phase 5 schema complete — Phase 6 processing models planned
+**Current phase:** Phase 9 — Reliability & Performance (schema complete; Phase 6–8 implemented, Phase 10+ planned)
 
 Prisma schema: `backend/prisma/schema.prisma`
 
@@ -70,6 +70,18 @@ Organization
 
 Migration: `20260710095413_add_document_management`
 
+## Query History
+
+| Model | Purpose |
+| --- | --- |
+| `QueryHistory` | Per-user query/answer log for analytics and offline evaluation |
+
+Migration: `20260927135626_add_query_history`
+
+Key fields: `organizationId`, `userId`, `query`, `answer`, `sources`, `evidence`, `usedLLM`, `outputGuardPassed`, `createdAt`
+
+Indexed on `organizationId`, `userId`, and `createdAt`. The `organizationId` and `userId` columns are not exposed through the API response.
+
 ---
 
 # Document Lifecycle
@@ -78,8 +90,11 @@ Migration: `20260710095413_add_document_management`
 DRAFT → SUBMITTED → QUEUED → PROCESSING → READY
 DRAFT → EXPIRED
 PROCESSING → FAILED
+READY → QUEUED
 READY → DELETED (soft delete; access blocked immediately)
 ```
+
+`READY → QUEUED` occurs when a new version is uploaded; it creates a new immutable `DocumentVersion` and invalidates any cached retrieval results for the tenant.
 
 | State | Meaning |
 | --- | --- |
@@ -89,7 +104,7 @@ READY → DELETED (soft delete; access blocked immediately)
 | `PROCESSING` | Extraction, chunking, embedding in progress |
 | `READY` | Available for authorized retrieval and download |
 | `FAILED` | Processing failed; may be retried |
-| `EXPIRED` | Unpublished draft exceeded staging period |
+| `EXPIRED` | Unpublished draft exceeded staging period; access blocked (404) |
 | `DELETED` | Soft-deleted; physical cleanup is asynchronous |
 
 Version-level processing state (`DocumentVersion.processingStatus`): `PENDING → QUEUED → PROCESSING → COMPLETED | FAILED`
@@ -158,6 +173,14 @@ Rules:
 * Authorized downloads use short-lived presigned URLs
 
 Future artifact paths (Phase 6) may add extracted content under version keys.
+
+---
+
+# Version-Aware Retrieval Caching
+
+Redis caches retrieval candidates keyed by organization ID, requested `topK`, and a SHA-256 hash of the query text. Cached candidates are validated against each document's `currentVersionId` before use; stale candidates (from a superseded version) are excluded and trigger a fresh AI service retrieval.
+
+Cache invalidation happens automatically after successful document processing. The cache is tenant-scoped — an organization's cache is never shared or readable by another tenant.
 
 ---
 
@@ -240,31 +263,30 @@ Access is blocked before physical cleanup:
 
 ```text
 Delete Request → Mark DELETED → Reject retrieval and access → Queue cleanup
+Draft Expiry  → Mark EXPIRED → Reject retrieval and access → Manual cleanup
 ```
 
-Asynchronous cleanup may remove S3 objects, Qdrant vectors, and cached data. Cleanup failure must never become a security failure — if PostgreSQL says `DELETED`, content cannot reach the LLM even if old storage or vectors still exist.
+Asynchronous cleanup may remove S3 objects, Qdrant vectors, and cached data. Cleanup failure must never become a security failure — if PostgreSQL says `DELETED` or `EXPIRED`, content cannot reach the LLM even if old storage or vectors still exist.
+
+EXPIRED drafts can be physically cleaned up via `POST /documents/cleanup/expired-drafts` (see `cleanupExpiredDrafts` in the backend).
 
 ---
 
 # Future Schema (Not Yet Implemented)
 
-## Phase 6 — Document Processing
+## Phase 6 — Document Processing (Implemented in AI Service)
 
-```text
-DocumentVersion → Page → ContentBlock → Chunk
-```
+Processing models (`Page`, `ContentBlock`, `Chunk`) live in the AI service, not in the Prisma schema. Content types handled: `TEXT`, `TABLE`, `IMAGE`, `CHART`, `DIAGRAM`.
 
-Content types planned: `TEXT`, `TABLE`, `IMAGE`, `CHART`, `DIAGRAM`
+## Phase 7 — Retrieval Infrastructure (Implemented)
 
-## Phase 7 — Retrieval Infrastructure
-
-Qdrant points will carry ownership identifiers (`organizationId`, `documentId`, `documentVersionId`, etc.). Access lists will not be the primary authorization source inside Qdrant — PostgreSQL remains the authority; retrieval revalidates before content reaches the LLM.
+Qdrant points carry ownership identifiers (`organizationId`, `documentId`, `documentVersionId`). PostgreSQL remains the authorization authority; the backend revalidates access before content reaches the LLM.
 
 Long-term vector multitenancy may add `OrganizationVectorPlacement` for shard routing. Not in the current schema.
 
 ---
 
-# Database Status
+## Database Status
 
 | Item | Status |
 | --- | --- |
@@ -272,6 +294,7 @@ Long-term vector multitenancy may add `OrganizationVectorPlacement` for shard ro
 | Permission grants & invitations | ✅ |
 | Organization revision | ✅ |
 | Document enums and models | ✅ |
+| Query history model | ✅ |
 | Referential integrity review | ✅ |
 | Prisma validation | ✅ |
 | Migration applied | ✅ |
@@ -286,4 +309,5 @@ Migrations:
 20260705120512_add_move_unit_permission
 20260709023350_add_organization_revision
 20260710095413_add_document_management
+20260927135626_add_query_history
 ```

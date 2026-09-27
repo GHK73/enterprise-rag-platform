@@ -32,31 +32,7 @@ Database design: `docs/DATABASE.md`
 
 ## Query History Persistence
 
-Every executed query is now persisted so answers can be listed per user later, and so retrieval quality can be evaluated offline.
-
-### Database Migration
-
-```text
-20260927135626_add_query_history
-```
-
-New model:
-
-```text
-QueryHistory
-├── id                 cuid
-├── organizationId     → Organization (cascade delete)
-├── userId             → User (cascade delete)
-├── query              string
-├── answer             string?
-├── sources            json?
-├── evidence           json?
-├── usedLLM            boolean (default false)
-├── outputGuardPassed  boolean (default false)
-└── createdAt          timestamp (default now)
-```
-
-Indexed on `organizationId`, `userId`, and `createdAt`.
+Every executed query is now persisted so answers can be listed per user later, and so retrieval quality can be evaluated offline. See `docs/DATABASE.md` — Query History for the schema.
 
 ### Write Path
 
@@ -107,10 +83,6 @@ Response data:
 - `documentAccess.service.js` — added the file header comment; no behavior change.
 - `query.service.js` — reformatted to the project's spacing conventions; no behavior change beyond history persistence.
 - `axios` added to backend dependencies.
-
----
-
-# Recent Changes (2026-09-27)
 
 ## Version-Aware Query Caching & Cache Invalidation
 
@@ -347,70 +319,7 @@ Database migration:
 20260710095413_add_document_management
 ```
 
-Query history is a separate later migration, listed under Migrations.
-
-### Database Models
-
-- `Document`
-- `DocumentVersion`
-- `DocumentAccessPolicy`
-- `DocumentAccessAudit`
-
-### Document Lifecycle
-
-```text
-DRAFT
- ↓
-SUBMITTED
- ↓
-QUEUED
- ↓
-PROCESSING
- ↓
-READY
- ↓
-DELETED
-
-DRAFT → EXPIRED
-PROCESSING → FAILED
-READY → QUEUED
-```
-
-New version uploads transition READY → QUEUED and create a new immutable document version.
-
-### Security Model
-
-Administrative authority and document authorization are separate.
-
-```text
-Administrative Permission
-        ≠
-Document Access
-```
-
-Document classification is metadata only and does not determine access.
-
-PostgreSQL is the source of truth for authorization.
-
-```text
-PostgreSQL
-    ↓
-Authorization
-
-Redis + BullMQ
-    ↓
-Processing Queue
-
-FastAPI AI Service
-    ↓
-Extraction
-Chunking
-Embeddings
-
-Qdrant
-    ↓
-Vector Search
-```
+Document models, lifecycle transitions, and the security model are documented in [`docs/DATABASE.md`](DATABASE.md). See the Document Management, Document Lifecycle, and Document Access & Authorization sections there.
 
 ### Implemented Features
 
@@ -418,7 +327,7 @@ Vector Search
 
 - Draft creation
 - Draft updates
-- Draft expiration
+- Draft expiration (24-hour staging window, 403 on expired)
 - Tenant-isolated draft listing
 - Draft cleanup
 
@@ -447,35 +356,20 @@ Vector Search
 
 #### Access Control
 
-Supported subjects:
-
-```text
-ORGANIZATION
-UNIT
-ROLE
-USER
-```
-
-Supported actions:
-
-```text
-QUERY
-VIEW
-DOWNLOAD
-MANAGE_ACCESS
-```
+Access control subjects, actions, DENY precedence, temporary access, and policy mutations are documented in [`docs/DATABASE.md`](DATABASE.md) — Document Access & Authorization.
 
 Implemented:
 
 - ALLOW / DENY policies
 - DENY precedence
-- Temporary access
-- Policy updates
+- Temporary access (max 7 days)
+- Policy updates (action immutable when editing)
 - Policy history
 - Append-only audit log
 - `authorizeDocumentAction`
 - `authorizeQueryDocuments`
 - Current-version validation for query candidates
+- `getActiveDocument` rejects EXPIRED documents (404)
 
 ---
 
@@ -584,21 +478,7 @@ Error responses include validation failures and authentication failures.
 
 # Authorization Flow
 
-Every document action follows:
-
-```text
-Resolve Matching Policies
- ↓
-Validate Active Policies
- ↓
-Validate Temporary Access
- ↓
-Apply DENY
- ↓
-Apply ALLOW
- ↓
-Authorize Request
-```
+Policy resolution rules are documented in [`docs/DATABASE.md`](DATABASE.md) — Document Access & Authorization. Key points: DENY always wins; expired or inactive policies are rejected; `isDocumentAccessPolicyActive` enforces `isActive`, `validFrom`, and `validUntil` at authorization time.
 
 ---
 
@@ -754,7 +634,7 @@ GET  /api/v1/query/history
 
 ---
 
-# Planned Development
+# Phase Overview
 
 ## Phase 6 — Document Processing ✅
 
@@ -975,7 +855,4 @@ backend/
 
 # Migrations
 
-```text
-20260710095413_add_document_management
-20260927135626_add_query_history
-```
+See [`docs/DATABASE.md`](DATABASE.md) — Database Status for the complete migration list.

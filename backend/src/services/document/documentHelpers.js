@@ -49,6 +49,10 @@ export const getActiveDocument = async(user,documentId)=>{
         throw new ApiError(404,"Document not found.");
     }
 
+    if(document.status === "EXPIRED"){
+        throw new ApiError(404,"Document not found.");
+    }
+
     return document;
 };
 

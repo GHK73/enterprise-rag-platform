@@ -64,7 +64,7 @@ Implemented:
 - Document listing from `GET /documents`
 - Client-side search across title and description
 - Classification filter (`GENERAL`, `INTERNAL`, `CONFIDENTIAL`, `RESTRICTED`)
-- Lifecycle filter select (8 statuses)
+- Lifecycle filter select (7 statuses: DRAFT, SUBMITTED, QUEUED, PROCESSING, READY, FAILED, DELETED)
 - Show-deleted toggle revealing `DELETED` rows
 - Clear-filters control
 - Empty and error states with retry

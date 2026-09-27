@@ -99,10 +99,6 @@ const DocumentFilters = ({
                         Failed
                     </option>
 
-                    <option value="EXPIRED">
-                        Expired
-                    </option>
-
                     <option value="DELETED">
                         Deleted
                     </option>

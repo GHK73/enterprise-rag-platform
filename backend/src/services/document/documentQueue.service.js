@@ -1,37 +1,43 @@
-// backend/src/services/document/documentQueue.service.js
-
-import {documentProcessingQueue} from "../../config/bullmq.js";
+import { documentProcessingQueue } from "../../config/bullmq.js";
 import config from "../../config/config.js";
 
-async function initializeDocumentQueue(){
-    if(!config.redis.enabled) return;
+async function initializeDocumentQueue() {
+    if (!config.redis.enabled) return;
     await documentProcessingQueue.waitUntilReady();
 }
 
-async function addDocumentProcessingJob({documentId, versionId}){
-    if(!config.redis.enabled)return null;
-    return await documentProcessingQueue.add("process-document",{
+async function addDocumentProcessingJob({ documentId, versionId }) {
+    if (!config.redis.enabled) return null;
+
+    return await documentProcessingQueue.add(
+        "process-document",
+        {
             documentId,
             versionId,
-        },{
+        },
+        {
             jobId: `${documentId}:${versionId}`,
         }
     );
 }
 
-async function getProcessingJOb(jobId){
-    if(!config.redis.enabled) return null;
+async function getProcessingJOb(jobId) {
+    if (!config.redis.enabled) return null;
+
     return await documentProcessingQueue.getJob(jobId);
 }
 
-async function removeProcessingJob(jobId){
-    if(!config.redis.enabled) return;
+async function removeProcessingJob(jobId) {
+    if (!config.redis.enabled) return;
+
     const job = await documentProcessingQueue.getJob(jobId);
-    if(!job)return;
+
+    if (!job) return;
+
     await job.remove();
 }
 
-export{
+export {
     initializeDocumentQueue,
     addDocumentProcessingJob,
     getProcessingJOb,

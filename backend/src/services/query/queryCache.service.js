@@ -1,8 +1,10 @@
 // backend/src/services/query/queryCache.service.js
 
 import crypto from "crypto";
-import { connection } from "../../config/bullmq.js";
+//import { connection } from "../../config/bullmq.js";
 import config from "../../config/config.js";
+
+const connection = null;
 
 const QUERY_CACHE_TTL=300;
 const QUERY_CACHE_PREFIX="rag:retrieval";
