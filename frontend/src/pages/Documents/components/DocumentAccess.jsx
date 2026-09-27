@@ -21,6 +21,9 @@ const DocumentAccess = ({
     const [policies, setPolicies] =
         useState([]);
 
+    const [organization, setOrganization] =
+        useState(null);
+
     const [units, setUnits] =
         useState([]);
 
@@ -61,9 +64,13 @@ const DocumentAccess = ({
         async () => {
             try {
                 const [
+                    organizationResponse,
                     unitsResponse,
                     membersResponse,
                 ] = await Promise.all([
+                    api.get(
+                        "/organization"
+                    ),
                     api.get(
                         "/organization/units"
                     ),
@@ -71,6 +78,11 @@ const DocumentAccess = ({
                         "/organization/members"
                     ),
                 ]);
+
+                setOrganization(
+                    organizationResponse.data
+                        .data || null
+                );
 
                 setUnits(
                     unitsResponse.data
@@ -82,6 +94,7 @@ const DocumentAccess = ({
                         .data || []
                 );
             } catch {
+                setOrganization(null);
                 setUnits([]);
                 setMembers([]);
             }
@@ -235,6 +248,7 @@ const DocumentAccess = ({
             )}
 
             <AccessPolicyForm
+                organization={organization}
                 units={units}
                 members={members}
                 loading={saving}

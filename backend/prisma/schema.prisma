@@ -111,6 +111,7 @@ model Organization {
   permissionGrants     PermissionGrant[]
   documents            Document[]
   documentAccessAudits DocumentAccessAudit[]
+  queryHistories       QueryHistory[]
 
   createdAt                     DateTime               @default(now())
   updatedAt                     DateTime               @updatedAt
@@ -171,6 +172,7 @@ model User {
 
   sentInvitations            Invitation[]          @relation("SentInvitations")
   documentAccessAuditActions DocumentAccessAudit[] @relation("DocumentAccessAuditActor")
+  queryHistories             QueryHistory[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -405,5 +407,30 @@ model DocumentAccessAudit {
   @@index([actorId])
   @@index([subjectType])
   @@index([eventType])
+  @@index([createdAt])
+}
+
+model QueryHistory {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  query  String
+  answer String?
+
+  sources  Json?
+  evidence Json?
+
+  usedLLM           Boolean @default(false)
+  outputGuardPassed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([userId])
   @@index([createdAt])
 }

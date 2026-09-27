@@ -1,3 +1,5 @@
+// backend/src/services/document/documentAccess.service.js
+
 import prisma from "../../config/prisma.js";
 import ApiError from "../../utils/ApiError.js";
 

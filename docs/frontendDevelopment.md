@@ -58,6 +58,7 @@ Current page structure:
 pages/
 ├── CreateOrganization/
 ├── Dashboard/
+├── Documents/
 ├── Home/
 ├── Invitations/
 ├── Login/
@@ -212,6 +213,31 @@ Navigation must:
 
 Future navigation items should not be added before their corresponding features exist.
 
+## Current Navbar
+
+`Navbar` is the only shared navigation component and is rendered by `PublicLayout`, which wraps both public and protected routes.
+
+Authenticated links:
+
+```text
+Dashboard     → /dashboard
+Organization  → /organization
+Documents     → /documents
+Permissions   → /permissions
+Invitations   → /invitations
+```
+
+Unauthenticated links (`Home`, `Features`, `Documentation`, `GitHub`) all currently point to `/`.
+
+Behavior:
+
+* The logo links to `/dashboard` when authenticated and `/` otherwise.
+* Active state uses `isActive` from React Router; the `Documents` link stays active on `/documents/new` and `/documents/:documentId` because no `end` prop is set.
+* A hamburger toggle controls `navbar-center active` for mobile; every link closes the menu on click.
+* Logout clears the session and navigates to `/`.
+
+`/documents/new` is reachable from the document library only; it has no Navbar or Dashboard entry.
+
 ---
 
 # 8. Component Guidelines
@@ -281,6 +307,22 @@ Rules:
 * API-specific logic should remain separate from reusable visual components.
 * Avoid duplicate request logic when an existing API function already exists.
 
+## Current Implementation
+
+`src/api/axios.js` creates a single Axios instance:
+
+```text
+baseURL → http://localhost:5000/api/v1
+```
+
+The base URL is hardcoded; no environment variable is used.
+
+* A request interceptor reads `localStorage.token` and attaches `Authorization: Bearer <token>`.
+* There is no response interceptor, so there is no global 401 handling, token refresh, or automatic logout.
+* Session invalidation is handled by `AuthContext`, not by Axios.
+* Every caller is responsible for reading `error?.response?.data?.message`.
+* Feature-specific wrappers such as `src/api/document.api.js` own endpoint paths and unwrap `response.data.data`, so pages never touch Axios directly.
+
 ---
 
 # 11. Authentication
@@ -303,6 +345,22 @@ Requirements:
 * Logout clears the token and resets the session.
 * Invalid or expired tokens are removed.
 * Authentication-aware UI updates immediately.
+
+## Current Implementation
+
+`AuthContext` is the only authentication state container.
+
+```text
+State     → token, user, loading
+Storage   → localStorage key "token"
+Exposed   → token, user, loading, login, logout, refreshUser
+```
+
+* `login(token)` writes the token to `localStorage` and updates context state.
+* On every `token` change, a session verification effect calls `GET /auth/me`.
+* A failed verification calls `logout()`, which removes the token and clears the user. No redirect is issued by the context itself.
+* `ProtectedRoute` renders nothing while `loading`, then redirects to `/login` when no token exists.
+* `PublicRoute` renders nothing while `loading`, then redirects authenticated users to `/`.
 
 ---
 
@@ -330,6 +388,7 @@ Current examples:
 ```text
 /dashboard
 /organization
+/create-organization
 /permissions
 /invitations
 /documents
@@ -337,6 +396,8 @@ Current examples:
 /documents/:documentId/upload
 /documents/:documentId
 ```
+
+`App.jsx` declares public and protected branches directly; the document routes are contributed as a `documentRoutes` fragment from `src/routes/DocumentRoutes.jsx` and spread into the protected branch.
 
 Document routes are implemented. Retrieval, analytics, and settings routes should be added only when their implementation begins.
 
@@ -482,6 +543,53 @@ READY → DELETED
 
 The frontend displays lifecycle state but does not determine authoritative state transitions.
 
+## Current Implementation
+
+Routes:
+
+```text
+/documents                        → DocumentLibrary
+/documents/new                    → CreateDocument
+/documents/:documentId/upload     → UploadDocument
+/documents/:documentId            → DocumentDetails
+```
+
+The library fetches the full document list once from `GET /documents` and filters it entirely on the client. There is no pagination, no server-side search, and no sorting.
+
+Filter state:
+
+```text
+search        → case-insensitive match on title or description
+classification→ ALL | GENERAL | INTERNAL | CONFIDENTIAL | RESTRICTED
+lifecycle     → ALL | DRAFT | SUBMITTED | QUEUED | PROCESSING | READY | FAILED | EXPIRED | DELETED
+showDeleted   → boolean, reveals rows with status DELETED
+```
+
+The library table shows title, description, classification, status badge, current version number, and last updated date, with a per-row link to document details. A draft whose `draftExpiresAt` is in the past is flagged as expired in the table.
+
+Document details branches on six statuses:
+
+```text
+DRAFT       → publish allowed, download blocked
+QUEUED      → informational banner, download blocked
+PROCESSING  → informational banner, download blocked
+FAILED      → error banner
+READY       → download and upload new version allowed
+DELETED     → restore and permanent cleanup, no soft delete
+```
+
+Upload rules are enforced client-side before the request is sent:
+
+```text
+Maximum size → 25 MB
+Allowed MIME → application/pdf
+               text/plain
+               application/msword
+               application/vnd.openxmlformats-officedocument.wordprocessingml.document
+```
+
+Validation is MIME-based; there is no extension check and no `accept` attribute on the file input. Upload progress is driven by the Axios `onUploadProgress` event.
+
 ---
 
 # 16. Document Access UI
@@ -522,6 +630,72 @@ Temporary access should clearly display start time, expiry time, and expired sta
 
 The frontend must not assume that a user's administrative role automatically grants document access.
 
+## Access Policy Payload Contract
+
+The access form must build a payload that matches the backend contract exactly. A generic `subjectId` is not accepted; each subject type maps to its own field.
+
+```text
+{
+    subjectType,          → ORGANIZATION | UNIT | ROLE | USER
+    action,               → QUERY | VIEW | DOWNLOAD | MANAGE_ACCESS
+    effect,               → ALLOW | DENY
+    scope,                → UNIT_ONLY | UNIT_AND_DESCENDANTS
+    validUntil,           → ISO timestamp, or null for permanent access
+    reason,
+    subjectOrganizationId → when subjectType = ORGANIZATION
+    subjectUnitId         → when subjectType = UNIT
+    subjectRole           → when subjectType = ROLE
+    subjectUserId          → when subjectType = USER
+}
+```
+
+Rules:
+
+* Only the field matching `subjectType` is sent; the others are omitted.
+* `subjectOrganizationId` comes from the loaded organization, not from user input.
+* `scope` is sent only for `UNIT` subjects.
+* `validUntil` is `null` for permanent access, not omitted.
+* `effect` is the field name used on submit; `permission` is only the form's local label.
+* Form validation must block submit when an `ORGANIZATION` subject is chosen before the organization is loaded, or when a `UNIT` subject has no scope.
+* Editing an existing policy hydrates `action`, `scope`, and `subjectOrganizationId` from the loaded policy.
+* The action of an existing policy is immutable; disable the action selector while editing.
+
+`DocumentAccess` loads the organization, its units, and its members in a single parallel request batch and passes the organization down to the form. The `ORGANIZATION` subject selector displays the resolved organization name instead of a hardcoded label, and member options fall back through `fullName`, `name`, then `email`.
+
+## Current Implementation
+
+Subject value inputs per subject type:
+
+```text
+ORGANIZATION → disabled text input showing the organization name
+UNIT         → unit select + scope select
+ROLE         → select with OWNER | ADMIN | MANAGER | MEMBER
+USER         → member select
+```
+
+Temporary access is a checkbox plus a `datetime-local` field converted to an ISO `validUntil`; unticked means `validUntil: null`.
+
+Server-side rules the frontend does not yet mirror:
+
+* `validFrom` is not sent; the backend defaults it to the current time.
+* The backend rejects `validUntil` values that are not later than `validFrom`, and caps temporary access at 7 days. The form performs neither check.
+* `grantedById` comes from the authenticated session, not from the form.
+
+The policy table lists subject, subject type, permission, and temporary expiry (`Permanent` when there is no expiry), with edit and delete actions. Revoking a policy currently uses `window.confirm` with the fixed reason `Removed from frontend`, while document delete, restore, and cleanup use dedicated dialog components. New confirmation components should be used instead of `window.confirm` as more flows are added.
+
+## Document Action Guards
+
+Document header actions are derived from lifecycle state, not checked inline at each call site.
+
+```text
+canPublish  = status === DRAFT and not publishing
+canDownload = not downloading
+              and status !== DRAFT
+              and status !== PROCESSING
+```
+
+The frontend displays lifecycle state but never decides authoritative transitions.
+
 ---
 
 # 17. Access History UI
@@ -543,6 +717,25 @@ Timestamp
 The interface must not provide edit or delete operations for audit records.
 
 Current access state and historical events should remain visually distinct.
+
+## Current Implementation
+
+`DocumentAccessHistory` loads `GET /documents/:documentId/access/history` on mount and renders a read-only table:
+
+```text
+Event    → entry.eventType
+Subject  → subjectName → subjectUser.name → subjectUnit.name → subjectRole → "Unknown"
+Actor    → actor.name → actorName → "System"
+Date     → createdAt, formatted with toLocaleString()
+Reason   → reason, or "-"
+```
+
+The table is append-only in the UI: there are no edit or delete controls, and an empty history renders a placeholder row. Loading and error states are rendered inside the card.
+
+Not yet displayed:
+
+* `previousState` and `newState` from the audit record
+* A timeline presentation
 
 ---
 
@@ -566,6 +759,8 @@ Guidelines:
 * Permission errors should not appear as generic failures.
 * Backend validation messages should be preserved when useful.
 * Destructive actions should require clear confirmation.
+
+Data-driven pages must render an explicit loading state. `ProtectedRoute` and `PublicRoute` currently return `null` while the session is being verified, which produces a blank frame; this is a known deviation from the rule above.
 
 ---
 
@@ -653,7 +848,7 @@ Backend Document APIs Ready
 → Download and Delete Flows
 ```
 
-The document-management UI now implements this workflow, including version history, document access, access history, restore, and permanent-cleanup actions. Document processing status and retrieval UI remain future work.
+The document-management UI now implements this workflow, including version history, document access, access history, restore, and permanent-cleanup actions. The document library filter, the access-policy form, and the details page are the only entry points into the workflow; access configuration and review remain unavailable before publishing, and processing status is display-only. Retrieval UI remains future work.
 
 Do not build UI against speculative API contracts.
 

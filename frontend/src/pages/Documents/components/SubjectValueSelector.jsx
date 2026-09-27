@@ -1,9 +1,12 @@
 const SubjectValueSelector = ({
     subjectType,
+    organization,
     units,
     members,
     value,
     onChange,
+    scope,
+    onScopeChange,
 }) => {
     const handleChange = (event) => {
         onChange(event.target.value);
@@ -19,7 +22,10 @@ const SubjectValueSelector = ({
 
                 <input
                     type="text"
-                    value="Current Organization"
+                    value={
+                        organization?.name ||
+                        "Current Organization"
+                    }
                     disabled
                 />
 
@@ -70,38 +76,69 @@ const SubjectValueSelector = ({
 
     if (subjectType === "UNIT") {
         return (
-            <div className="form-group">
+            <>
+                <div className="form-group">
 
-                <label>
-                    Organization Unit
-                </label>
+                    <label>
+                        Organization Unit
+                    </label>
 
-                <select
-                    value={value}
-                    onChange={handleChange}
-                >
-                    <option value="">
-                        Select Unit
-                    </option>
-
-                    {units.length === 0 ? (
-                        <option disabled>
-                            No units available
+                    <select
+                        value={value}
+                        onChange={handleChange}
+                    >
+                        <option value="">
+                            Select Unit
                         </option>
-                    ) : (
-                        units.map((unit) => (
-                            <option
-                                key={unit.id}
-                                value={unit.id}
-                            >
-                                {unit.name}
+
+                        {units.length === 0 ? (
+                            <option disabled>
+                                No units available
                             </option>
-                        ))
-                    )}
+                        ) : (
+                            units.map((unit) => (
+                                <option
+                                    key={unit.id}
+                                    value={unit.id}
+                                >
+                                    {unit.name}
+                                </option>
+                            ))
+                        )}
 
-                </select>
+                    </select>
 
-            </div>
+                </div>
+
+                <div className="form-group">
+
+                    <label>
+                        Unit Scope
+                    </label>
+
+                    <select
+                        value={scope}
+                        onChange={(event) =>
+                            onScopeChange(
+                                event.target.value
+                            )
+                        }
+                    >
+                        <option value="UNIT_ONLY">
+                            Unit Only
+                        </option>
+
+                        <option value="UNIT_AND_DESCENDANTS">
+                            Unit and Descendants
+                        </option>
+                    </select>
+
+                    <small className="form-helper">
+                        Choose whether access applies only to this unit or also to its child units.
+                    </small>
+
+                </div>
+            </>
         );
     }
 
@@ -130,7 +167,9 @@ const SubjectValueSelector = ({
                             key={member.id}
                             value={member.id}
                         >
-                            {member.name}
+                            {member.fullName ||
+                                member.name ||
+                                member.email}
                         </option>
                     ))
                 )}

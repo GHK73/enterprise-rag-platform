@@ -5,6 +5,15 @@ const DocumentHeader = ({
     onPublish,
     onDownload,
 }) => {
+    const canPublish =
+        document.status === "DRAFT" &&
+        !publishing;
+
+    const canDownload =
+        !downloading &&
+        document.status !== "DRAFT" &&
+        document.status !== "PROCESSING";
+
     return (
         <div className="document-header">
 
@@ -18,6 +27,7 @@ const DocumentHeader = ({
                     {document.description ||
                         "No description"}
                 </p>
+
                 <p className="document-current-status">
 
                     Current Status:
@@ -32,12 +42,11 @@ const DocumentHeader = ({
 
             <div className="document-actions">
 
-                {document.status ===
-                    "DRAFT" && (
+                {document.status === "DRAFT" && (
                     <button
                         className="primary-button"
                         onClick={onPublish}
-                        disabled={publishing}
+                        disabled={!canPublish}
                     >
                         {publishing
                             ? "Publishing..."
@@ -45,14 +54,11 @@ const DocumentHeader = ({
                     </button>
                 )}
 
-                    <button
-                        className="secondary-button"
-                        onClick={onDownload}
-                        disabled={
-                            downloading ||
-                            document.status === "DRAFT"
-                        }
-                    >
+                <button
+                    className="secondary-button"
+                    onClick={onDownload}
+                    disabled={!canDownload}
+                >
                     {downloading
                         ? "Downloading..."
                         : document.status === "PROCESSING"

@@ -1,13 +1,15 @@
 import { Router } from "express";
-import { queryDocuments } from "../controllers/query.controller.js";
+import {
+    getUserQueryHistory,
+} from "../controllers/query/queryHistory.controller.js";
 import authenticate from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-router.post(
+router.get(
     "/",
     authenticate,
-    queryDocuments
+    getUserQueryHistory
 );
 
 export default router;

@@ -24,6 +24,89 @@ Database design: `docs/DATABASE.md`
 | Query Pipeline | ✅ |
 | Version-Aware Caching | ✅ |
 | Cache Invalidation | ✅ |
+| Query History Persistence | ✅ |
+
+---
+
+# Recent Changes (2026-09-27)
+
+## Query History Persistence
+
+Every executed query is now persisted so answers can be listed per user later, and so retrieval quality can be evaluated offline.
+
+### Database Migration
+
+```text
+20260927135626_add_query_history
+```
+
+New model:
+
+```text
+QueryHistory
+├── id                 cuid
+├── organizationId     → Organization (cascade delete)
+├── userId             → User (cascade delete)
+├── query              string
+├── answer             string?
+├── sources            json?
+├── evidence           json?
+├── usedLLM            boolean (default false)
+├── outputGuardPassed  boolean (default false)
+└── createdAt          timestamp (default now)
+```
+
+Indexed on `organizationId`, `userId`, and `createdAt`.
+
+### Write Path
+
+- `query.service.js` — new `saveQueryHistory` helper. It writes a record on both return paths: the evidence-insufficient fallback and the generated-answer path.
+- The stored record keeps the guarded answer, not the raw LLM output.
+- History is written after the output guardrail runs, so blocked output is recorded with `outputGuardPassed: false`.
+- `organizationId` is resolved from `user.unit.organizationId`, the same source used for authorization and cache scoping. A missing organization or user id throws instead of writing a partial record.
+- The insufficient-evidence response now also returns `outputGuardPassed: false`, making the response shape consistent across both paths.
+
+### Read Path
+
+- `queryHistory.service.js` — `getQueryHistory(user, limit, offset)`, scoped to the caller's organization and user, ordered by `createdAt` descending.
+- `queryHistory.controller.js` — `getUserQueryHistory` with `limit` (integer, 1–100, default 20) and `offset` (non-negative integer, default 0) validation returning HTTP 400 on invalid input.
+- `queryHistory.routes.js` — mounted at `/query/history` behind `authenticate`.
+- The response does not expose the `organizationId` or `userId` columns.
+
+### Query History API
+
+```text
+GET /api/v1/query/history?limit=20&offset=0
+```
+
+Response data:
+
+```text
+{
+    history: [
+        {
+            id,
+            query,
+            answer,
+            sources,
+            evidence,
+            usedLLM,
+            outputGuardPassed,
+            createdAt
+        }
+    ],
+    limit,
+    offset
+}
+```
+
+### Other Backend Changes
+
+- `bullmq.js` — Redis connection now sets `enableReadyCheck` and `lazyConnect: false`, and logs `connect`, `ready`, `error`, and `close` events.
+- `query.routes.js` — imports `authenticate` as a default export, matching the middleware module.
+- `documentAccess.service.js` — added the file header comment; no behavior change.
+- `query.service.js` — reformatted to the project's spacing conventions; no behavior change beyond history persistence.
+- `axios` added to backend dependencies.
 
 ---
 
@@ -264,6 +347,8 @@ Database migration:
 20260710095413_add_document_management
 ```
 
+Query history is a separate later migration, listed under Migrations.
+
 ### Database Models
 
 - `Document`
@@ -434,6 +519,8 @@ Citation Validation
 Output Guardrail
  ↓
 Answer + Sources
+ ↓
+Query History Persistence
 ```
 
 ### Service Files
@@ -452,6 +539,7 @@ Answer + Sources
 | `answerValidation.service.js` | `validateGeneratedAnswer` | Citation validation |
 | `outputGuardrail.service.js` | `validateGeneratedAnswer` | Output safety filtering |
 | `llm.service.js` | `generateAnswer` | Bedrock Converse API |
+| `queryHistory.service.js` | `getQueryHistory` | Per-user query history read model |
 
 ### Query API
 
@@ -478,6 +566,8 @@ Response fields:
 | `evidence` | object | Evidence sufficiency result |
 | `usedLLM` | boolean | Whether the LLM was invoked |
 | `outputGuardPassed` | boolean | Output guard result |
+
+Every response is also written to `QueryHistory` after the output guardrail runs.
 
 Evidence reasons:
 
@@ -657,7 +747,10 @@ PATCH /api/v1/invitations/:invitationId/revoke
 
 ```text
 POST /api/v1/query
+GET  /api/v1/query/history
 ```
+
+`GET /api/v1/query/history` requires JWT authentication and returns only the calling user's entries within their own organization, newest first. Query parameters are `limit` (1–100, default 20) and `offset` (default 0).
 
 ---
 
@@ -779,6 +872,8 @@ Planned:
 - Cost monitoring
 - Security monitoring
 
+Query history persistence is now in place, which is the prerequisite for retrieval and generation evaluation. Analytics endpoints and a history UI are not implemented yet.
+
 ---
 
 ## Phase 11 — Deployment ⏳
@@ -817,7 +912,9 @@ backend/
     │   ├── invitation.controller.js
     │   ├── organization.controller.js
     │   ├── permission.controller.js
-    │   └── query.controller.js
+    │   ├── query.controller.js
+    │   └── query/
+    │       └── queryHistory.controller.js
     ├── middleware/
     │   ├── auth.middleware.js
     │   ├── error.middleware.js
@@ -831,7 +928,8 @@ backend/
     │   ├── invitation.routes.js
     │   ├── organization.routes.js
     │   ├── permission.routes.js
-    │   └── query.routes.js
+    │   ├── query.routes.js
+    │   └── queryHistory.routes.js
     ├── services/
     │   ├── auth.service.js
     │   ├── document.service.js
@@ -859,19 +957,25 @@ backend/
     │       ├── query.service.js
     │       ├── queryAI.service.js
     │       ├── queryCache.service.js
+    │       ├── queryHistory.service.js
     │       └── reranking.service.js
     ├── workers/
     │   └── document.worker.js
     └── utils/
-        ├── ApiError.js
-        ├── ApiResponse.js
-        ├── asyncHandler.js
-        ├── fileValidation.js
-        ├── jwt.js
-        ├── password.js
-        └── serializeBigInt.js
+    	├── ApiError.js
+    │   ├── ApiResponse.js
+    │   ├── asyncHandler.js
+    │   ├── fileValidation.js
+    │   ├── jwt.js
+    │   ├── password.js
+    │   └── serializeBigInt.js
 ```
 
 ---
 
-# Appendix: Backend Structure
+# Migrations
+
+```text
+20260710095413_add_document_management
+20260927135626_add_query_history
+```

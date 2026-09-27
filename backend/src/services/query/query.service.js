@@ -8,14 +8,49 @@ import { getCachedQuery, setCachedQuery } from "./queryCache.service.js";
 import { checkEvidenceSufficiency } from "./evidence.service.js";
 import { generateQueryAnswer } from "./answer.service.js";
 import { validateGeneratedAnswer as validateOutputGuard } from "./outputGuardrail.service.js";
+import prisma from "../../config/prisma.js";
 
-export const retrieveAuthorizedCandidates=async(user,query,topK=5)=>{
-    const organizationId=user?.unit?.organizationId;
-    if(!organizationId){
+const saveQueryHistory = async ({
+    user,
+    query,
+    answer,
+    sources,
+    evidence,
+    usedLLM,
+    outputGuardPassed,
+}) => {
+    const organizationId = user?.unit?.organizationId;
+
+    if (!organizationId || !user?.id) {
+        throw new Error("Query history requires an authenticated organization user.");
+    }
+
+    await prisma.queryHistory.create({
+        data: {
+            organizationId,
+            userId: user.id,
+            query,
+            answer,
+            sources: sources ?? null,
+            evidence: evidence ?? null,
+            usedLLM,
+            outputGuardPassed,
+        },
+    });
+};
+
+export const retrieveAuthorizedCandidates = async (
+    user,
+    query,
+    topK = 5
+) => {
+    const organizationId = user?.unit?.organizationId;
+
+    if (!organizationId) {
         throw new Error("User organization could not be determined.");
     }
 
-    let cachedCandidates=await getCachedQuery(
+    let cachedCandidates = await getCachedQuery(
         organizationId,
         query,
         topK
@@ -23,99 +58,104 @@ export const retrieveAuthorizedCandidates=async(user,query,topK=5)=>{
 
     let retrievalResponse;
     let candidates;
-    let cacheHit=Array.isArray(cachedCandidates);
+    let cacheHit = Array.isArray(cachedCandidates);
 
-    if(cacheHit){
-        candidates=cachedCandidates;
-        retrievalResponse={
+    if (cacheHit) {
+        candidates = cachedCandidates;
+
+        retrievalResponse = {
             query,
-            results:candidates
+            results: candidates,
         };
-    }else{
-        retrievalResponse=await retrieveFromAI(
+    } else {
+        retrievalResponse = await retrieveFromAI(
             query,
             topK,
             organizationId
         );
-        candidates=retrievalResponse.results||[];
+
+        candidates = retrievalResponse.results || [];
     }
 
-    const documentIds=[
+    const documentIds = [
         ...new Set(
             candidates
-                .map(candidate=>candidate.document_id)
+                .map((candidate) => candidate.document_id)
                 .filter(Boolean)
-        )
+        ),
     ];
 
-    const authorizedDocuments=await authorizeQueryDocuments(
+    const authorizedDocuments = await authorizeQueryDocuments(
         user,
         documentIds
     );
 
-    const authorizedVersionMap=new Map(
-        authorizedDocuments.map(document=>[
+    const authorizedVersionMap = new Map(
+        authorizedDocuments.map((document) => [
             document.documentId,
-            document.currentVersionId
+            document.currentVersionId,
         ])
     );
 
-    const hasStaleCandidates=cacheHit&&candidates.some(candidate=>{
-        const currentVersionId=authorizedVersionMap.get(
-            candidate.document_id
-        );
+    const hasStaleCandidates =
+        cacheHit &&
+        candidates.some((candidate) => {
+            const currentVersionId = authorizedVersionMap.get(
+                candidate.document_id
+            );
 
-        return(
-            currentVersionId&&
-            candidate.version_id!==currentVersionId
-        );
-    });
+            return (
+                currentVersionId &&
+                candidate.version_id !== currentVersionId
+            );
+        });
 
-    if(hasStaleCandidates){
-        retrievalResponse=await retrieveFromAI(
+    if (hasStaleCandidates) {
+        retrievalResponse = await retrieveFromAI(
             query,
             topK,
             organizationId
         );
-        candidates=retrievalResponse.results||[];
-        cacheHit=false;
+
+        candidates = retrievalResponse.results || [];
+        cacheHit = false;
     }
 
-    const refreshedDocumentIds=[
+    const refreshedDocumentIds = [
         ...new Set(
             candidates
-                .map(candidate=>candidate.document_id)
+                .map((candidate) => candidate.document_id)
                 .filter(Boolean)
-        )
+        ),
     ];
 
-    const refreshedAuthorizedDocuments=cacheHit
+    const refreshedAuthorizedDocuments = cacheHit
         ? authorizedDocuments
         : await authorizeQueryDocuments(
-            user,
-            refreshedDocumentIds
-        );
+              user,
+              refreshedDocumentIds
+          );
 
-    const refreshedAuthorizedVersionMap=new Map(
-        refreshedAuthorizedDocuments.map(document=>[
+    const refreshedAuthorizedVersionMap = new Map(
+        refreshedAuthorizedDocuments.map((document) => [
             document.documentId,
-            document.currentVersionId
+            document.currentVersionId,
         ])
     );
 
-    const authorizedCandidates=candidates.filter(candidate=>{
-        const currentVersionId=
+    const authorizedCandidates = candidates.filter((candidate) => {
+        const currentVersionId =
             refreshedAuthorizedVersionMap.get(
                 candidate.document_id
             );
 
-        return(
-            currentVersionId&&
-            candidate.version_id===currentVersionId
+        return (
+            currentVersionId &&
+            candidate.version_id === currentVersionId
         );
     });
 
-    if(!cacheHit){
+    if (!cacheHit) {
         await setCachedQuery(
             organizationId,
             query,
@@ -124,58 +164,82 @@ export const retrieveAuthorizedCandidates=async(user,query,topK=5)=>{
         );
     }
 
-    const rerankedCandidates=rerankCandidates(
+    const rerankedCandidates = rerankCandidates(
         authorizedCandidates,
         topK
     );
 
-    const evidence=checkEvidenceSufficiency(
+    const evidence = checkEvidenceSufficiency(
         rerankedCandidates
     );
 
-    if(!evidence.sufficient){
-        return{
-            query:retrievalResponse.query,
-            results:[],
-            context:"",
-            sources:[],
-            prompt:null,
-            answer:"I couldn't find sufficient information in the authorized documents to answer this question.",
+    if (!evidence.sufficient) {
+        const answer =
+            "I couldn't find sufficient information in the authorized documents to answer this question.";
+
+        await saveQueryHistory({
+            user,
+            query: retrievalResponse.query,
+            answer,
+            sources: [],
             evidence,
-            requiresGeneration:false,
-            usedLLM:false
+            usedLLM: false,
+            outputGuardPassed: false,
+        });
+
+        return {
+            query: retrievalResponse.query,
+            results: [],
+            context: "",
+            sources: [],
+            prompt: null,
+            answer,
+            evidence,
+            requiresGeneration: false,
+            usedLLM: false,
+            outputGuardPassed: false,
         };
     }
 
-    const{context,sources}=buildSafeContext(
+    const { context, sources } = buildSafeContext(
         rerankedCandidates
     );
 
-    const prompt=buildRAGPrompt(
+    const prompt = buildRAGPrompt(
         retrievalResponse.query,
         context
     );
 
-    const answerResult=await generateQueryAnswer({
+    const answerResult = await generateQueryAnswer({
         evidence,
         prompt,
-        sources
+        sources,
     });
 
-    const guardedAnswer=validateOutputGuard(
+    const guardedAnswer = validateOutputGuard(
         answerResult.answer
     );
 
-    return{
-        query:retrievalResponse.query,
-        results:rerankedCandidates,
+    await saveQueryHistory({
+        user,
+        query: retrievalResponse.query,
+        answer: guardedAnswer.answer,
+        sources,
+        evidence,
+        usedLLM: answerResult.usedLLM,
+        outputGuardPassed: guardedAnswer.safe,
+    });
+
+    return {
+        query: retrievalResponse.query,
+        results: rerankedCandidates,
         context,
         sources,
-        prompt:null,
-        answer:guardedAnswer.answer,
+        prompt: null,
+        answer: guardedAnswer.answer,
         evidence,
-        requiresGeneration:false,
-        usedLLM:answerResult.usedLLM,
-        outputGuardPassed:guardedAnswer.safe
+        requiresGeneration: false,
+        usedLLM: answerResult.usedLLM,
+        outputGuardPassed: guardedAnswer.safe,
     };
 };

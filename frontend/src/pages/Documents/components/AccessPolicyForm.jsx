@@ -7,6 +7,7 @@ import SubjectSelector from "./SubjectSelector";
 import SubjectValueSelector from "./SubjectValueSelector";
 
 const AccessPolicyForm = ({
+    organization,
     units,
     members,
     onSubmit,
@@ -22,8 +23,14 @@ const AccessPolicyForm = ({
     const [subjectId, setSubjectId] =
         useState("");
 
+    const [action, setAction] =
+        useState("QUERY");
+
     const [permission, setPermission] =
         useState("ALLOW");
+
+    const [scope, setScope] =
+        useState("UNIT_ONLY");
 
     const [temporary, setTemporary] =
         useState(false);
@@ -48,13 +55,24 @@ const AccessPolicyForm = ({
             initialValues.subjectUserId ||
                 initialValues.subjectUnitId ||
                 initialValues.subjectRole ||
+                initialValues.subjectOrganizationId ||
                 ""
+        );
+
+        setAction(
+            initialValues.action ||
+                "QUERY"
         );
 
         setPermission(
             initialValues.effect ||
                 initialValues.permission ||
                 "ALLOW"
+        );
+
+        setScope(
+            initialValues.scope ||
+                "UNIT_ONLY"
         );
 
         setTemporary(
@@ -91,7 +109,9 @@ const AccessPolicyForm = ({
     const resetForm = () => {
         setSubjectType("USER");
         setSubjectId("");
+        setAction("QUERY");
         setPermission("ALLOW");
+        setScope("UNIT_ONLY");
         setTemporary(false);
         setExpiresAt("");
         setReason("");
@@ -111,20 +131,76 @@ const AccessPolicyForm = ({
         }
 
         if (
+            subjectType ===
+                "ORGANIZATION" &&
+            !organization?.id
+        ) {
+            return;
+        }
+
+        if (
+            subjectType === "UNIT" &&
+            !scope
+        ) {
+            return;
+        }
+
+        if (
             temporary &&
             !expiresAt
         ) {
             return;
         }
 
-        await onSubmit({
+        const accessData = {
             subjectType,
-            subjectId,
-            permission,
-            temporary,
-            expiresAt,
+            action,
+            effect: permission,
+            scope:
+                subjectType === "UNIT"
+                    ? scope
+                    : undefined,
+            validUntil:
+                temporary
+                    ? new Date(
+                          expiresAt
+                      ).toISOString()
+                    : null,
             reason,
-        });
+        };
+
+        if (
+            subjectType ===
+            "ORGANIZATION"
+        ) {
+            accessData.subjectOrganizationId =
+                organization.id;
+        }
+
+        if (
+            subjectType === "UNIT"
+        ) {
+            accessData.subjectUnitId =
+                subjectId;
+        }
+
+        if (
+            subjectType === "ROLE"
+        ) {
+            accessData.subjectRole =
+                subjectId;
+        }
+
+        if (
+            subjectType === "USER"
+        ) {
+            accessData.subjectUserId =
+                subjectId;
+        }
+
+        await onSubmit(
+            accessData
+        );
 
         if (!editing) {
             resetForm();
@@ -143,11 +219,55 @@ const AccessPolicyForm = ({
 
             <SubjectValueSelector
                 subjectType={subjectType}
+                organization={organization}
                 units={units}
                 members={members}
                 value={subjectId}
                 onChange={setSubjectId}
+                scope={scope}
+                onScopeChange={setScope}
             />
+
+            <div className="form-group">
+                <label>
+                    Action
+                </label>
+
+                <select
+                    value={action}
+                    onChange={(
+                        event
+                    ) =>
+                        setAction(
+                            event.target
+                                .value
+                        )
+                    }
+                    disabled={editing}
+                >
+                    <option value="QUERY">
+                        QUERY
+                    </option>
+
+                    <option value="VIEW">
+                        VIEW
+                    </option>
+
+                    <option value="DOWNLOAD">
+                        DOWNLOAD
+                    </option>
+
+                    <option value="MANAGE_ACCESS">
+                        MANAGE_ACCESS
+                    </option>
+                </select>
+
+                {editing && (
+                    <small className="form-helper">
+                        Action cannot be changed when editing an existing policy.
+                    </small>
+                )}
+            </div>
 
             <div className="form-group">
                 <label>
@@ -268,6 +388,7 @@ const AccessPolicyForm = ({
                 )}
 
             </div>
+
         </form>
     );
 };
