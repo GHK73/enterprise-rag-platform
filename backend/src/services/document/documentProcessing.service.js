@@ -9,8 +9,9 @@ import {
     handleProcessingFailure,
 } from "./documentAI.service.js";
 import { invalidateOrganizationQueryCache } from "../query/queryCache.service.js";
+import { dispatchDocumentProcessing } from "./documentProcessingDispatcher.service.js";
 
-async function updateProcessingStatus(documentId, versionId, status, errorMessage = null) {
+async function updateProcessingStatus(documentId, versionId, status) {
     return await prisma.document.updateMany({
         where: {
             id: documentId,
@@ -18,36 +19,33 @@ async function updateProcessingStatus(documentId, versionId, status, errorMessag
         },
         data: {
             status,
-            processingError: errorMessage,
         },
     });
 }
 
-async function markProcessingReady(documentId,versionId){
+async function markProcessingReady(documentId, versionId) {
     return await prisma.document.updateMany({
-        where:{
-            id:documentId,
-            currentVersionId:versionId,
-            status:"PROCESSING"
+        where: {
+            id: documentId,
+            currentVersionId: versionId,
+            status: "PROCESSING",
         },
-        data:{
-            status:"READY",
-            processingError:null
-        }
+        data: {
+            status: "READY",
+        },
     });
 }
 
-async function markProcessingFailed(documentId,versionId,error){
+async function markProcessingFailed(documentId, versionId, error) {
     return await prisma.document.updateMany({
-        where:{
-            id:documentId,
-            currentVersionId:versionId,
-            status:"PROCESSING"
+        where: {
+            id: documentId,
+            currentVersionId: versionId,
+            status: "PROCESSING",
         },
-        data:{
-            status:"FAILED",
-            processingError:error?.message??"Document processing failed."
-        }
+        data: {
+            status: "FAILED",
+        },
     });
 }
 
@@ -97,8 +95,46 @@ async function processDocument({ documentId, versionId }) {
     }
 }
 
+async function reprocessDocument({ documentId, versionId }) {
+    const document = await prisma.document.findUnique({
+        where: {
+            id: documentId,
+        },
+    });
+
+    if (!document) {
+        throw new ApiError(404, "Document not found.");
+    }
+
+    if (document.status !== "FAILED") {
+        throw new ApiError(
+            400,
+            "Only failed documents can be reprocessed."
+        );
+    }
+
+    if (document.currentVersionId !== versionId) {
+        throw new ApiError(
+            400,
+            "The specified version is not the current document version."
+        );
+    }
+
+    await updateProcessingStatus(
+        documentId,
+        versionId,
+        "QUEUED"
+    );
+
+    return await dispatchDocumentProcessing({
+        documentId,
+        versionId,
+    });
+}
+
 export {
     processDocument,
+    reprocessDocument,
     updateProcessingStatus,
     markProcessingReady,
     markProcessingFailed,

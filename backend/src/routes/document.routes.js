@@ -1,5 +1,5 @@
+// backend/src/routes/document.routes.js
 import { Router } from "express";
-
 import {
     createDocumentDraft,
     updateDocumentDraft,
@@ -14,6 +14,7 @@ import {
     getDocumentVersionById,
     uploadDocumentVersion,
     getDocumentDownloadUrl,
+    reprocessDocument,
 
     grantDocumentAccess,
     updateDocumentAccessPolicy,
@@ -31,6 +32,9 @@ import {
 
 import authenticate from "../middleware/auth.middleware.js";
 import upload from "../middleware/upload.middleware.js";
+import {
+    documentUploadRateLimiter,
+} from "../middleware/rateLimit.middleware.js";
 
 const router = Router();
 
@@ -38,11 +42,16 @@ const router = Router();
 /*                                   Drafts                                   */
 /* -------------------------------------------------------------------------- */
 
-router.post("/drafts",authenticate,createDocumentDraft);
+router.post(
+    "/drafts",
+    authenticate,
+    createDocumentDraft
+);
 
 router.post(
     "/drafts/:documentId/upload",
     authenticate,
+    documentUploadRateLimiter,
     upload.single("file"),
     uploadDraft
 );
@@ -69,7 +78,11 @@ router.post(
 /*                                 Documents                                  */
 /* -------------------------------------------------------------------------- */
 
-router.get("/",authenticate,getDocuments);
+router.get(
+    "/",
+    authenticate,
+    getDocuments
+);
 
 router.get(
     "/:documentId",
@@ -111,6 +124,12 @@ router.get(
     getDocumentVersions
 );
 
+router.post(
+    "/:documentId/versions/:versionId/reprocess",
+    authenticate,
+    reprocessDocument
+);
+
 router.get(
     "/:documentId/versions/:versionId",
     authenticate,
@@ -120,6 +139,7 @@ router.get(
 router.post(
     "/:documentId/versions",
     authenticate,
+    documentUploadRateLimiter,
     upload.single("file"),
     uploadDocumentVersion
 );

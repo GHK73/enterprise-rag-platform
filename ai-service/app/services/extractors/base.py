@@ -1,14 +1,18 @@
 # ai-service/app/services/extractors/base.py
 
 from __future__ import annotations
+
 import logging
+import time
 from pathlib import Path
+
 import camelot
 import pdfplumber
 
 from app.schemas.document import BlockType, TableBlock
 
 logger = logging.getLogger(__name__)
+
 
 class BaseExtractor:
 
@@ -39,6 +43,41 @@ class BaseExtractor:
 
         return f"{prefix}_{uuid.uuid4().hex}"
 
+    def log_start(self, path: Path) -> float:
+        start = time.perf_counter()
+
+        logger.info(
+            "Starting extraction: %s",
+            path,
+        )
+
+        return start
+
+    def log_success(
+        self,
+        path: Path,
+        start: float,
+    ) -> None:
+        elapsed = time.perf_counter() - start
+
+        logger.info(
+            "Extraction completed: %s (%.2f seconds)",
+            path,
+            elapsed,
+        )
+
+    def log_failure(
+        self,
+        path: Path,
+        error: Exception,
+    ) -> None:
+        logger.error(
+            "Extraction failed: %s: %s",
+            path,
+            error,
+        )
+
+
 class TableExtractor(BaseExtractor):
     SUPPORTED_EXTENSIONS = {".pdf"}
 
@@ -52,12 +91,18 @@ class TableExtractor(BaseExtractor):
         if page_number is not None and page_number < 1:
             raise ValueError("page_number must be >= 1")
 
-        tables = self._extract_with_camelot(path, page_number)
+        tables = self._extract_with_camelot(
+            path,
+            page_number,
+        )
 
         if tables:
             return tables
 
-        return self._extract_with_pdfplumber(path, page_number)
+        return self._extract_with_pdfplumber(
+            path,
+            page_number,
+        )
 
     def _extract_with_camelot(
         self,
@@ -67,7 +112,11 @@ class TableExtractor(BaseExtractor):
         blocks: list[TableBlock] = []
 
         try:
-            pages = "all" if page_number is None else str(page_number)
+            pages = (
+                "all"
+                if page_number is None
+                else str(page_number)
+            )
 
             tables = camelot.read_pdf(
                 str(file_path),
@@ -81,7 +130,11 @@ class TableExtractor(BaseExtractor):
                 if not data:
                     continue
 
-                headers = [str(value) for value in data[0]]
+                headers = [
+                    str(value)
+                    for value in data[0]
+                ]
+
                 rows = [
                     [str(value) for value in row]
                     for row in data[1:]
@@ -146,13 +199,17 @@ class TableExtractor(BaseExtractor):
                             continue
 
                         headers = [
-                            str(value) if value is not None else ""
+                            str(value)
+                            if value is not None
+                            else ""
                             for value in table[0]
                         ]
 
                         rows = [
                             [
-                                str(value) if value is not None else ""
+                                str(value)
+                                if value is not None
+                                else ""
                                 for value in row
                             ]
                             for row in table[1:]

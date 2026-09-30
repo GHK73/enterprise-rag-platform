@@ -50,4 +50,30 @@ export default {
             process.env.LLM_TEMPERATURE || 0
         ),
     },
+
+    rateLimit: {
+        query: {
+            capacity: Number(
+                process.env.QUERY_RATE_LIMIT_CAPACITY || 30
+            ),
+            refillRate: Number(
+                process.env.QUERY_RATE_LIMIT_REFILL_RATE || 0.5
+            ),
+            refillIntervalSeconds: Number(
+                process.env.QUERY_RATE_LIMIT_REFILL_INTERVAL || 1
+            ),
+        },
+
+        documentUpload: {
+            capacity: Number(
+                process.env.DOCUMENT_UPLOAD_RATE_LIMIT_CAPACITY || 10
+            ),
+            refillRate: Number(
+                process.env.DOCUMENT_UPLOAD_RATE_LIMIT_REFILL_RATE || 1
+            ),
+            refillIntervalSeconds: Number(
+                process.env.DOCUMENT_UPLOAD_RATE_LIMIT_REFILL_INTERVAL || 60
+            ),
+        },
+    },
 };

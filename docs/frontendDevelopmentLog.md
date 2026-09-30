@@ -78,7 +78,6 @@ Implemented:
 
 Remaining:
 
-- Fix the lifecycle filter wiring (see Known Issues)
 - Display the draft expiry date, not only the expired flag
 - Dashboard shortcut to the document library
 - Server-side search, sorting, and pagination
@@ -199,11 +198,120 @@ Implemented:
 
 # Known Issues
 
-- `DocumentFilters` declares `status` / `onStatusChange`, but `DocumentLibrary` passes `lifecycle` / `onLifecycleChange`. The lifecycle select is therefore uncontrolled, the filter never leaves `ALL`, and `Clear Filters` would call an undefined handler.
-- `UploadDocument` never fetches the draft, so an expired or already-uploaded draft is not detected before the upload request.
-- `axios.js` has a hardcoded `baseURL` and no response interceptor; global 401 handling does not exist and each caller reads `error.response.data.message` itself.
+Found by a full read-through audit on 2026-09-30. Every item was verified by reading the code and checking the corresponding backend endpoint.
+
+## Blocking
+
+### Permissions page crashes on the main grant flow
+
+`Permissions.jsx:132-137` prepends the `POST /permissions` response into `memberPermissionGrants` when the grant targets the selected member. The backend returns a bare `permissionGrant.create` result with no `include` (`permission.service.js:175-179`), so the object has only `scopeUnitId` and `grantedById`.
+
+The render then evaluates `permissionGrant.scopeUnit.name` and `permissionGrant.grantedBy.fullName` (`:437`, `:445`). Because `scopeUnit` is undefined, this throws during render and React unmounts the tree — a white screen. It fires on the normal "grant a permission to the selected member" path.
+
+### All organization unit and member mutations are silently discarded
+
+`Organization.jsx:118-119` passes `setOrganizationUnits: () => {}`, and `:146-147` passes `setOrganizationMembers: () => {}`, discarding the real setters from `useOrganizationData`. The `onSuccess` callback is `revision.syncOrganizationRevision`, which only re-reads `GET /organization/revision` and never refetches units or members.
+
+Every optimistic update in the unit CRUD, unit move, and member hooks therefore does nothing. The user sees "DEPARTMENT created successfully", the tree does not change, and because `syncOrganizationRevision` sets both revisions equal, `hasOrganizationUpdates` stays false so no refresh prompt appears either. Only a full page reload recovers. Unit create, rename, delete, move, and member role/move/remove are all affected.
+
+### Document details bricks after a soft delete
+
+`DocumentDetails.jsx:444-473` gates the Restore and Delete Forever controls on `document.status === "DELETED"`, but `getDocumentById` resolves through `getActiveDocument`, which throws 404 when `isDeleted` is true (`documentHelpers.js:45-50`). `handleDelete` then reloads the document, gets a 404, and renders the `pageError` branch.
+
+The delete/restore/cleanup lifecycle is unreachable through the UI. This also contradicts the "show deleted" library feature below.
+
+## Backend Contract Mismatches
+
+### `currentVersion` is never returned
+
+`DocumentTable.jsx:109-112` and `DocumentDetails.jsx:542-545, 671-678` read `document.currentVersion?.versionNumber` and `.id`, but `currentVersion` is a Prisma relation, and `getDocuments` (`documentLifecycle.service.js:332`) and `getDocument` (`documentHelpers.js:30`) query without `include: { currentVersion }`.
+
+The Version column always renders `-`, "Current Version" always renders `-`, and the "Current" badge in the version table never appears. The optional chaining prevents a crash, which is why this has gone unnoticed.
+
+### The deleted-document filter can never match
+
+`DocumentFilters.jsx:101-103` offers a `DELETED` lifecycle option and `:112-125` a "Show Deleted" checkbox, and `DocumentLibrary.jsx:94-97` filters on `document.status !== "DELETED"`. But `GET /documents` hardcodes `where: { isDeleted: false }`.
+
+Both controls are dead and can only produce the empty state, while appearing functional.
+
+### Access policy rows read fields that do not exist
+
+`AccessPolicyRow.jsx` reads `policy.permission`, `policy.expiresAt`, `policy.subjectName`, `policy.subjectUser?.name`, and `policy.subjectUnit?.name`. `DocumentAccessPolicy` has `effect`, `validUntil`, `subjectUserId`, `subjectUnitId`, and `subjectRole`, and `getDocumentAccessPolicies` issues no relation includes.
+
+Result: the permission column is always empty and always styled as DENY, the expiry column always reads "Permanent" even for time-limited grants, and the subject column reads "Unknown" for every USER, UNIT, and ORGANIZATION policy. Only ROLE policies resolve.
+
+### Access history rows read fields that do not exist
+
+`AccessHistoryRow.jsx:4-14` reads `entry.actor?.name`, `entry.actorName`, and `entry.subjectName`. `DocumentAccessAudit` has `actorId`, `subjectUserId`, and `subjectUnitId`, with no includes requested.
+
+Actor always renders "System" and Subject always renders "Unknown". An access audit trail that cannot identify who did what is a security defect, not a cosmetic one.
+
+### Document download calls a non-existent route
+
+`document.api.js:233-241` requests `GET /documents/:documentId/download-url`. The backend route is `GET /:documentId/download` (`document.routes.js:147-151`). Currently only dead code, so nothing breaks yet, but it will 404 as soon as it is wired up.
+
+### Member role options do not match the backend
+
+`MembersPanel.jsx:143-153` offers `OWNER`, `ADMIN`, `MEMBER`. The backend `validRoles` are `ADMIN`, `MANAGER`, `MEMBER` (`organization.service.js:522-530`).
+
+Selecting `OWNER` always fails with 400 "Invalid member role", and `MANAGER` — a valid role — has no option, so editing a manager renders a select with no matching value.
+
+## Component Contract Mismatches
+
+### Unit creation is unreachable
+
+`OrganizationCreateForm` is rendered only inside the `if (!organization)` branch (`Organization.jsx:226-278`), so once an organization exists it is gone. `OrganizationDetails` receives `name`, `setName`, and `handleCreateUnit` from the parent but does not destructure them, and renders `{children}` which the parent never supplies.
+
+The same class of bug as the fixed `DocumentFilters` issue, in the opposite direction: the parent passes props the child does not declare.
+
+### The organization form swallows API errors
+
+`Organization.jsx:266-272` passes `error` and `message` to `OrganizationCreateForm`, which declares neither. On the only screen where it renders, unit-creation failures are never shown. Combined with a "Select Parent" button disabled whenever `childType` is empty and no error display, the screen is a dead end with no explanation.
+
+### Organization header never receives its handlers
+
+`Organization.jsx:285-307` passes `revision`, `latestRevision`, `checkingRevision`, and `handleCheckRevision`; `OrganizationHeader.jsx:3` declares only `organization`. The manual "check for updates" control does not exist — only the 60-second interval and the `visibilitychange` listener ever fire it.
+
+## Form and State Defects
+
+- **`AccessPolicyForm.jsx:85-99`** hydrates the `datetime-local` input with `new Date(validUntil).toISOString().slice(0,16)`, a UTC string the input then reads as local time. Editing an expiring policy displays a shifted time, and re-saving writes a different `validUntil`.
+- **`AccessPolicyForm.jsx:54-60, 180-199`** never clears `subjectId` when `subjectType` changes. Switching from USER to ROLE sends a user id as `subjectRole` (500); switching to UNIT sends a user id as `subjectUnitId` (400).
+- **`AccessPolicyForm.jsx:109-118, 205-207`** `resetForm` only runs when not editing. After a successful edit the parent clears `editingPolicy`, so the hydration effect early-returns and the form keeps the old values; the next "Grant Access" silently resubmits them.
+- **`AccessPolicyForm.jsx:125-153`** four validation guards return with no message and no field-level error, so a rejected submit looks like nothing happened.
+- **`AccessPolicyForm.jsx`** does not mirror the backend 7-day temporary-access cap or the `validUntil > validFrom` rule, and always routes temporary grants through the general grant call instead of `grantTemporaryDocumentAccess`.
+- **`DocumentAccess.jsx:58-60, 96-100`** swallows all errors into empty defaults, so `loadData`'s catch can never fire. A 403 or 404 renders "No Access Policies" and a silently broken subject selector, and `organization` stays null, so ORGANIZATION grants are refused with no explanation.
+- **`AccessPolicyTable.jsx:48-55`** renders every policy returned, including revoked ones, because the backend does not filter on `isActive`. Revoked policies appear active with live Edit and Delete buttons that return 400.
+- **`DocumentDetails.jsx:57-58, 391-395`** the effect keys only on `documentId`, but upload state (`showUploadSection`, `selectedVersionFile`, progress, action error) is never reset. React Router reuses the element across `/documents/:a` → `/documents/:b`, so a file picked for one document can be uploaded to another.
+- **`Invitations.jsx:31-34`** `if(!user){ return; }` returns before the `try`, so the `finally` that clears `loading` never runs. If the context has a token but no user yet, the page hangs on "Loading invitations..." permanently.
+- **`useOrganizationRevision.js:133-155`** `setOrganizationRevision` runs before the mismatch check, so the stale-snapshot branch has already advanced the local revision. The "reject inconsistent snapshots" intent is not upheld.
+- **`Permissions.jsx:190-196`** `permissionGrants` is never refreshed after a grant, and a revoke only patches `memberPermissionGrants`, so a revoked permission still shows as Active in "My Permissions".
+- **`DocumentTable.jsx:13-25, 74-79`** `isExpiredDraft` and the `EXPIRED` badge can never be true: `getDocuments` first flips overdue drafts to `EXPIRED` and then excludes that status. The expired-draft flag is implemented but unreachable.
+- **`DocumentHeader.jsx:12-15`** `canDownload` blocks only `DRAFT` and `PROCESSING`, so `DELETED` and `EXPIRED` documents offer a Download button that 404s.
+
+## Lower Severity
+
+- `App.jsx:29-99` has no catch-all route, so any unknown URL renders a blank page.
+- `routes/index.js:1` re-exports `default` from `DocumentRoutes.jsx`, which has no default export. Unreferenced today, so the build survives, but any import from `./routes` fails.
+- `Register.jsx:32-36` calls `navigate("/")` twice around `login(token)`, implying the token is not stored by `login`.
+- `Organization.jsx:98-107` logs organization load state to the console on every render.
+- `Home.jsx:36` nests `<main>` inside the `<main>` in `PublicLayout.jsx:10`.
+- `MemberCard.jsx` (360 lines) is never imported, and diverges from the member UI actually in use.
+- Dead exports in `organization.utils.js` and the organization hooks, including expand/collapse-all helpers that imply a capability that does not exist.
+- File inputs are never reset after a rejected selection, so re-picking the same file fires no change event; upload progress renders `NaN%` when `Content-Length` is absent.
+- `Organization.jsx:98-107` console logging and `MembersPanel.jsx:236-262` offering unit destinations the backend rejects.
+- No `dangerouslySetInnerHTML` or `innerHTML` anywhere; all user and LLM text is rendered as escaped JSX children. There is no retrieval UI yet, so the risky case does not currently exist.
+
+## Previously Reported and Still Open
+
+- `axios.js` has a hardcoded `baseURL` (`http://localhost:5000/api/v1`) and no response interceptor, so there is no global 401 handling, token refresh, or automatic logout. Every caller reads `error.response.data.message` itself.
 - `ProtectedRoute` and `PublicRoute` render `null` while the session is being verified, producing a blank frame.
-- Several `document.api.js` exports are unused: `updateDocumentDraft`, `getDocumentVersionById`, `expireDocumentDrafts`, `deleteDraftUpload`, `grantTemporaryDocumentAccess`, `getDocumentDownloadUrl`.
+- `UploadDocument` never fetches the draft, so an expired or already-uploaded draft is not detected before the upload request.
+- Unused `document.api.js` exports: `updateDocumentDraft`, `getDocumentVersionById`, `expireDocumentDrafts`, `deleteDraftUpload`, `grantTemporaryDocumentAccess`, `getDocumentDownloadUrl`. The last one also targets a route that does not exist.
+- Access policy revocation still uses `window.confirm` with the fixed reason "Removed from frontend", and the dashboard has no shortcut to the document library.
+
+## Previously Reported and Fixed
+
+- The lifecycle filter is now wired. `DocumentFilters` accepts `lifecycle` / `onLifecycleChange`, `DocumentLibrary` passes exactly those, `handleClearFilters` calls a defined handler, and the select is controlled. Verified as the only caller.
 
 ---
 
@@ -336,7 +444,6 @@ frontend/
 ```text
 Document Library
     ↓
-Fix lifecycle filter wiring
 Draft expiry date
 Dashboard shortcut
 Server-side search, sorting, pagination
@@ -379,7 +486,7 @@ After completing these workflows, development will continue with **Phase 6 — D
 | Organization Management | ✅ Complete |
 | Access & Administration | ✅ Complete |
 | Document API Layer | ✅ Complete |
-| Document Library | ~85% |
+| Document Library | ~90% |
 | Draft Upload Flow | ~85% |
 | Document Details | ~95% |
 | Access Management | ~85% |
@@ -390,4 +497,6 @@ After completing these workflows, development will continue with **Phase 6 — D
 
 # Current Focus
 
-The frontend is focused on completing the remaining document-management workflows before beginning **Phase 6 — Document Processing UI**, which will introduce real-time status updates, queue tracking, retry controls, and richer processing visualization. The document library lifecycle filter is the highest-priority defect because it is user-visible and already blocking a documented feature.
+The frontend is focused on completing the remaining document-management workflows before beginning **Phase 6 — Document Processing UI**, which will introduce real-time status updates, queue tracking, retry controls, and richer processing visualization. The highest-priority remaining defects are the missing draft-status check before upload and the blank frame rendered by the route guards while the session is verified.
+
+A retry control for `FAILED` documents also depends on backend work: `reprocessDocument` exists as a service and controller but has no registered route, so there is no endpoint for the UI to call yet.

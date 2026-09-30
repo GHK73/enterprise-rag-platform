@@ -5,15 +5,15 @@ const DocumentFilters = ({
     onSearchChange,
     classification,
     onClassificationChange,
-    status,
-    onStatusChange,
+    lifecycle,
+    onLifecycleChange,
     showDeleted,
     onShowDeletedChange,
 }) => {
     const handleClearFilters = () => {
         onSearchChange("");
         onClassificationChange("ALL");
-        onStatusChange("ALL");
+        onLifecycleChange("ALL");
         onShowDeletedChange?.(false);
     };
 
@@ -60,13 +60,12 @@ const DocumentFilters = ({
                     <option value="RESTRICTED">
                         RESTRICTED
                     </option>
-
                 </select>
 
                 <select
-                    value={status}
+                    value={lifecycle}
                     onChange={(event) =>
-                        onStatusChange(
+                        onLifecycleChange(
                             event.target.value
                         )
                     }
@@ -102,7 +101,6 @@ const DocumentFilters = ({
                     <option value="DELETED">
                         Deleted
                     </option>
-
                 </select>
 
             </div>

@@ -1,11 +1,12 @@
-# ai-service/app/schemas/processing.py
 from pydantic import BaseModel, Field, HttpUrl
+
 
 class ProcessDocumentRequest(BaseModel):
     document_id: str = Field(min_length=1)
     version_id: str = Field(min_length=1)
     organization_id: str = Field(min_length=1)
     file_url: HttpUrl
+    file_name: str = Field(min_length=1)
 
 
 class ProcessDocumentResponse(BaseModel):

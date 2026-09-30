@@ -31,6 +31,9 @@ import {
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import serializeBigInt from "../utils/serializeBigInt.js";
+import {
+    reprocessDocument as reprocessDocumentService,
+} from "../services/document/documentProcessing.service.js";
 
 export const createDocumentDraft = asyncHandler(async(req,res)=>{
     const {title,description,classification} = req.body;
@@ -110,10 +113,26 @@ export const deleteDraftUpload = asyncHandler(async(req,res)=>{
 });
 
 export const publishDraft = asyncHandler(async(req,res)=>{
-    const {documentId} = req.params;
-    const document = await publishDraftService(req.user, documentId);
+    try {
+        const {documentId} = req.params;
 
-    return res.status(200).json(new ApiResponse(200,"Document published successfully",document));
+        const document =
+            await publishDraftService(
+                req.user,
+                documentId
+            );
+
+        return res.status(200).json(
+            new ApiResponse(
+                200,
+                "Document published successfully",
+                document
+            )
+        );
+    } catch(error) {
+        console.error("PUBLISH ERROR:", error);
+        throw error;
+    }
 });
 
 export const getDocumentVersions = asyncHandler(async(req,res)=>{
@@ -166,21 +185,26 @@ export const uploadDocumentVersion = asyncHandler(async(req,res)=>{
     );
 });
 
-export const getDocumentDownloadUrl = asyncHandler(async(req,res)=>{
-    const result =
-        await getDocumentDownloadUrlService(
-            req.user,
-            req.params.documentId,
-            req.params.versionId
-        );
+export const getDocumentDownloadUrl = asyncHandler(async (req, res) => {
+    try {
+        const result =
+            await getDocumentDownloadUrlService(
+                req.user,
+                req.params.documentId,
+                req.params.versionId
+            );
 
-    return res.status(200).json(
-        new ApiResponse(
-            200,
-            "Download URL generated successfully",
-            result
-        )
-    );
+        return res.status(200).json(
+            new ApiResponse(
+                200,
+                "Download URL generated successfully",
+                result
+            )
+        );
+    } catch (error) {
+        console.error("DOWNLOAD ERROR:", error);
+        throw error;
+    }
 });
 
 export const grantDocumentAccess = asyncHandler(async(req,res)=>{
@@ -373,6 +397,24 @@ export const cleanupExpiredDrafts = asyncHandler(
                 200,
                 "Expired drafts cleaned successfully",
                 result
+            )
+        );
+    }
+);
+
+export const reprocessDocument = asyncHandler(
+    async (req, res) => {
+        const { documentId, versionId } = req.params;
+
+        await reprocessDocumentService({
+            documentId,
+            versionId,
+        });
+
+        return res.status(202).json(
+            new ApiResponse(
+                202,
+                "Document reprocessing queued successfully."
             )
         );
     }

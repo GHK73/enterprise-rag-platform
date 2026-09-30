@@ -11,8 +11,10 @@ async function buildProcessingPayload(document, version) {
         version_id: version.id,
         organization_id: document.organizationId,
         file_url: fileUrl,
+        file_name: version.originalFileName,
     };
 }
+
 
 async function processDocumentWithAI(payload) {
     const response = await axios.post(

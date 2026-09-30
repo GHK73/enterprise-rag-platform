@@ -8,7 +8,7 @@ Database design: `docs/DATABASE.md`
 
 # Current Status
 
-**Active Phase:** Phase 9 — Reliability & Performance
+**Active Phase:** Phase 10 — Evaluation & Monitoring
 
 | Area | Status |
 | --- | --- |
@@ -20,11 +20,203 @@ Database design: `docs/DATABASE.md`
 | Concurrency Protection | ✅ |
 | Document Management | ✅ |
 | Document Processing Infrastructure | ✅ |
+| Processing Worker Execution | ✅ |
 | AI Processing Service | ✅ |
 | Query Pipeline | ✅ |
 | Version-Aware Caching | ✅ |
 | Cache Invalidation | ✅ |
 | Query History Persistence | ✅ |
+| API Rate Limiting | ✅ |
+| Document Reprocessing | ⚠️ Routed but unauthorized and non-functional |
+
+## Known Backend Issues
+
+- `document.routes.js:128` does register `POST /:documentId/versions/:versionId/reprocess` behind `authenticate`, but the handler never receives `req.user` and the service queries by `documentId` alone with no tenant filter and no `authorizeDocumentAction` call. Any authenticated user can re-dispatch processing for any document in any organization. It is also not covered by `documentUploadRateLimiter`.
+- `queryCache.service.js` hardcodes `const connection = null` and imports it that way, so the tenant-scoped retrieval cache is currently bypassed even when Redis is enabled. The cache client must be created from `config/redis.js` and wired into the service; until then, every query performs fresh AI retrieval.
+- The rate limiter fails open when Redis is unavailable, so a Redis outage disables rate limiting rather than blocking traffic. This is intentional to keep the API available.
+- `DocumentVersion.processingStatus` is never written anywhere. Every version stays `PENDING`, so the version-level processing state documented in `docs/DATABASE.md` does not exist in practice.
+- `buildSystemPrompt()` in `query/prompt.service.js` is exported but imported nowhere, and `llm.service.js` sends a `ConverseCommand` with a single user message and no system block. The prompt-injection policy is never actually sent to Bedrock.
+
+## Blocking Defects
+
+Found by a full read-through audit on 2026-09-30. Every item below was verified by reading the code, not inferred.
+
+### 1. Document access management throws on every call
+
+`documentAccess.service.js:298-303` checks `hasPermission(user.id, "MANAGE_ACCESS", targetUnitId, tx)`, but the `Permission` enum in `schema.prisma:83-94` contains only `INVITE_MEMBER`, `REMOVE_MEMBER`, `UPDATE_MEMBER`, `ASSIGN_ROLE`, `MOVE_MEMBER`, `CREATE_UNIT`, `UPDATE_UNIT`, `DELETE_UNIT`, `MOVE_UNIT`. `MANAGE_ACCESS` exists only on the unrelated `DocumentAccessAction` enum.
+
+Prisma validates enum input at runtime, so `grantDocumentAccess`, `updateDocumentAccessPolicy`, and `revokeDocumentAccess` all raise `PrismaClientValidationError` and return 500. Granting, editing, and revoking document access — the core feature of the platform — is non-functional.
+
+Compounding this: no code path ever creates a grant with an access-management permission, so even after the enum is corrected, the authority check would always return 403. A migration adding the value and a seeding/grant path are both required.
+
+### 2. Failed processing never reaches `FAILED`
+
+`documentProcessing.service.js:86-95`:
+
+```text
+catch (error)
+  → await handleProcessingFailure(error)   // async function that only rethrows
+  → await markProcessingFailed(...)        // never reached
+```
+
+`handleProcessingFailure` in `documentAI.service.js` is `async function(error){ throw error; }`, so it rethrows before `markProcessingFailed` runs. Any AI processing error leaves the document stuck in `PROCESSING` forever: never `FAILED`, never retryable, no user-visible signal. This makes `reprocessDocument` unreachable in practice, since it requires `status === "FAILED"`.
+
+### 3. Version upload can delete the file it just committed
+
+`documentLifecycle.service.js:790-807` — `dispatchDocumentProcessing` is called inside the same `try` as the database transaction. If dispatch throws after the transaction has committed, the `catch` block calls `deleteFileFromS3(objectKey)`, destroying the object that the newly committed `DocumentVersion` row points to.
+
+The document is left in `QUEUED`, and `uploadDocumentVersion` requires `status === "READY"`, so no new version can be uploaded either. The file is unrecoverable.
+
+### 4. Physical cleanup always fails with a foreign-key error
+
+`cleanupDeletedDocument` (`documentLifecycle.service.js:587`) and `cleanupExpiredDrafts` (`:630`) both run `tx.documentVersion.deleteMany({ where: { documentId } })` before deleting the `Document` row, while `Document.currentVersionId` still references one of those versions. The relation is `onDelete: Restrict` (`schema.prisma:257`, migration `20260710095413` line 204), so every call raises `P2003` and returns 500.
+
+`cleanupDraftUpload` gets this right by nulling `currentVersionId` first; the two cleanup paths do not. The empty `catch{}` blocks around the S3 deletes swallow their errors, hiding the real cause. Deleted documents and expired drafts can never be physically cleaned up, so S3 objects, versions, policies, and audit rows leak indefinitely.
+
+### 5. The query response payload is inverted
+
+`ApiResponse` takes `(statusCode, message, data)` (`utils/ApiResponse.js:4-13`), but `query.controller.js:47-61` calls `new ApiResponse(200, { query, answer, sources, ... }, "Query executed successfully.")`. The answer object lands in `message` and the string lands in `data`.
+
+The documented response shape (`data: { query, answer, sources, evidence, usedLLM, outputGuardPassed }`) is not produced; a client reading `response.data.answer` gets `undefined`. The two 400 branches have the mirror-image problem, passing `null` as the message and the error string as data. `queryHistory.controller.js:51-61` has the same inversion. Every other controller in the codebase uses the correct order.
+
+### 6. The security system prompt is never sent to the LLM
+
+`prompt.service.js:1` defines a 190-line `buildSystemPrompt()` covering the trust boundary, prompt-injection resistance, no chain-of-thought, and citation rules. It is imported nowhere in the repository. `llm.service.js` builds a `ConverseCommand` whose `messages` array contains a single `role: "user"` entry and no system content.
+
+Untrusted document text therefore reaches the model with no instruction establishing that it is data rather than instruction. The defences exist as dead code.
+
+## Authorization Gaps
+
+These paths resolve tenant membership but never evaluate a document access policy, so "no matching policy means no access" is enforced only inside the query pipeline.
+
+| Path | Missing check |
+| --- | --- |
+| `getDocuments` (`documentLifecycle.service.js:325`) | No `VIEW` filter; returns title, description, and classification of every non-deleted document in the tenant |
+| `getDocumentVersions` / `getDocumentVersionById` (`:651`, `:668`) | No `VIEW`; returns full `DocumentVersion` rows including `storageKey`, `checksum`, `storageBucket` |
+| `getDocumentAccessPolicies` / `getDocumentAccessHistory` (`documentAccess.service.js:696`, `:696-728`) | No `MANAGE_ACCESS`; any tenant member can enumerate all policies and the audit trail |
+| `cleanupDeletedDocument` (`documentLifecycle.service.js:552`) | No `MANAGE_ACCESS` and no ownership check; any member can permanently delete any document |
+| `softDeleteDocument` / `restoreDocument` (`:512`, `:532`) | No `authorizeDocumentAction`; `restoreDocument` sets `status: "READY"` unconditionally, so restoring a `DRAFT`, `FAILED`, or `EXPIRED` document promotes it straight into the retrieval path |
+
+`authorizeDocumentAction` also ignores `policy.scope` for `UNIT` subjects (`documentAccess.service.js:786-792`), matching only `subjectUnitId === user.unitId`. `authorizeQueryDocuments` implements both `UNIT_ONLY` and `UNIT_AND_DESCENDANTS` correctly, so a user in a descendant unit gets `QUERY` but is denied `DOWNLOAD` on the same document.
+
+## Reliability and Consistency Issues
+
+- **Reprocessing is a silent no-op** — `reprocessDocument` re-dispatches the same `(documentId, versionId)` pair, and `documentQueue.service.js:19` uses that pair as the BullMQ `jobId` with `removeOnComplete: 1000`. BullMQ ignores an `add()` whose id already exists, so the job is never enqueued — but the document was already set back to `QUEUED`, and the API returns 202. The document is stuck in `QUEUED` forever.
+- **Cache invalidation does nothing** — `documentProcessing.service.js:83` calls `invalidateOrganizationQueryCache`, which short-circuits on the null connection described above.
+- **`publishDraft` can strand a document** — the transaction commits (`status: "SUBMITTED"`, policies and audits created) and then dispatch runs outside any try/catch (`documentLifecycle.service.js:485-510`). If dispatch throws, the caller gets a 500 but the document is `SUBMITTED`, which `getDraftDocument` rejects, and no reprocess path exists for that status.
+- **Concurrent publishes duplicate audit records** — `publishDraft` performs no locking and re-reads status outside the transaction. Two concurrent requests both pass `validateDocumentTransition` and both run `createInitialDocumentAccessPolicies` / `createInitialDocumentAccessAudit`, which do not perform the duplicate check that `validateDocumentAccessPolicy` does. Result: duplicate ALLOW policies and duplicate `CREATED` audit rows, violating the append-only audit invariant.
+- **Revoked permissions are never revoked** — `permission.service.js:54-61` filters on `isActive: true` but never checks `revokedAt`, while `removeMember` revokes grants by setting only `revokedAt` (`organization.service.js:783-792`). A removed member who is later re-invited silently regains every prior administrative permission.
+- **Privilege escalation through invitations** — `createInvitation` (`invitation.service.js:65-79`) does not validate `role` against an allow-list; it only special-cases `MEMBER`. A caller with `INVITE_MEMBER` + `ASSIGN_ROLE` can invite an address as `OWNER`, and `acceptInvitation` writes that role directly, bypassing the owner protections in `updateMemberRole`.
+- **Expired invitations are never marked** — `invitation.service.js:186-193` updates status to `EXPIRED` and then throws inside the same transaction, so the update always rolls back.
+- **Audit-log race condition** — `getDocumentAccessPolicy` (`documentHelpers.js:136`) uses the global Prisma client rather than the transaction passed by its caller, so two concurrent revocations can both read `isActive: true` and both write a `REVOKED` audit record.
+- **Two divergent lifecycle transition tables** — `documentHelpers.validDocumentTransitions` omits `READY → "QUEUED"`, which `documentLifecycle.service.js:35-41` includes. The helper's copy is exported and would reject a legitimate version upload. The transition validator is also only ever applied to the `→ SUBMITTED` hop, never to the transitions that actually move a document.
+- **Plain `Error` instead of `ApiError`** — `query.service.js`, `queryHistory.service.js`, `llm.service.js`, and `prompt.service.js` throw bare `Error` for missing organization, `PROMPT_REQUIRED`, `CONTEXT_REQUIRED`, and `EMPTY_LLM_RESPONSE`. `error.middleware.js` reads `err.statusCode || 500`, so all of these return 500 instead of 400/403.
+- **Query history can lose a paid answer** — `saveQueryHistory` (`query.service.js:223`) runs after generation; if the insert fails the whole request 500s and the completed LLM response is discarded.
+- **Multer errors surface as 500** — `upload.middleware.js` enforces a 25 MB limit, but `MulterError` has no `statusCode`, so an oversized upload returns 500 instead of 413. This is the same reason the invalid-enum bug in item 1 presents as an opaque 500.
+- **`retryAfter` is dropped** — `error.middleware.js` serialises only `{ success, message }`, discarding `error.retryAfter` set by the rate limiter, and never logs the error or its stack. Every 500 in the system is currently unlogged, which is why items 2 and 4 produce no diagnostic trail.
+- **Redis TLS is unconditional** — `config/redis.js:11` sets `tls` regardless of `config.redis.enabled` or whether the target speaks TLS, breaking a plain local Redis. The same shared object sets `maxRetriesPerRequest: 3` and `commandTimeout: 5000`, but BullMQ requires `maxRetriesPerRequest: null` on blocking connections. It also makes the documented fail-open rate limiter stall for roughly 15 seconds per request during a Redis outage rather than failing fast.
+- **Storage bucket is ignored** — `getDownloadUrlFromS3` uses `config.aws.bucket` and never reads the persisted `version.storageBucket`, so a bucket rotation would produce 404s.
+
+## Dead Code
+
+- `prompt.service.js::buildSystemPrompt` — never imported.
+- `config/ai.js` (`aiClient`) — never imported; `documentAI.service.js` and `queryAI.service.js` create ad-hoc clients with inconsistent timeouts.
+- `context.service.js::buildContext` — never imported.
+- `expireDocumentDrafts` — no route triggers bulk draft expiry.
+- `config/bullmq.js` — exports a `connection` that is always `null`; the commented-out import in `queryCache.service.js:4` is where the disabled cache originated.
+- `documentQueue.service.js::getProcessingJOb`, `removeProcessingJob` — never called.
+- `health.routes.js` imports `auth` and never uses it. `documentLifecycle.service.js` imports `getDocument` and never uses it.
+- `documentHelpers.js` duplicates the expiry window, classification list, transition table, and draft-cleanup logic already present in `documentLifecycle.service.js`.
+
+---
+
+# Recent Changes (2026-09-30)
+
+## Processing Worker Execution
+
+The BullMQ worker existed as a file but was never instantiated, so queued document jobs were accepted by the queue and never consumed. Documents stayed in `QUEUED` indefinitely.
+
+### New File
+
+- `workers/document.worker.js` — creates a `Worker` on the `document-processing` queue with `concurrency: 1`, reusing the shared connection from `config/redis.js`. The handler calls `processDocument({ documentId, versionId })` from `documentProcessing.service.js` and logs `ready`, `completed`, `failed`, and `error` events. The worker is only created when `config.redis.enabled` is true.
+
+### Wiring
+
+- `server.js` imports `./src/workers/document.worker.js` at startup, alongside `initializeDocumentQueue`. Producer and consumer now both run inside the API process; a multi-instance deployment would need a dedicated worker process.
+
+## Queue Job ID Fix
+
+- `documentQueue.service.js` — the job id separator changed from `:` to `-`. BullMQ treats `:` as its custom-id separator, so `${documentId}:${versionId}` was parsed as a custom job id rather than the literal string, breaking deduplication when the same version was dispatched again. Job ids are now `${documentId}-${versionId}`.
+
+## Document Reprocessing
+
+Failed documents previously had no recovery path other than uploading a new version.
+
+- `documentProcessing.service.js` — new `reprocessDocument({ documentId, versionId })`. It loads the document, throws 404 if missing, throws 400 unless `status === "FAILED"`, throws 400 unless `versionId` is the current version, sets the document back to `QUEUED`, and re-dispatches through the normal dispatcher, so it respects `REDIS_ENABLED` and falls back to direct processing.
+- `document.controllers.js` — new `reprocessDocument` handler returning 202 with "Document reprocessing queued successfully."
+- Registered at `POST /:documentId/versions/:versionId/reprocess` in `document.routes.js`. See Known Backend Issues: the route passes no user and the service performs no authorization or tenant check.
+
+## `processingError` Field Removal
+
+- `documentProcessing.service.js` — `updateProcessingStatus`, `markProcessingReady`, and `markProcessingFailed` no longer write a `processingError` column, and the unused `errorMessage` parameter was dropped from `updateProcessingStatus`.
+- `documentLifecycle.service.js` — `uploadDocumentVersion` no longer sets `processingError: null` when moving a document to `QUEUED`.
+
+The field does not exist in `schema.prisma`, so each of those writes would have raised a Prisma unknown-argument error and pushed a healthy document into `FAILED`. Failure detail is currently only visible in logs; a persisted failure reason is still needed for the UI.
+
+## Missing Import Fix
+
+- `documentLifecycle.service.js` — `getDocumentDownloadUrl` called `authorizeDocumentAction(user, documentId, "DOWNLOAD")` without importing it, raising a `ReferenceError` on every download request. The import from `documentAccess.service.js` is now present, so `DOWNLOAD` authorization is actually enforced before a presigned URL is issued.
+
+## AI Processing Payload
+
+- `documentAI.service.js` — the processing payload now includes `file_name: version.originalFileName` alongside `document_id`, `version_id`, `organization_id`, and `file_url`. The AI service previously derived the file extension from the presigned URL path, which broke whenever the S3 key did not end in a recognisable extension.
+- `ai-service/app/schemas/processing.py` — `ProcessDocumentRequest` requires `file_name` (`min_length=1`); `DocumentProcessingService` takes the suffix from it instead of parsing the URL.
+- `ai-service/app/services/extractors/base.py` — `BaseExtractor` gained `log_start`, `log_success`, and `log_failure` helpers so extraction timing and failures are logged consistently across formats.
+- `document.controllers.js` — `publishDraft` and `getDocumentDownloadUrl` log caught errors before rethrowing.
+
+---
+
+# Recent Changes (2026-09-28)
+
+## API Rate Limiting
+
+Added a Redis-backed token bucket in front of the two expensive endpoints, so a single user cannot exhaust LLM or processing capacity.
+
+### New Files
+
+- `config/redis.js` — single shared Redis connection object (`host`, `port`, `username`, `password`, TLS with `rejectUnauthorized: false`, `maxRetriesPerRequest: 3`, `enableReadyCheck`, `lazyConnect: false`, 10s connect timeout, 5s command timeout, capped exponential retry, reconnect on `ECONNRESET` / `ETIMEDOUT` / `ECONNREFUSED` / `EHOSTUNREACH`). It is created only when `config.redis.enabled` is true.
+- `middleware/rateLimit.middleware.js` — token bucket implemented as an atomic Lua script, registered with `redis.defineCommand("consumeToken")`. Exports `queryRateLimiter` and `documentUploadRateLimiter`.
+
+### Behavior
+
+- Buckets are keyed per user: `rate-limit:{prefix}:user:{userId}`.
+- Tokens and timestamp are stored in a Redis hash; the bucket key expires after `capacity / refillRate * 2` seconds so idle buckets are removed.
+- A rejected request throws `ApiError` with status 429 and a `retryAfter` value in seconds.
+- `refillRate` is configured per interval and divided by `refillIntervalSeconds` to obtain a per-second rate.
+- Missing `req.user.id` throws 401.
+- The limiter is a no-op when `REDIS_ENABLED` is not `true`, and it **fails open** on any Redis error so a Redis outage does not take down the API.
+
+### Route Wiring
+
+- `query.routes.js` — `POST /api/v1/query` now runs `authenticate` then `queryRateLimiter`.
+- `document.routes.js` — `POST /drafts/:documentId/upload` and `POST /:documentId/versions` now run `authenticate`, `documentUploadRateLimiter`, then `upload.single("file")`. The limiter runs before Multer so rejected requests do not consume upload bandwidth or disk.
+
+### Redis Connection Consolidation
+
+- `config/bullmq.js` no longer builds its own connection object; it imports `redisConnection` from `config/redis.js` and reuses it for the `document-processing` queue. Retry, TLS, and timeout behavior is now identical between the queue and the rate limiter.
+
+### New Environment Variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `QUERY_RATE_LIMIT_CAPACITY` | `30` | Query bucket size |
+| `QUERY_RATE_LIMIT_REFILL_RATE` | `0.5` | Query tokens added per interval |
+| `QUERY_RATE_LIMIT_REFILL_INTERVAL` | `1` | Query refill interval in seconds |
+| `DOCUMENT_UPLOAD_RATE_LIMIT_CAPACITY` | `10` | Upload bucket size |
+| `DOCUMENT_UPLOAD_RATE_LIMIT_REFILL_RATE` | `1` | Upload tokens added per interval |
+| `DOCUMENT_UPLOAD_RATE_LIMIT_REFILL_INTERVAL` | `60` | Upload refill interval in seconds |
+
+Redis variables are now host-based: `REDIS_ENABLED`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`.
 
 ---
 
@@ -157,13 +349,18 @@ npm run dev
 | `AWS_SECRET_ACCESS_KEY` | AWS secret key |
 | `AWS_S3_BUCKET` | Document storage bucket |
 | `REDIS_ENABLED` | Enable or disable Redis |
-| `REDIS_URL` | Managed Redis connection |
+| `REDIS_HOST` | Redis host |
+| `REDIS_PORT` | Redis port (default `6379`) |
+| `REDIS_USERNAME` | Redis username |
+| `REDIS_PASSWORD` | Redis password |
 | `AI_SERVICE_URL` | FastAPI AI service endpoint |
 | `LLM_PROVIDER` | LLM provider |
 | `LLM_MODEL_ID` | Bedrock model ID |
 | `LLM_REGION` | Bedrock AWS region |
 | `LLM_MAX_TOKENS` | Maximum LLM response tokens |
 | `LLM_TEMPERATURE` | LLM temperature |
+| `QUERY_RATE_LIMIT_*` | Query token bucket settings |
+| `DOCUMENT_UPLOAD_RATE_LIMIT_*` | Upload token bucket settings |
 
 API base path:
 
@@ -388,6 +585,8 @@ Frontend
  ↓
 JWT Authentication
  ↓
+Rate Limit (Redis token bucket)
+ ↓
 Organization Context
  ↓
 Redis Retrieval Cache
@@ -463,6 +662,8 @@ Response fields:
 
 Every response is also written to `QueryHistory` after the output guardrail runs.
 
+> **Known defect:** this is the intended shape, not the shape currently returned. `query.controller.js` and `queryHistory.controller.js` pass the `ApiResponse` arguments in the wrong order, so the payload above is emitted under `message` and `data` becomes a string. See Blocking Defects item 5.
+
 Evidence reasons:
 
 ```text
@@ -511,7 +712,10 @@ document_id
 version_id
 organization_id
 file_url
+file_name
 ```
+
+`file_name` is the stored original filename and is what the AI service uses to determine the file type.
 
 The backend owns orchestration, authorization, lifecycle management, and processing state.
 
@@ -641,9 +845,10 @@ GET  /api/v1/query/history
 ### Backend Infrastructure
 
 - Redis queue integration
-- BullMQ workers
+- BullMQ queue producer (`documentQueue.service.js`)
+- BullMQ worker (`workers/document.worker.js`, concurrency 1, started by `server.js`)
 - Processing dispatcher
-- Processing retries — todo
+- Processing retries — 3 attempts with exponential backoff, configured as queue default job options
 - Dead-letter queue — todo
 
 ### Backend Processing Services
@@ -655,6 +860,12 @@ GET  /api/v1/query/history
 - `documentAI.service.js`
 - `documentHelpers.js`
 - `documentAccess.service.js`
+
+### Failure Handling
+
+- Processing failure sets the document to `FAILED` scoped to the current version — currently blocked by the `handleProcessingFailure` rethrow described in Blocking Defects
+- Failed processing can be re-queued through `reprocessDocument` — route exists, but authorization is missing and the BullMQ `jobId` makes the re-dispatch a no-op
+- Failure reason is logged only; there is no persisted `processingError` column, and `DocumentVersion.processingStatus` is never written
 
 ### AI Service
 
@@ -728,6 +939,7 @@ Implemented:
 - Background cleanup
 - Queue optimization
 - Retrieval optimization
+- Redis-backed API rate limiting (query and document upload token buckets)
 
 ### Version-Aware Caching
 
@@ -784,6 +996,7 @@ backend/
     │   ├── bullmq.js
     │   ├── config.js
     │   ├── prisma.js
+    │   ├── redis.js
     │   └── s3.js
     ├── controllers/
     │   ├── auth.controller.js
@@ -799,6 +1012,7 @@ backend/
     │   ├── auth.middleware.js
     │   ├── error.middleware.js
     │   ├── notFound.middleware.js
+    │   ├── rateLimit.middleware.js
     │   └── upload.middleware.js
     ├── routes/
     │   ├── auth.routes.js

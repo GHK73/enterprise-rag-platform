@@ -286,7 +286,47 @@ Long-term vector multitenancy may add `OrganizationVectorPlacement` for shard ro
 
 ---
 
-## Database Status
+## Schema Risks
+
+Identified during the 2026-09-30 code audit. These are schema-level constraints that the application code currently violates; details and file references are in `docs/DEVELOPMENT.md`.
+
+## `Permission` Has No Access-Management Value
+
+The `Permission` enum contains only `INVITE_MEMBER`, `REMOVE_MEMBER`, `UPDATE_MEMBER`, `ASSIGN_ROLE`, `MOVE_MEMBER`, `CREATE_UNIT`, `UPDATE_UNIT`, `DELETE_UNIT`, and `MOVE_UNIT`.
+
+`MANAGE_ACCESS` exists only on `DocumentAccessAction`, which is the per-document action enum used by `DocumentAccessPolicy`. The service layer nevertheless checks `hasPermission(user.id, "MANAGE_ACCESS", …)` as an administrative permission, so document access mutations raise a Prisma enum validation error and return 500.
+
+The model needs an administrative permission representing "may change document access policies", plus a grant path that assigns it. Until then, `DocumentAccessPolicy` cannot be administered at all.
+
+## `Document.currentVersionId` Is `ON DELETE RESTRICT`
+
+```text
+Document.currentVersion → DocumentVersion  (onDelete: Restrict)
+```
+
+Any bulk delete of `DocumentVersion` rows while `Document.currentVersionId` still points at one of them fails with a foreign-key violation. Deleting a document therefore requires nulling `currentVersionId` first, then deleting versions, then deleting the document. `cleanupDraftUpload` does this correctly; `cleanupDeletedDocument` and `cleanupExpiredDrafts` do not, so both fail permanently.
+
+This ordering constraint is not documented in the model and is easy to reintroduce.
+
+## Version-Level Processing State Is Never Written
+
+`DocumentVersion.processingStatus` (`PENDING → QUEUED → PROCESSING → COMPLETED | FAILED`) is never updated by any code path. Every version remains `PENDING` for its entire lifetime.
+
+A version-level `FAILED` cannot be distinguished from a version still waiting to be processed, and the document-level status is the only usable signal. The column is currently dead weight, and a UI that filters or displays it will show incorrect data.
+
+## Revocation Is Represented Twice
+
+`PermissionGrant` has both `isActive` and `revokedAt`. Revocation writes `revokedAt` and leaves `isActive: true`, while the permission check filters on `isActive` only.
+
+The two fields disagree after every revocation. Either `isActive` should be cleared alongside `revokedAt`, or the check should test `revokedAt: null`; keeping both invites exactly the drift described in `docs/DEVELOPMENT.md`.
+
+## `QueryHistory` Has No Retention Policy
+
+Every executed query is persisted, including evidence-insufficient fallbacks and blocked outputs. The table grows without bound and no cleanup job exists, even though background cleanup is listed as implemented in Phase 9. It also stores `sources` and `evidence` inline, so it duplicates content already held in S3 and Qdrant.
+
+---
+
+# Database Status
 
 | Item | Status |
 | --- | --- |

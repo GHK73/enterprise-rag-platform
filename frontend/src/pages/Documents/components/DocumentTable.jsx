@@ -10,7 +10,6 @@ const DocumentTable = ({ documents }) => {
 
         return new Date(date).toLocaleDateString();
     };
-
     const isExpiredDraft = (document) => {
         if (
             document.status !== "DRAFT" ||

@@ -19,6 +19,10 @@ import {
     getDocumentWithVersions,
 } from "./documentHelpers.js";
 
+import {
+    authorizeDocumentAction,
+} from "./documentAccess.service.js";
+
 const DRAFT_EXPIRY_HOURS = 24;
 
 const validClassifications = [
@@ -776,7 +780,6 @@ export const uploadDocumentVersion = async (
                 data: {
                     currentVersionId: version.id,
                     status: "QUEUED",
-                    processingError: null,
                     updatedAt: new Date(),
                 },
             });

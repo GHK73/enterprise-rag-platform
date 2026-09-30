@@ -4,6 +4,7 @@ import app from "./src/app.js";
 import config from "./src/config/config.js";
 import prisma from "./src/config/prisma.js";
 import { initializeDocumentQueue } from "./src/services/document/documentQueue.service.js";
+import "./src/workers/document.worker.js";
 
 const startServer = async () => {
     try {

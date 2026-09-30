@@ -20,7 +20,7 @@ The AI service lives in `ai-service/`. Its purpose is to convert documents into 
 
 ```text
 Backend (Node.js)
-  → POST /api/v1/process-document { document_id, version_id, organization_id, file_url }
+  → POST /api/v1/process-document { document_id, version_id, organization_id, file_url, file_name }
 
     → AI Service (FastAPI)
       → Download file from presigned URL (httpx, 60s timeout)
@@ -84,7 +84,7 @@ ai-service/
     │   └── retrieval.py          # POST /api/v1/retrieve → RetrievalResponse
     ├── schemas/
     │   ├── document.py           # Domain models: BlockType, DocumentType, Document, DocumentPage
-    │   ├── processing.py         # ProcessDocumentRequest, ProcessDocumentResponse
+    │   ├── processing.py         # ProcessDocumentRequest (incl. file_name), ProcessDocumentResponse
     │   ├── retrieval.py          # RetrievalRequest, RetrievalResult, RetrievalResponse
     │   └── api.py                # ApiResponse (success, message, data)
     └── services/
@@ -158,8 +158,10 @@ The backend helper is `backend/src/services/document/documentAI.service.js`.
 It:
 
 1. Creates a presigned S3 download URL using `getDownloadUrlFromS3(version.storageKey)`.
-2. Builds `document_id`, `version_id`, `organization_id`, and `file_url`.
+2. Builds `document_id`, `version_id`, `organization_id`, `file_url`, and `file_name` (`version.originalFileName`).
 3. Sends the payload to `${config.ai.url}/api/v1/process-document`.
+
+`file_name` is required. The file extension is taken from the original filename rather than the presigned URL path, because the S3 key does not reliably end in a recognisable extension.
 
 `config.ai.url` must contain only the AI service base URL, without a trailing `/api/v1` path.
 
@@ -175,7 +177,9 @@ The query route is registered in `backend/src/routes/index.js` as `router.use("/
 
 ### Extraction
 
-Supported input extensions are `.pdf`, `.docx`, and `.txt`. Unsupported extensions fail before extraction. Primary extraction runs first by type (PDF → `PDFExtractor`, DOCX → `DocxExtractor`, TXT → `TXTExtractor`). Docling is used as a fallback when the primary extractor finds no content blocks; a Docling failure is logged as a warning and does not fail the pipeline.
+Supported input extensions are `.pdf`, `.docx`, and `.txt`. The suffix is read from the required `file_name` field, not from the presigned URL. Unsupported extensions fail before extraction. Primary extraction runs first by type (PDF → `PDFExtractor`, DOCX → `DocxExtractor`, TXT → `TXTExtractor`). Docling is used as a fallback when the primary extractor finds no content blocks; a Docling failure is logged as a warning and does not fail the pipeline.
+
+`BaseExtractor` provides `log_start`, `log_success`, and `log_failure` helpers so every extractor logs the file it processed, the elapsed time, and the failure reason in a consistent format.
 
 For PDFs, table extraction is delegated to `TableExtractor` which uses camelot (primary) and pdfplumber (fallback).
 
@@ -317,6 +321,11 @@ Main dependencies include FastAPI, httpx, PyMuPDF, python-docx, Sentence Transfo
 | `test_processing.py` | End-to-end processing dry-run via `DocumentProcessingService` |
 | `app/services/vectorstore/test_qdrant.py` | Qdrant end-to-end: ensure → embed → upsert → read back → search → verify deterministic ID → delete → verify deletion |
 
+## Recent Updates (2026-09-30)
+
+1. **`file_name` in the processing contract** — `ProcessDocumentRequest` now requires `file_name`. `DocumentProcessingService.process_document()` derives the file suffix from `Path(request.file_name).suffix` instead of parsing `request.file_url`. Previously a presigned URL whose path did not end in a supported extension raised "Document URL must contain a file extension." even for valid uploads.
+2. **Extraction logging** — `BaseExtractor` gained `log_start`, `log_success`, and `log_failure` helpers built on `time.perf_counter()`, giving consistent per-file extraction timing and failure logging across every extractor.
+
 ## Recent Updates (2026-09-20)
 
 1. **Multi-tenant organization isolation** — Added `organization_id` to processing and retrieval flows. `ProcessDocumentRequest` and `RetrievalRequest` require `organization_id`. `QdrantVectorStore` indexes `organization_id`, stores it in payloads, and filters by it in search. `RetrievalService` and `DocumentProcessingService` pass `organization_id` through.
@@ -335,6 +344,92 @@ Implemented:
 - Candidate retrieval with `top_k * 5`, capped at 200.
 - Backend integration for processing and authorization-safe retrieval.
 - Multi-tenant `organization_id` propagation through processing, retrieval, Qdrant payloads, and search filtering.
+
+# Known Defects
+
+Found by a full read-through audit on 2026-09-30. Every item was verified by reading the code.
+
+## Blocking
+
+### The service cannot start from `requirements.txt`
+
+`camelot` and `pdfplumber` are imported unconditionally at module scope in `app/services/extractors/base.py:9-10` and `app/services/extractors/table.py:6-7`, and `docling` in `app/services/extractors/docling.py:6`. None of the three appear in `requirements.txt`, which is the only dependency manifest in the repository.
+
+`pip install -r requirements.txt` followed by `uvicorn app.main:app` fails with `ModuleNotFoundError` at import time, for every route. Docling in particular is documented as an optional fallback that must never fail the pipeline, yet its absence prevents the service from starting at all.
+
+### No authentication on any route
+
+Neither `/process-document` nor `/retrieve` has any authentication, authorisation dependency, or API-key check. `organization_id` is taken verbatim from the request body and passed straight into the Qdrant `Filter` (`app/api/retrieval.py:17-22`).
+
+Anyone who can reach the port can read any tenant's full document text by supplying that tenant's `organization_id`, and can drive the processing pipeline. The entire authorisation model documented above — the backend filters the candidate set — depends on the AI service being unable to serve a caller the backend did not vouch for. That assumption is currently unenforced.
+
+### Server-side request forgery via `file_url`
+
+`file_url` is an arbitrary caller-supplied URL that the service fetches server-side with `httpx` and `follow_redirects=True` (`app/services/processing/downloader.py:11-19`). Only the URL scheme is validated, by Pydantic's `HttpUrl`.
+
+An unauthenticated caller can make the service request cloud metadata endpoints (`169.254.169.254`), internal services, or an attacker-controlled host, and the response is written to disk and parsed.
+
+### Tables and images are never indexed
+
+`ChunkingService._is_text_block` (`app/services/processing/chunking.py:222-234`) returns `True` only for `TextBlock` instances and for `TEXT`, `HEADING`, `LIST`, and `CODE` block types. `TABLE`, `IMAGE`, and `FIGURE` blocks are skipped at `chunking.py:69-70` and are never converted to text anywhere in the pipeline.
+
+The documented contract — "normalize blocks (text, table, image)" — therefore produces a text-only index. A document cannot be retrieved by the data in its tables or by text inside its images, and no warning is emitted. `DoclingExtractor` additionally converts Docling table items to `TableBlock` with empty `headers` and `rows` (`docling.py:88-96`), so the fallback path discards table content even before chunking.
+
+### Exception handlers are never registered
+
+`register_exception_handlers(app)` is defined in `app/core/exceptions.py:18-51` and is not called anywhere; `main.py` only calls `app.include_router(api_router)`. The only occurrence of the symbol in the repository is its own definition.
+
+The documented error contract — 422 for `RequestValidationError`, structured JSON 500 for everything else — does not exist. A `ProcessingException` surfaces as a bare uvicorn text response, and the backend's axios error handling never sees the `{ success, message }` shape it expects.
+
+## Index Integrity
+
+### Stale vectors survive same-version reprocessing
+
+Point IDs are `uuid5(document_id:version_id:chunk_id)` with positional chunk ids (`chunk_000000`, `chunk_000001`, …), and `process_document` upserts without deleting the previous set for that version.
+
+If a reprocess produces fewer chunks than the previous run — or different extraction output, such as the Docling fallback firing on the second pass — the old higher-numbered points remain live under the same `version_id`. The backend's current-version cache validation cannot detect this, because the version id is unchanged, so obsolete chunks are returned and cited as if current.
+
+`delete_version` exists in `QdrantVectorStore` but no caller invokes it before upserting.
+
+### `/retrieve` does not ensure the collection exists
+
+`ensure_collection()` runs only on the processing path (`app/services/processing/service.py:98`). A query that arrives before any document has been indexed calls `query_points` against a non-existent collection and fails with an opaque Qdrant 404 instead of returning an empty result.
+
+### `get_version_points` silently truncates
+
+`QdrantVectorStore.get_version_points` calls `client.scroll` with a single `limit` (default 100) and discards `next_page_offset` (`qdrant.py:187-233`). Any version with more than 100 chunks returns a partial list, and the dropped offset makes the truncation invisible — the documentation claims it retrieves all points for a version.
+
+## Performance
+
+- **The event loop is blocked during processing.** `extraction_service.extract`, `chunking_service.chunk`, `embedding_service.embed_chunks`, and `embed_texts` are all synchronous and CPU-heavy, called directly inside `async def` with no `run_in_threadpool` or `asyncio.to_thread` anywhere in the package. While one document is being parsed or embedded, `/health` and every `/retrieve` call are unresponsive.
+- **Unbounded memory per document.** All chunks are embedded into one in-memory list and materialised as a single `points` list for one `upsert` (`qdrant.py:143-177`, `service.py:85`). A large PDF holds tens of thousands of 384-float vectors at once, and nothing caps the chunk count anywhere in the pipeline.
+- **The PDF is re-parsed once per page.** `PDFExtractor._extract_tables` is called per page and each call runs `camelot.read_pdf`, re-opening and re-parsing the whole file. Cost is quadratic in page count and dominates `/process-document` on long reports.
+- **`ensure_collection` runs per upload.** `collection_exists` + `get_collection` + up to four `create_payload_index` calls happen for every processed document (`service.py:98` → `qdrant.py:45-118`), with no caching of the index-existence result.
+- **Overlap across oversized blocks is discarded.** `chunking.py:119` computes the overlap from the preceding block, then `chunking.py:148` unconditionally overwrites `current_text` with the new block's text. The documented context preservation across an oversized-block boundary does not occur.
+
+## Test Scripts Are Non-Functional
+
+- `app/services/vectorstore/test_qdrant.py:85-89, 163-166` calls `upsert_chunks` and `search` without the now-required `organization_id` argument, so it raises `TypeError` on the first upsert and can never pass.
+- `test_processing.py:9-13` builds `ProcessDocumentRequest` without the required `organization_id` or `file_name`, so it fails Pydantic validation before doing any work.
+- `test_chunking.py` and `test_pdf_extractor.py` run their pipelines at module import time with no `if __name__ == "__main__":` guard, so any pytest collection executes real extraction on `test_files/sample.pdf`.
+
+## Configuration
+
+- **`EMBEDDING_MODEL` is ignored.** `EmbeddingService` is instantiated with no argument and uses the hardcoded default `"all-MiniLM-L6-v2"` (`app/services/embedding/service.py:35`). The `EMBEDDING_MODEL` setting in `.env` is read by no consumer, so changing it has no effect — while `QdrantVectorStore.vector_size` is derived from whatever model actually loads, which makes a dimension mismatch silent.
+- **The two settings modules disagree.** `config.py` sets `case_sensitive=True`; `settings.py` does not. Only `settings.py` defines `QDRANT_COLLECTION`. `config.py` makes `ENVIRONMENT`, `EMBEDDING_MODEL`, and `QDRANT_URL` required with no defaults, while `settings.py` defaults them. Both use a CWD-relative `env_file=".env"`, so running uvicorn from the repo root instead of `ai-service/` silently loads no configuration and fails at boot.
+- **Whitespace-only queries return 500.** `RetrievalRequest.query` validates `min_length=1`, so `"   "` passes the schema and then raises `ValueError` inside `embed_texts`. The empty-text guard belongs in the schema.
+- **Unsupported file types are rejected only after a full download.** `process_document` rejects an empty suffix but not an unsupported one, so an arbitrarily large file with an unsupported extension is downloaded in full before `ExtractionService` raises.
+- **The Qdrant client is never closed.** The lifespan yields without calling `qdrant_vector_store.close()`, so connections accumulate across `uvicorn --reload` cycles.
+
+## Dead Code
+
+- `app/services/extractors/base.py:81-238` contains a second, unreachable copy of `TableExtractor`; `pdf.py` imports the live one from `table.py`. The two already differ in string handling. It is also what forces the `camelot`/`pdfplumber` imports into `base.py`.
+- `RetrievalService.get_candidate_document_ids`, `filter_authorized_candidates`, and `select_top_k` are never called by any endpoint. `filter_authorized_candidates` in particular is an authorisation helper that, by the project's own rules, should not live in this service.
+- `app/services/extractors/init.py` is misnamed — it is not `__init__.py`, so it never executes as a package init, and it references a class `DOCXExtractor` that does not exist (`docx.py` defines `DocxExtractor`).
+- `app/config/schemas/api.py` duplicates `app/schemas/api.py` and is imported by nobody. `app/schemas/chunk.py::DocumentChunk` is imported by nobody.
+- `configure_logging` is never called.
+
+---
 
 ## Current Gaps and Recommended Next Work
 

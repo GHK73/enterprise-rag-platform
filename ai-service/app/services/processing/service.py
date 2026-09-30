@@ -1,8 +1,9 @@
-# ai-sevice/app/services/procesing/service.py
+
 from __future__ import annotations
+
 import logging
 from pathlib import Path
-from urllib.parse import urlparse
+
 from app.schemas.processing import (
     ProcessDocumentRequest,
     ProcessDocumentResponse,
@@ -35,12 +36,11 @@ class DocumentProcessingService:
 
         try:
             # 1. Download
-            url_path = Path(urlparse(str(request.file_url)).path)
-            suffix = url_path.suffix.lower()
+            suffix = Path(request.file_name).suffix.lower()
 
             if not suffix:
                 raise ValueError(
-                    "Document URL must contain a file extension."
+                    "Document filename must contain a file extension."
                 )
 
             file_path = await downloader_service.download(
