@@ -9,7 +9,12 @@ import {
     getActiveDocument,
     getDocumentAccessPolicy,
 } from "./documentHelpers.js";
+import crypto from "crypto";
+import {
+    invalidateOrganizationAuthorizedQueryCache,
+} from "../query/queryAccessCache.service.js";
 const MAX_TEMPORARY_ACCESS_DAYS = 7;
+
 
 const resolveAccessSubject = async(tx,organizationId,accessData)=>{
     const {
@@ -481,6 +486,12 @@ export const grantDocumentAccess = async(
         });
 
         return policy;
+    }).then(async (policy) => {
+        await invalidateOrganizationAuthorizedQueryCache(
+            policy.organizationId
+        );
+
+        return policy;
     });
 };
 
@@ -608,6 +619,12 @@ export const updateDocumentAccessPolicy = async(
         });
 
         return updatedPolicy;
+    }).then(async (updatedPolicy) => {
+        await invalidateOrganizationAuthorizedQueryCache(
+            updatedPolicy.organizationId
+        );
+
+        return updatedPolicy;
     });
 };
 
@@ -688,6 +705,12 @@ export const revokeDocumentAccess = async(
                 reason:reason ?? null,
             },
         });
+
+        return revokedPolicy;
+    }).then(async (revokedPolicy) => {
+        await invalidateOrganizationAuthorizedQueryCache(
+            revokedPolicy.organizationId
+        );
 
         return revokedPolicy;
     });
@@ -853,6 +876,124 @@ const getUserUnitHierarchy = async (organizationId, userUnitId) => {
     }
 
     return unitIds;
+};
+
+export const getQueryAccessScopeFingerprint = async (user) => {
+    if (!user.unitId || !user.unit) {
+        throw new ApiError(
+            403,
+            "User does not belong to an organization"
+        );
+    }
+
+    const organizationId = user.unit.organizationId;
+
+    const policies =
+        await prisma.documentAccessPolicy.findMany({
+            where: {
+                organizationId,
+                action: "QUERY",
+                isActive: true,
+            },
+            select: {
+                id: true,
+                documentId: true,
+                subjectType: true,
+                subjectOrganizationId: true,
+                subjectUnitId: true,
+                subjectRole: true,
+                subjectUserId: true,
+                action: true,
+                effect: true,
+                scope: true,
+                validFrom: true,
+                validUntil: true,
+                updatedAt: true,
+            },
+        });
+
+    const userUnitHierarchy =
+        await getUserUnitHierarchy(
+            organizationId,
+            user.unitId
+        );
+
+    const matchedPolicies = policies
+        .filter(isDocumentAccessPolicyActive)
+        .filter((policy) => {
+            switch (policy.subjectType) {
+                case "ORGANIZATION":
+                    return (
+                        policy.subjectOrganizationId ===
+                        organizationId
+                    );
+
+                case "UNIT":
+                    if (
+                        policy.scope === "UNIT_ONLY" &&
+                        policy.subjectUnitId === user.unitId
+                    ) {
+                        return true;
+                    }
+
+                    if (
+                        policy.scope ===
+                            "UNIT_AND_DESCENDANTS" &&
+                        userUnitHierarchy.has(
+                            policy.subjectUnitId
+                        )
+                    ) {
+                        return true;
+                    }
+
+                    return false;
+
+                case "ROLE":
+                    return (
+                        policy.subjectRole === user.role
+                    );
+
+                case "USER":
+                    return (
+                        policy.subjectUserId === user.id
+                    );
+
+                default:
+                    return false;
+            }
+        })
+        .map((policy) => ({
+            id: policy.id,
+            documentId: policy.documentId,
+            subjectType: policy.subjectType,
+            subjectOrganizationId:
+                policy.subjectOrganizationId,
+            subjectUnitId: policy.subjectUnitId,
+            subjectRole: policy.subjectRole,
+            subjectUserId: policy.subjectUserId,
+            action: policy.action,
+            effect: policy.effect,
+            scope: policy.scope,
+            validFrom: policy.validFrom,
+            validUntil: policy.validUntil,
+            updatedAt: policy.updatedAt,
+        }))
+        .sort((a, b) =>
+            a.id.localeCompare(b.id)
+        );
+
+    return crypto
+        .createHash("sha256")
+        .update(
+            JSON.stringify({
+                organizationId,
+                unitId: user.unitId,
+                role: user.role,
+                unitHierarchy: [...userUnitHierarchy].sort(),
+                policies: matchedPolicies,
+            })
+        )
+        .digest("hex");
 };
 
 export const authorizeQueryDocuments = async (

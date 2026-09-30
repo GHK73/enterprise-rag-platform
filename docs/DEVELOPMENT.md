@@ -26,13 +26,15 @@ Database design: `docs/DATABASE.md`
 | Version-Aware Caching | ✅ |
 | Cache Invalidation | ✅ |
 | Query History Persistence | ✅ |
-| API Rate Limiting | ✅ |
+| API Rate Limiting | ⚠️ Implemented; inert — see Blocking Defects |
+| Login Rate Limiting | ⚠️ Implemented; inert — see Blocking Defects |
+| Authorized Retrieval Cache | ⚠️ Implemented; inert — see Blocking Defects |
 | Document Reprocessing | ⚠️ Routed but unauthorized and non-functional |
 
 ## Known Backend Issues
 
 - `document.routes.js:128` does register `POST /:documentId/versions/:versionId/reprocess` behind `authenticate`, but the handler never receives `req.user` and the service queries by `documentId` alone with no tenant filter and no `authorizeDocumentAction` call. Any authenticated user can re-dispatch processing for any document in any organization. It is also not covered by `documentUploadRateLimiter`.
-- `queryCache.service.js` hardcodes `const connection = null` and imports it that way, so the tenant-scoped retrieval cache is currently bypassed even when Redis is enabled. The cache client must be created from `config/redis.js` and wired into the service; until then, every query performs fresh AI retrieval.
+- `queryCache.service.js` and `queryAccessCache.service.js` are both wired to the shared Redis module but cannot perform any Redis operation; see Blocking Defects item 0. Until that is fixed, every query performs fresh AI retrieval and fresh authorization, and `invalidateOrganizationQueryCache` after successful processing is a no-op.
 - The rate limiter fails open when Redis is unavailable, so a Redis outage disables rate limiting rather than blocking traffic. This is intentional to keep the API available.
 - `DocumentVersion.processingStatus` is never written anywhere. Every version stays `PENDING`, so the version-level processing state documented in `docs/DATABASE.md` does not exist in practice.
 - `buildSystemPrompt()` in `query/prompt.service.js` is exported but imported nowhere, and `llm.service.js` sends a `ConverseCommand` with a single user message and no system block. The prompt-injection policy is never actually sent to Bedrock.
@@ -41,7 +43,35 @@ Database design: `docs/DATABASE.md`
 
 Found by a full read-through audit on 2026-09-30. Every item below was verified by reading the code, not inferred.
 
-### 1. Document access management throws on every call
+### 0. Three Redis consumers call client methods on a connection options object
+
+`config/redis.js` default-exports a **plain options object** (`{ host, port, username, password, tls, maxRetriesPerRequest, … }`) intended to be passed to `new Redis(options)` or to BullMQ. It is not a connected client and has no Redis methods:
+
+```text
+redis.js export type: object | has .get: undefined | has .incr: undefined | has .ttl: undefined
+```
+
+Three modules now assign `const connection = redisConnection` and then call client methods on it:
+
+| Module | Methods called | Effect |
+| --- | --- | --- |
+| `query/queryCache.service.js:6` | `.get`, `.set`, `.scan`, `.del` | Every call throws `TypeError`; the cache never stores or returns anything |
+| `query/queryAccessCache.service.js:5` | `.get`, `.set`, `.scan`, `.del` | Same — the authorized cache is dead |
+| `authRateLimit.service.js:4` | `.ttl`, `.get`, `.incr`, `.expire`, `.del` | Every call throws; `checkLoginRateLimit` always returns `{ blocked: false }` |
+
+This is worse than the previous `const connection = null` state, because every one of these functions wraps its Redis work in a `try/catch` that logs and continues. The `TypeError` is swallowed and the code takes its "not blocked" / "cache miss" path, so login rate limiting and both caches silently do nothing while appearing healthy in code review. Every query also logs a Redis error.
+
+The fix is to create a shared client, for example `export const redis = config.redis.enabled ? new Redis(options) : null` in `config/redis.js`, and have BullMQ keep using the raw options object. Note that the options object also sets `maxRetriesPerRequest: 10`, which BullMQ requires to be `null` on the blocking `Worker` connection; the two consumers need different values, so they should not share a single object.
+
+### 1. Login is normalized but registration is not
+
+`loginUser` now looks the user up by `email.trim().toLowerCase()`, but `registerUser` still stores and checks the raw `email`.
+
+A user who registers as `User@Email.com` stores that casing, and every subsequent login lowercases the input to `user@email.com`, which no longer matches. That account is permanently unable to log in.
+
+`registerUser` also still performs a case-sensitive duplicate check, so `Alice@Corp.com` and `alice@corp.com` create two separate accounts for the same person. The normalization must be applied in `registerUser` as well, ideally combined with a case-insensitive unique constraint.
+
+### 2. Document access management throws on every call
 
 `documentAccess.service.js:298-303` checks `hasPermission(user.id, "MANAGE_ACCESS", targetUnitId, tx)`, but the `Permission` enum in `schema.prisma:83-94` contains only `INVITE_MEMBER`, `REMOVE_MEMBER`, `UPDATE_MEMBER`, `ASSIGN_ROLE`, `MOVE_MEMBER`, `CREATE_UNIT`, `UPDATE_UNIT`, `DELETE_UNIT`, `MOVE_UNIT`. `MANAGE_ACCESS` exists only on the unrelated `DocumentAccessAction` enum.
 
@@ -108,19 +138,23 @@ These paths resolve tenant membership but never evaluate a document access polic
 - **Revoked permissions are never revoked** — `permission.service.js:54-61` filters on `isActive: true` but never checks `revokedAt`, while `removeMember` revokes grants by setting only `revokedAt` (`organization.service.js:783-792`). A removed member who is later re-invited silently regains every prior administrative permission.
 - **Privilege escalation through invitations** — `createInvitation` (`invitation.service.js:65-79`) does not validate `role` against an allow-list; it only special-cases `MEMBER`. A caller with `INVITE_MEMBER` + `ASSIGN_ROLE` can invite an address as `OWNER`, and `acceptInvitation` writes that role directly, bypassing the owner protections in `updateMemberRole`.
 - **Expired invitations are never marked** — `invitation.service.js:186-193` updates status to `EXPIRED` and then throws inside the same transaction, so the update always rolls back.
+- **Registration is not rate limited** — `POST /login` is now protected, but `POST /register` is not, so unlimited account creation remains possible. `express-rate-limit` is a dependency and is used nowhere.
+- **The access-scope fingerprint runs on every query** — `getQueryAccessScopeFingerprint` issues a full `QUERY` policy scan plus a unit-hierarchy walk per request. Correct, but it is a per-request database cost on the hot path and should be measured.
 - **Audit-log race condition** — `getDocumentAccessPolicy` (`documentHelpers.js:136`) uses the global Prisma client rather than the transaction passed by its caller, so two concurrent revocations can both read `isActive: true` and both write a `REVOKED` audit record.
 - **Two divergent lifecycle transition tables** — `documentHelpers.validDocumentTransitions` omits `READY → "QUEUED"`, which `documentLifecycle.service.js:35-41` includes. The helper's copy is exported and would reject a legitimate version upload. The transition validator is also only ever applied to the `→ SUBMITTED` hop, never to the transitions that actually move a document.
 - **Plain `Error` instead of `ApiError`** — `query.service.js`, `queryHistory.service.js`, `llm.service.js`, and `prompt.service.js` throw bare `Error` for missing organization, `PROMPT_REQUIRED`, `CONTEXT_REQUIRED`, and `EMPTY_LLM_RESPONSE`. `error.middleware.js` reads `err.statusCode || 500`, so all of these return 500 instead of 400/403.
 - **Query history can lose a paid answer** — `saveQueryHistory` (`query.service.js:223`) runs after generation; if the insert fails the whole request 500s and the completed LLM response is discarded.
 - **Multer errors surface as 500** — `upload.middleware.js` enforces a 25 MB limit, but `MulterError` has no `statusCode`, so an oversized upload returns 500 instead of 413. This is the same reason the invalid-enum bug in item 1 presents as an opaque 500.
 - **`retryAfter` is dropped** — `error.middleware.js` serialises only `{ success, message }`, discarding `error.retryAfter` set by the rate limiter, and never logs the error or its stack. Every 500 in the system is currently unlogged, which is why items 2 and 4 produce no diagnostic trail.
-- **Redis TLS is unconditional** — `config/redis.js:11` sets `tls` regardless of `config.redis.enabled` or whether the target speaks TLS, breaking a plain local Redis. The same shared object sets `maxRetriesPerRequest: 3` and `commandTimeout: 5000`, but BullMQ requires `maxRetriesPerRequest: null` on blocking connections. It also makes the documented fail-open rate limiter stall for roughly 15 seconds per request during a Redis outage rather than failing fast.
+- **Redis TLS and retry settings are wrong for the shared consumer** — `config/redis.js:11` sets `tls` regardless of `config.redis.enabled` or whether the target speaks TLS, breaking a plain local Redis. `maxRetriesPerRequest: 10` with `commandTimeout: 10000` is also invalid for BullMQ's blocking `Worker`, which requires `maxRetriesPerRequest: null`. The same settings make the fail-open rate limiter stall for up to roughly 100 seconds per request during a Redis outage rather than failing fast. The options object now needs to differ per consumer, not be shared verbatim.
 - **Storage bucket is ignored** — `getDownloadUrlFromS3` uses `config.aws.bucket` and never reads the persisted `version.storageBucket`, so a bucket rotation would produce 404s.
 
 ## Dead Code
 
 - `prompt.service.js::buildSystemPrompt` — never imported.
 - `config/ai.js` (`aiClient`) — never imported; `documentAI.service.js` and `queryAI.service.js` create ad-hoc clients with inconsistent timeouts.
+- `authRateLimit.service.js::getLoginRateLimitConfig` — never imported; the thresholds are hardcoded rather than read from `config.rateLimit` the way the query and upload limiters are.
+- `queryAccessCache.service.js::buildQueryAccessScopeHash` — exported but never imported. `documentAccess.service.js::getQueryAccessScopeFingerprint` builds the hash with its own private `buildAccessScopeHash`, so this is a duplicate of live logic.
 - `context.service.js::buildContext` — never imported.
 - `expireDocumentDrafts` — no route triggers bulk draft expiry.
 - `config/bullmq.js` — exports a `connection` that is always `null`; the commented-out import in `queryCache.service.js:4` is where the disabled cache originated.
@@ -173,6 +207,53 @@ The field does not exist in `schema.prisma`, so each of those writes would have 
 - `ai-service/app/schemas/processing.py` — `ProcessDocumentRequest` requires `file_name` (`min_length=1`); `DocumentProcessingService` takes the suffix from it instead of parsing the URL.
 - `ai-service/app/services/extractors/base.py` — `BaseExtractor` gained `log_start`, `log_success`, and `log_failure` helpers so extraction timing and failures are logged consistently across formats.
 - `document.controllers.js` — `publishDraft` and `getDocumentDownloadUrl` log caught errors before rethrowing.
+
+## Authorized Retrieval Cache
+
+The raw-candidate cache is shared across all users of a tenant, so it cannot store an authorized result set — that would leak one user's permissions to another. This change adds a second, per-access-scope cache for the authorized result.
+
+### New Files
+
+- `services/query/queryAccessCache.service.js` — tenant-scoped cache for the **authorized** candidate list. Keys are `rag:authorized-retrieval:{organizationId}:{accessScopeHash}:{topK}:{sha256(query)}` with a 300-second TTL, plus `invalidateOrganizationAuthorizedQueryCache(organizationId)` using `SCAN` + `DEL`.
+
+### Access Scope Fingerprint
+
+- `documentAccess.service.js` — new `getQueryAccessScopeFingerprint(user)`. It loads every `QUERY` policy in the organization, filters to those matching the user (ORGANIZATION, UNIT with `UNIT_ONLY` or `UNIT_AND_DESCENDANTS` against the resolved unit hierarchy, ROLE, USER), applies `isDocumentAccessPolicyActive`, sorts by policy id, and hashes the result together with `organizationId`, `unitId`, `role`, and the unit hierarchy.
+
+Two users with different effective access therefore never share a cache entry, and any change to a matching policy changes the hash and misses the cache.
+
+### Invalidation
+
+- `grantDocumentAccess`, `updateDocumentAccessPolicy`, and `revokeDocumentAccess` now invalidate the tenant's authorized-retrieval cache after their transaction commits, via a `.then()` chained onto `prisma.$transaction`.
+
+Document version changes are not handled by invalidation. Instead the cache is re-validated on read, which is stronger: see below.
+
+### Query Pipeline Refactor
+
+`retrieveAuthorizedCandidates` was restructured into three steps:
+
+- `validateCurrentCandidates(organizationId, candidates)` — filters candidates against a direct `prisma.document.findMany` for `status: "READY"`, `isDeleted: false`, and a non-null `currentVersionId` within the tenant. This runs on every cache read, so a cached authorized set cannot outlive a version change.
+- `authorizeCandidates(user, candidates)` — calls `authorizeQueryDocuments` and filters to the current version, replacing the previous inline logic and the duplicate stale-candidate refresh branch.
+- The main function now reads the raw cache, computes the access fingerprint, reads the authorized cache, and only falls back to `authorizeCandidates` + `setCachedAuthorizedQuery` on a miss.
+
+Both the raw cache and the authorized cache are always written with the candidate list produced by that specific request.
+
+## Login Rate Limiting
+
+### New Files
+
+- `services/authRateLimit.service.js` — fixed-window counters in Redis: 5 failed attempts per normalized email and 20 per IP within a 15-minute window. Exposes `checkLoginRateLimit`, `recordFailedLogin`, `clearEmailLoginFailures`, and `getLoginRateLimitConfig`. Fails open on any Redis error so authentication stays available.
+- `middleware/loginRateLimit.middleware.js` — `loginRateLimiter` reads the email from the body and the IP from `req.ip`, calls the check, and rejects with a 429 carrying a `Retry-After` header. Missing email still receives IP-based protection.
+
+### Wiring
+
+- `auth.routes.js` — `POST /login` now runs `loginRateLimiter`. `POST /register` is still unlimited.
+- `auth.controller.js` — `login` forwards `req.ip` to the service.
+- `auth.services.js` — `loginUser` normalizes the email to `email.trim().toLowerCase()` before lookup, records a failed attempt for both unknown-email and wrong-password cases using an identical 401 message, and clears the email counter on success. The IP counter is deliberately not cleared on success. An inactive account returns 403 without counting as a failure.
+
+### Banner Comments Removed
+
+Decorative `/* --- */` section banners were removed from `routes/document.routes.js` and `services/query/query.service.js`. Explanatory comments were preserved; only the separator rules and numbered titles were dropped.
 
 ---
 
@@ -784,6 +865,8 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 ```
 
+`POST /api/v1/auth/login` is protected by `loginRateLimiter` (5 failed attempts per email, 20 per IP, 15-minute window). The counter increments on unknown-email and wrong-password responses; a successful login clears the email counter but not the IP counter. `POST /api/v1/auth/register` is not rate limited.
+
 ## Organization
 
 ```text
@@ -947,8 +1030,12 @@ Implemented:
 - Cached candidates are validated against the document's current version.
 - Stale candidates trigger fresh AI retrieval.
 - Candidates from superseded versions are excluded.
+- Authorized candidates are cached separately, keyed by an access-scope fingerprint so two users with different permissions never share an entry.
+- Access policy changes invalidate the tenant's authorized cache; version changes are handled by re-validating on read instead.
 - Successful document processing invalidates tenant retrieval cache.
 - Processing status updates are scoped to the expected document version.
+
+> All of the above is currently inert at runtime. See Blocking Defects item 0.
 
 ---
 
@@ -1011,6 +1098,7 @@ backend/
     ├── middleware/
     │   ├── auth.middleware.js
     │   ├── error.middleware.js
+    │   ├── loginRateLimit.middleware.js
     │   ├── notFound.middleware.js
     │   ├── rateLimit.middleware.js
     │   └── upload.middleware.js
@@ -1026,6 +1114,7 @@ backend/
     │   └── queryHistory.routes.js
     ├── services/
     │   ├── auth.service.js
+    │   ├── authRateLimit.service.js
     │   ├── document.service.js
     │   ├── invitation.service.js
     │   ├── organization.service.js
@@ -1050,6 +1139,7 @@ backend/
     │       ├── prompt.service.js
     │       ├── query.service.js
     │       ├── queryAI.service.js
+    │       ├── queryAccessCache.service.js
     │       ├── queryCache.service.js
     │       ├── queryHistory.service.js
     │       └── reranking.service.js

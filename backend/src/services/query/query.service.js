@@ -1,13 +1,24 @@
-// backend/src/services/query/query.service.js
 import { retrieveFromAI } from "./queryAI.service.js";
 import { rerankCandidates } from "./reranking.service.js";
-import { authorizeQueryDocuments } from "../document/documentAccess.service.js";
+import {
+    authorizeQueryDocuments,
+    getQueryAccessScopeFingerprint,
+} from "../document/documentAccess.service.js";
 import { buildSafeContext } from "./contextGuard.service.js";
 import { buildRAGPrompt } from "./prompt.service.js";
-import { getCachedQuery, setCachedQuery } from "./queryCache.service.js";
+import {
+    getCachedQuery,
+    setCachedQuery,
+} from "./queryCache.service.js";
+import {
+    getCachedAuthorizedQuery,
+    setCachedAuthorizedQuery,
+} from "./queryAccessCache.service.js";
 import { checkEvidenceSufficiency } from "./evidence.service.js";
 import { generateQueryAnswer } from "./answer.service.js";
-import { validateGeneratedAnswer as validateOutputGuard } from "./outputGuardrail.service.js";
+import {
+    validateGeneratedAnswer as validateOutputGuard,
+} from "./outputGuardrail.service.js";
 import prisma from "../../config/prisma.js";
 
 const saveQueryHistory = async ({
@@ -22,7 +33,9 @@ const saveQueryHistory = async ({
     const organizationId = user?.unit?.organizationId;
 
     if (!organizationId || !user?.id) {
-        throw new Error("Query history requires an authenticated organization user.");
+        throw new Error(
+            "Query history requires an authenticated organization user."
+        );
     }
 
     await prisma.queryHistory.create({
@@ -39,6 +52,104 @@ const saveQueryHistory = async ({
     });
 };
 
+const validateCurrentCandidates = async (
+    organizationId,
+    candidates
+) => {
+    if (!candidates?.length) {
+        return [];
+    }
+
+    const documentIds = [
+        ...new Set(
+            candidates
+                .map((candidate) => candidate.document_id)
+                .filter(Boolean)
+        ),
+    ];
+
+    if (!documentIds.length) {
+        return [];
+    }
+
+    const documents = await prisma.document.findMany({
+        where: {
+            id: {
+                in: documentIds,
+            },
+            organizationId,
+            isDeleted: false,
+            status: "READY",
+            currentVersionId: {
+                not: null,
+            },
+        },
+        select: {
+            id: true,
+            currentVersionId: true,
+        },
+    });
+
+    const versionMap = new Map(
+        documents.map((document) => [
+            document.id,
+            document.currentVersionId,
+        ])
+    );
+
+    return candidates.filter((candidate) => {
+        const currentVersionId =
+            versionMap.get(candidate.document_id);
+
+        return (
+            currentVersionId &&
+            candidate.version_id === currentVersionId
+        );
+    });
+};
+
+const authorizeCandidates = async (
+    user,
+    candidates
+) => {
+    const documentIds = [
+        ...new Set(
+            candidates
+                .map((candidate) => candidate.document_id)
+                .filter(Boolean)
+        ),
+    ];
+
+    if (!documentIds.length) {
+        return [];
+    }
+
+    const authorizedDocuments =
+        await authorizeQueryDocuments(
+            user,
+            documentIds
+        );
+
+    const authorizedVersionMap = new Map(
+        authorizedDocuments.map((document) => [
+            document.documentId,
+            document.currentVersionId,
+        ])
+    );
+
+    return candidates.filter((candidate) => {
+        const currentVersionId =
+            authorizedVersionMap.get(
+                candidate.document_id
+            );
+
+        return (
+            currentVersionId &&
+            candidate.version_id === currentVersionId
+        );
+    });
+};
+
 export const retrieveAuthorizedCandidates = async (
     user,
     query,
@@ -47,20 +158,25 @@ export const retrieveAuthorizedCandidates = async (
     const organizationId = user?.unit?.organizationId;
 
     if (!organizationId) {
-        throw new Error("User organization could not be determined.");
+        throw new Error(
+            "User organization could not be determined."
+        );
     }
 
-    let cachedCandidates = await getCachedQuery(
+    const cachedCandidates = await getCachedQuery(
         organizationId,
         query,
         topK
     );
 
-    let retrievalResponse;
-    let candidates;
-    let cacheHit = Array.isArray(cachedCandidates);
+    const rawCacheHit = Array.isArray(
+        cachedCandidates
+    );
 
-    if (cacheHit) {
+    let candidates;
+    let retrievalResponse;
+
+    if (rawCacheHit) {
         candidates = cachedCandidates;
 
         retrievalResponse = {
@@ -75,89 +191,48 @@ export const retrieveAuthorizedCandidates = async (
         );
 
         candidates = retrievalResponse.results || [];
-    }
 
-    const documentIds = [
-        ...new Set(
-            candidates
-                .map((candidate) => candidate.document_id)
-                .filter(Boolean)
-        ),
-    ];
-
-    const authorizedDocuments = await authorizeQueryDocuments(
-        user,
-        documentIds
-    );
-
-    const authorizedVersionMap = new Map(
-        authorizedDocuments.map((document) => [
-            document.documentId,
-            document.currentVersionId,
-        ])
-    );
-
-    const hasStaleCandidates =
-        cacheHit &&
-        candidates.some((candidate) => {
-            const currentVersionId = authorizedVersionMap.get(
-                candidate.document_id
-            );
-
-            return (
-                currentVersionId &&
-                candidate.version_id !== currentVersionId
-            );
-        });
-
-    if (hasStaleCandidates) {
-        retrievalResponse = await retrieveFromAI(
-            query,
-            topK,
-            organizationId
-        );
-
-        candidates = retrievalResponse.results || [];
-        cacheHit = false;
-    }
-
-    const refreshedDocumentIds = [
-        ...new Set(
-            candidates
-                .map((candidate) => candidate.document_id)
-                .filter(Boolean)
-        ),
-    ];
-
-    const refreshedAuthorizedDocuments = cacheHit
-        ? authorizedDocuments
-        : await authorizeQueryDocuments(
-              user,
-              refreshedDocumentIds
-          );
-
-    const refreshedAuthorizedVersionMap = new Map(
-        refreshedAuthorizedDocuments.map((document) => [
-            document.documentId,
-            document.currentVersionId,
-        ])
-    );
-
-    const authorizedCandidates = candidates.filter((candidate) => {
-        const currentVersionId =
-            refreshedAuthorizedVersionMap.get(
-                candidate.document_id
-            );
-
-        return (
-            currentVersionId &&
-            candidate.version_id === currentVersionId
-        );
-    });
-
-    if (!cacheHit) {
         await setCachedQuery(
             organizationId,
+            query,
+            topK,
+            candidates
+        );
+    }
+
+    const accessScopeHash =
+        await getQueryAccessScopeFingerprint(user);
+
+    let authorizedCandidates = null;
+
+    if (rawCacheHit) {
+        authorizedCandidates =
+            await getCachedAuthorizedQuery(
+                organizationId,
+                accessScopeHash,
+                query,
+                topK
+            );
+
+        if (Array.isArray(authorizedCandidates)) {
+            authorizedCandidates =
+                await validateCurrentCandidates(
+                    organizationId,
+                    authorizedCandidates
+                );
+        }
+    }
+
+    if (!Array.isArray(authorizedCandidates)) {
+        authorizedCandidates =
+            await authorizeCandidates(
+                user,
+                candidates
+            );
+
+        await setCachedAuthorizedQuery(
+            organizationId,
+            accessScopeHash,
             query,
             topK,
             authorizedCandidates
@@ -201,7 +276,10 @@ export const retrieveAuthorizedCandidates = async (
         };
     }
 
-    const { context, sources } = buildSafeContext(
+    const {
+        context,
+        sources,
+    } = buildSafeContext(
         rerankedCandidates
     );
 

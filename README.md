@@ -189,7 +189,7 @@ Backend work through reliability, caching, and the full query pipeline is implem
 | Evaluation and monitoring | Not started |
 | Deployment and observability | Not started |
 
-**A code audit on 2026-09-30 found a number of defects in these implemented areas**, including document access management failing on every call, a security system prompt that is never actually sent to the language model, and missing access checks on several document read paths. The code is a working skeleton of each feature rather than a verified one, and none of it should be run against real data yet. The findings are recorded in `docs/DEVELOPMENT.md`, `docs/ai-service.md`, `docs/frontendDevelopmentLog.md`, and `docs/DATABASE.md`.
+**A code audit on 2026-09-30 found a number of defects in these implemented areas**, including document access management failing on every call, a security system prompt that is never actually sent to the language model, missing access checks on several document read paths, and three Redis-backed features (both query caches and login rate limiting) that cannot reach Redis because they are handed a connection configuration object instead of a client. The code is a working skeleton of each feature rather than a verified one, and none of it should be run against real data yet. The findings are recorded in `docs/DEVELOPMENT.md`, `docs/ai-service.md`, `docs/frontendDevelopmentLog.md`, and `docs/DATABASE.md`.
 
 Hybrid retrieval, semantic reranking, streaming answers, and a retrieval interface are intentionally left for later phases.
 

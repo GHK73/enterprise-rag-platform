@@ -4,25 +4,45 @@ import redisConnection from "../../config/redis.js";
 
 const connection = redisConnection;
 
-const QUERY_CACHE_TTL = 300;
-const QUERY_CACHE_PREFIX = "rag:retrieval";
+const QUERY_ACCESS_CACHE_TTL = 300;
+const QUERY_ACCESS_CACHE_PREFIX = "rag:authorized-retrieval";
 
-const buildCacheKey = (organizationId, query, topK) => {
-    const queryHash = crypto
+const buildQueryHash = (query) => {
+    return crypto
         .createHash("sha256")
         .update(query.trim().toLowerCase())
         .digest("hex");
+};
 
+const buildAccessScopeHash = (scope) => {
+    return crypto
+        .createHash("sha256")
+        .update(JSON.stringify(scope))
+        .digest("hex");
+};
+
+const buildCacheKey = (
+    organizationId,
+    accessScopeHash,
+    query,
+    topK
+) => {
     return [
-        QUERY_CACHE_PREFIX,
+        QUERY_ACCESS_CACHE_PREFIX,
         organizationId,
+        accessScopeHash,
         topK,
-        queryHash,
+        buildQueryHash(query),
     ].join(":");
 };
 
-export const getCachedQuery = async (
+export const buildQueryAccessScopeHash = (scope) => {
+    return buildAccessScopeHash(scope);
+};
+
+export const getCachedAuthorizedQuery = async (
     organizationId,
+    accessScopeHash,
     query,
     topK
 ) => {
@@ -33,6 +53,7 @@ export const getCachedQuery = async (
     try {
         const key = buildCacheKey(
             organizationId,
+            accessScopeHash,
             query,
             topK
         );
@@ -48,7 +69,7 @@ export const getCachedQuery = async (
         return Array.isArray(result) ? result : null;
     } catch (error) {
         console.error(
-            "Redis query cache read failed:",
+            "Redis authorized query cache read failed:",
             error.message
         );
 
@@ -56,8 +77,9 @@ export const getCachedQuery = async (
     }
 };
 
-export const setCachedQuery = async (
+export const setCachedAuthorizedQuery = async (
     organizationId,
+    accessScopeHash,
     query,
     topK,
     result
@@ -69,6 +91,7 @@ export const setCachedQuery = async (
     try {
         const key = buildCacheKey(
             organizationId,
+            accessScopeHash,
             query,
             topK
         );
@@ -77,17 +100,17 @@ export const setCachedQuery = async (
             key,
             JSON.stringify(result),
             "EX",
-            QUERY_CACHE_TTL
+            QUERY_ACCESS_CACHE_TTL
         );
     } catch (error) {
         console.error(
-            "Redis query cache write failed:",
+            "Redis authorized query cache write failed:",
             error.message
         );
     }
 };
 
-export const invalidateOrganizationQueryCache = async (
+export const invalidateOrganizationAuthorizedQueryCache = async (
     organizationId
 ) => {
     if (
@@ -99,7 +122,7 @@ export const invalidateOrganizationQueryCache = async (
     }
 
     try {
-        const pattern = `${QUERY_CACHE_PREFIX}:${organizationId}:*`;
+        const pattern = `${QUERY_ACCESS_CACHE_PREFIX}:${organizationId}:*`;
 
         let cursor = "0";
 
@@ -122,7 +145,7 @@ export const invalidateOrganizationQueryCache = async (
         } while (cursor !== "0");
     } catch (error) {
         console.error(
-            "Redis query cache invalidation failed:",
+            "Redis authorized query cache invalidation failed:",
             error.message
         );
     }

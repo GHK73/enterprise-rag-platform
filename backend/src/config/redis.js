@@ -1,5 +1,3 @@
-// backend/src/config/redis.js
-
 import config from "./config.js";
 
 const redisConnection = {
