@@ -16,7 +16,7 @@ async function addDocumentProcessingJob({ documentId, versionId }) {
             versionId,
         },
         {
-            jobId: `${documentId}-${versionId}`,
+            jobId: `${documentId}-${versionId}-${Date.now()}`,
         }
     );
 }

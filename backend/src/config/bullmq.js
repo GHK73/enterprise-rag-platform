@@ -1,4 +1,3 @@
-// backend/src/config/bullmq.js
 import { Queue } from "bullmq";
 
 import config from "./config.js";
@@ -9,7 +8,12 @@ let bullmqConnection = null;
 let documentProcessingQueue = null;
 
 if (config.redis.enabled) {
-    bullmqConnection = redisConnection;
+    bullmqConnection = {
+        ...redisConnection,
+        maxRetriesPerRequest: null,
+    };
+
+    connection = bullmqConnection;
 
     documentProcessingQueue = new Queue(
         "document-processing",

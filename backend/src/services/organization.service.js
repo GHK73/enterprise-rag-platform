@@ -784,9 +784,11 @@ export const removeMember = async(user,memberId)=>{
             where:{
                 userId:memberId,
                 organizationId:user.unit.organizationId,
+                isActive:true,
                 revokedAt:null
             },
             data:{
+                isActive:false,
                 revokedAt:new Date()
             }
         });

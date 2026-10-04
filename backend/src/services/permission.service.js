@@ -56,7 +56,8 @@ export const hasPermission = async(
             userId,
             permission,
             organizationId:targetUnit.organizationId,
-            isActive:true
+            isActive:true,
+            revokedAt:null
         }
     });
 
@@ -217,7 +218,8 @@ export const getUserPermissions = async(user)=>{
         where:{
             userId:user.id,
             organizationId:user.unit.organizationId,
-            isActive:true
+            isActive:true,
+            revokedAt:null
         },
         include:{
             scopeUnit:{

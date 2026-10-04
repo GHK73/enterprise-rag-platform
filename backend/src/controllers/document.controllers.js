@@ -407,6 +407,7 @@ export const reprocessDocument = asyncHandler(
         const { documentId, versionId } = req.params;
 
         await reprocessDocumentService({
+            user: req.user,
             documentId,
             versionId,
         });

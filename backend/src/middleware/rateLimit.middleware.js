@@ -1,45 +1,8 @@
-// backend/src/middleware/rateLimit.middleware.js
-import Redis from "ioredis";
-
 import config from "../config/config.js";
-import redisConnection from "../config/redis.js";
+import {
+    redisClient,
+} from "../config/redis.js";
 import ApiError from "../utils/ApiError.js";
-
-let redis = null;
-
-if (config.redis.enabled) {
-    redis = new Redis(redisConnection);
-
-    redis.on("connect", () => {
-        console.log("RATE LIMIT REDIS CONNECTED");
-    });
-
-    redis.on("ready", () => {
-        console.log("RATE LIMIT REDIS READY");
-    });
-
-    redis.on("error", (error) => {
-        console.error(
-            "RATE LIMIT REDIS ERROR:",
-            error.message
-        );
-    });
-
-    redis.on("close", () => {
-        console.log("RATE LIMIT REDIS CLOSED");
-    });
-}
-
-/*
- * Token bucket implemented atomically in Redis.
- *
- * KEYS[1] = bucket key
- *
- * ARGV[1] = current timestamp in milliseconds
- * ARGV[2] = bucket capacity
- * ARGV[3] = refill rate per second
- * ARGV[4] = token cost
- */
 
 const tokenBucketScript = `
 local key = KEYS[1]
@@ -117,8 +80,8 @@ return {
 }
 `;
 
-if (redis) {
-    redis.defineCommand(
+if (redisClient) {
+    redisClient.defineCommand(
         "consumeToken",
         {
             numberOfKeys: 1,
@@ -140,12 +103,13 @@ const createRateLimiter = ({
     return async (req, _, next) => {
         if (
             !config.redis.enabled ||
-            !redis
+            !redisClient
         ) {
             return next();
         }
 
-        const userId = req.user?.id;
+        const userId =
+            req.user?.id;
 
         if (!userId) {
             throw new ApiError(
@@ -159,7 +123,7 @@ const createRateLimiter = ({
 
         try {
             const result =
-                await redis.consumeToken(
+                await redisClient.consumeToken(
                     key,
                     Date.now(),
                     capacity,
@@ -173,7 +137,9 @@ const createRateLimiter = ({
                 retryAfter,
             ] = result;
 
-            if (Number(allowed) !== 1) {
+            if (
+                Number(allowed) !== 1
+            ) {
                 const error =
                     new ApiError(
                         429,
@@ -186,9 +152,8 @@ const createRateLimiter = ({
                 throw error;
             }
 
-            next();
-        }
-        catch (error) {
+            return next();
+        } catch (error) {
             if (
                 error instanceof ApiError &&
                 error.statusCode === 429
@@ -203,10 +168,11 @@ const createRateLimiter = ({
 
             /*
              * Fail open if Redis is unavailable.
+             *
              * This prevents a Redis outage from
              * taking down the API.
              */
-            next();
+            return next();
         }
     };
 };

@@ -3,7 +3,7 @@
 import { Worker } from "bullmq";
 
 import config from "../config/config.js";
-import redisConnection from "../config/redis.js";
+import { bullmqConnection } from "../config/bullmq.js";
 import { processDocument } from "../services/document/documentProcessing.service.js";
 
 let documentWorker = null;
@@ -31,7 +31,7 @@ if (config.redis.enabled) {
             );
         },
         {
-            connection: redisConnection,
+            connection: bullmqConnection,
             concurrency: 1,
         }
     );

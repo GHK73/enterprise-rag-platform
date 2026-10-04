@@ -62,17 +62,25 @@ export const createInvitation = async(user,invitationData)=>{
         throw new ApiError(403,"You do not have permission to invite members to this unit");
     }
 
+    const allowedRoles = ["MEMBER","ADMIN"];
+
     let invitationRole = "MEMBER";
 
-    if(role && role !== "MEMBER"){
-        const canAssignRole = await hasPermission(
-            user.id,
-            "ASSIGN_ROLE",
-            unitId
-        );
+    if(role !== undefined && role !== null){
+        if(!allowedRoles.includes(role)){
+            throw new ApiError(400,"Invalid invitation role");
+        }
 
-        if(!canAssignRole){
-            throw new ApiError(403,"You do not have permission to assign this role");
+        if(role !== "MEMBER"){
+            const canAssignRole = await hasPermission(
+                user.id,
+                "ASSIGN_ROLE",
+                unitId
+            );
+
+            if(!canAssignRole){
+                throw new ApiError(403,"You do not have permission to assign this role");
+            }
         }
 
         invitationRole = role;
@@ -158,6 +166,26 @@ export const getInvitations = async(user)=>{
 };
 
 export const acceptInvitation = async(user,token)=>{
+    const invitation = await prisma.invitation.findUnique({
+        where:{token}
+    });
+
+    if(!invitation){
+        throw new ApiError(404,"Invitation not Found");
+    }
+
+    if(
+        invitation.status === "PENDING" &&
+        invitation.expiresAt <= new Date()
+    ){
+        await prisma.invitation.update({
+            where:{id:invitation.id},
+            data:{status:"EXPIRED"}
+        });
+
+        throw new ApiError(400,"Invitation has expired");
+    }
+
     return runSerializableTransaction(async(tx)=>{
         const currentUser = await tx.user.findUnique({
             where:{id:user.id}
@@ -184,11 +212,6 @@ export const acceptInvitation = async(user,token)=>{
         }
 
         if(invitation.expiresAt <= new Date()){
-            await tx.invitation.update({
-                where:{id:invitation.id},
-                data:{status:"EXPIRED"}
-            });
-
             throw new ApiError(400,"Invitation has expired");
         }
 

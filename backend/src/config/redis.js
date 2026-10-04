@@ -1,3 +1,4 @@
+import Redis from "ioredis";
 import config from "./config.js";
 
 const redisConnection = {
@@ -36,6 +37,36 @@ const redisConnection = {
             err.message.includes(errorCode)
         );
     },
+};
+
+const redisClient = config.redis.enabled
+    ? new Redis(redisConnection)
+    : null;
+
+if (redisClient) {
+    redisClient.on("connect", () => {
+        console.log("Redis client connected");
+    });
+
+    redisClient.on("ready", () => {
+        console.log("Redis client ready");
+    });
+
+    redisClient.on("error", (error) => {
+        console.error(
+            "Redis client error:",
+            error.message
+        );
+    });
+
+    redisClient.on("close", () => {
+        console.warn("Redis client connection closed");
+    });
+}
+
+export {
+    redisConnection,
+    redisClient,
 };
 
 export default redisConnection;

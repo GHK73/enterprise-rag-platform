@@ -1,6 +1,4 @@
-// backend/src/services/authRateLimit.service.js
-
-import redisConnection from "../config/redis.js";
+import { redisClient } from "../config/redis.js";
 import config from "../config/config.js";
 
 const LOGIN_RATE_LIMIT_PREFIX = "rag:login";
@@ -25,7 +23,7 @@ const buildIpKey = (ip) => {
 };
 
 const getRemainingTtl = async (key) => {
-    const ttl = await redisConnection.ttl(key);
+    const ttl = await redisClient.ttl(key);
 
     if (ttl > 0) {
         return ttl;
@@ -38,8 +36,13 @@ export const checkLoginRateLimit = async ({
     email,
     ip,
 }) => {
-    if (!config.redis.enabled) {
-        return;
+    if (
+        !config.redis.enabled ||
+        !redisClient
+    ) {
+        return {
+            blocked: false,
+        };
     }
 
     try {
@@ -48,16 +51,24 @@ export const checkLoginRateLimit = async ({
 
         const [emailAttempts, ipAttempts] =
             await Promise.all([
-                redisConnection.get(emailKey),
-                redisConnection.get(ipKey),
+                redisClient.get(emailKey),
+                redisClient.get(ipKey),
             ]);
 
-        const emailCount = Number(emailAttempts || 0);
-        const ipCount = Number(ipAttempts || 0);
+        const emailCount =
+            Number(emailAttempts || 0);
 
-        if (emailCount >= LOGIN_EMAIL_MAX_ATTEMPTS) {
+        const ipCount =
+            Number(ipAttempts || 0);
+
+        if (
+            emailCount >=
+            LOGIN_EMAIL_MAX_ATTEMPTS
+        ) {
             const retryAfter =
-                await getRemainingTtl(emailKey);
+                await getRemainingTtl(
+                    emailKey
+                );
 
             return {
                 blocked: true,
@@ -66,9 +77,14 @@ export const checkLoginRateLimit = async ({
             };
         }
 
-        if (ipCount >= LOGIN_IP_MAX_ATTEMPTS) {
+        if (
+            ipCount >=
+            LOGIN_IP_MAX_ATTEMPTS
+        ) {
             const retryAfter =
-                await getRemainingTtl(ipKey);
+                await getRemainingTtl(
+                    ipKey
+                );
 
             return {
                 blocked: true,
@@ -102,7 +118,10 @@ export const recordFailedLogin = async ({
     email,
     ip,
 }) => {
-    if (!config.redis.enabled) {
+    if (
+        !config.redis.enabled ||
+        !redisClient
+    ) {
         return;
     }
 
@@ -111,37 +130,39 @@ export const recordFailedLogin = async ({
         const ipKey = buildIpKey(ip);
 
         /*
-         * Increment both counters atomically enough for our
-         * fixed-window protection.
+         * Increment both counters.
          *
-         * EXPIRE is only set when the counter is first created.
+         * EXPIRE is only set when the counter
+         * is created for the first time.
          */
 
-        const emailCount = await redisConnection.incr(
-            emailKey
-        );
+        const emailCount =
+            await redisClient.incr(
+                emailKey
+            );
 
         if (emailCount === 1) {
-            await redisConnection.expire(
+            await redisClient.expire(
                 emailKey,
                 LOGIN_WINDOW_SECONDS
             );
         }
 
-        const ipCount = await redisConnection.incr(
-            ipKey
-        );
+        const ipCount =
+            await redisClient.incr(
+                ipKey
+            );
 
         if (ipCount === 1) {
-            await redisConnection.expire(
+            await redisClient.expire(
                 ipKey,
                 LOGIN_WINDOW_SECONDS
             );
         }
     } catch (error) {
         /*
-         * Do not turn a Redis failure into an authentication
-         * failure.
+         * Do not turn a Redis failure into
+         * an authentication failure.
          */
         console.error(
             "Redis failed-login counter update failed:",
@@ -153,14 +174,20 @@ export const recordFailedLogin = async ({
 export const clearEmailLoginFailures = async (
     email
 ) => {
-    if (!config.redis.enabled) {
+    if (
+        !config.redis.enabled ||
+        !redisClient
+    ) {
         return;
     }
 
     try {
-        const emailKey = buildEmailKey(email);
+        const emailKey =
+            buildEmailKey(email);
 
-        await redisConnection.del(emailKey);
+        await redisClient.del(
+            emailKey
+        );
     } catch (error) {
         console.error(
             "Redis login failure-counter reset failed:",
@@ -171,8 +198,13 @@ export const clearEmailLoginFailures = async (
 
 export const getLoginRateLimitConfig = () => {
     return {
-        emailMaxAttempts: LOGIN_EMAIL_MAX_ATTEMPTS,
-        ipMaxAttempts: LOGIN_IP_MAX_ATTEMPTS,
-        windowSeconds: LOGIN_WINDOW_SECONDS,
+        emailMaxAttempts:
+            LOGIN_EMAIL_MAX_ATTEMPTS,
+
+        ipMaxAttempts:
+            LOGIN_IP_MAX_ATTEMPTS,
+
+        windowSeconds:
+            LOGIN_WINDOW_SECONDS,
     };
 };

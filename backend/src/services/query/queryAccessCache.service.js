@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import config from "../../config/config.js";
-import redisConnection from "../../config/redis.js";
+import { redisClient } from "../../config/redis.js";
 
-const connection = redisConnection;
+const connection = redisClient;
 
 const QUERY_ACCESS_CACHE_TTL = 300;
 const QUERY_ACCESS_CACHE_PREFIX = "rag:authorized-retrieval";
