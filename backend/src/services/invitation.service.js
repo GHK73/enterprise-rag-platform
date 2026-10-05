@@ -3,6 +3,7 @@
 import crypto from "crypto";
 import prisma from "../config/prisma.js";
 import ApiError from "../utils/ApiError.js";
+import { normalizeRequiredEmail } from "../utils/email.js";
 import {hasPermission} from "./permission.service.js";
 import {incrementOrganizationRevision} from "./organization.service.js";
 
@@ -36,7 +37,9 @@ const validateOrganizationMembership = (user)=>{
 };
 
 export const createInvitation = async(user,invitationData)=>{
-    const {email,unitId,role} = invitationData;
+    const {email:rawEmail,unitId,role} = invitationData;
+
+    const email = normalizeRequiredEmail(rawEmail);
 
     validateOrganizationMembership(user);
 
@@ -86,8 +89,13 @@ export const createInvitation = async(user,invitationData)=>{
         invitationRole = role;
     }
 
-    const existingMember = await prisma.user.findUnique({
-        where:{email}
+    const existingMember = await prisma.user.findFirst({
+        where:{
+            email:{
+                equals:email,
+                mode:"insensitive"
+            }
+        }
     });
 
     if(existingMember?.unitId){
@@ -96,7 +104,10 @@ export const createInvitation = async(user,invitationData)=>{
 
     const existingInvitation = await prisma.invitation.findFirst({
         where:{
-            email,
+            email:{
+                equals:email,
+                mode:"insensitive"
+            },
             organizationId:user.unit.organizationId,
             status:"PENDING",
             expiresAt:{

@@ -87,15 +87,15 @@ const expireOrganizationDrafts = async(organizationId)=>{
 };
 
 const cleanupDraftUpload = async(tx,document,version)=>{
-    await tx.documentVersion.delete({
-        where:{id:version.id,},
-    });
-    await tx.document.update({
-        where:{id:document.id,},
-        data:{
-            currentVersionId:null,
-        },
-    });
+    await tx.document.update({
+        where:{id:document.id,},
+        data:{
+            currentVersionId:null,
+        },
+    });
+    await tx.documentVersion.delete({
+        where:{id:version.id,},
+    });
 };
 
 const validateDraftForPublication = async(user,documentId)=>{
@@ -151,29 +151,58 @@ export const validateDocumentTransition = (currentStatus,nextStatus)=>{
 };
 
 const createInitialDocumentAccessPolicies = async(tx,user,document)=>{
-    const actions=[
-        "QUERY",
-        "VIEW",
-        "DOWNLOAD",
-        "MANAGE_ACCESS",
-    ];
-    const policies=[];
-    for(const action of actions){
-        const policy =
-            await tx.documentAccessPolicy.create({
-                data:{
-                    organizationId:document.organizationId,
-                    documentId:document.id,
-                    subjectType:"USER",
-                    subjectUserId:user.id,
-                    action,
-                    effect:"ALLOW",
-                    grantedById:user.id,
-                },
-            });
-        policies.push(policy);
-    }
-    return policies;
+    const actions=[
+        "QUERY",
+        "VIEW",
+        "DOWNLOAD",
+        "MANAGE_ACCESS",
+    ];
+    const policies=[];
+    for(const action of actions){
+        const policy =
+            await tx.documentAccessPolicy.create({
+                data:{
+                    organizationId:document.organizationId,
+                    documentId:document.id,
+                    subjectType:"USER",
+                    subjectUserId:user.id,
+                    action,
+                    effect:"ALLOW",
+                    grantedById:user.id,
+                },
+            });
+        policies.push(policy);
+    }
+
+    /*
+     * Access-management authority must not be limited to the
+     * uploader. DocumentAccessPolicy.documentId is required, so a
+     * tenant-wide policy cannot exist without a migration; seeding
+     * ADMINISTRATIVE roles per document at publish time is the
+     * equivalent, and gives every published document at least one
+     * non-uploader who can delegate, grant, and revoke.
+     */
+    const managingRoles=[
+        "OWNER",
+        "ADMIN",
+    ];
+    for(const subjectRole of managingRoles){
+        const policy =
+            await tx.documentAccessPolicy.create({
+                data:{
+                    organizationId:document.organizationId,
+                    documentId:document.id,
+                    subjectType:"ROLE",
+                    subjectRole,
+                    action:"MANAGE_ACCESS",
+                    effect:"ALLOW",
+                    grantedById:user.id,
+                },
+            });
+        policies.push(policy);
+    }
+
+    return policies;
 };
 
 const createInitialDocumentAccessAudit = async(tx,user,policies)=>{
@@ -443,10 +472,20 @@ export const cleanupDeletedDocument = async(user,documentId)=>{
     const document = await getDocumentWithVersions(user,documentId);
     if(!document.isDeleted) throw new ApiError(400,"Document must be deleted before cleanup.");
     if(document.uploadedById!==user.id) throw new ApiError(403,"You do not have permission to permanently delete this document.");
-    for(const version of document.versions){try{await deleteFileFromS3(version.storageKey);}catch{}}
+    for(const version of document.versions){
+        try{
+            await deleteFileFromS3(version.storageKey);
+        }catch(error){
+            console.error(
+                `DOCUMENT CLEANUP: Failed to delete S3 object ${version.storageKey}`,
+                error.message
+            );
+        }
+    }
     await prisma.$transaction(async(tx)=>{
         await tx.documentAccessAudit.deleteMany({where:{documentId,},});
         await tx.documentAccessPolicy.deleteMany({where:{documentId,},});
+        await tx.document.update({where:{id:documentId,},data:{currentVersionId:null,},});
         await tx.documentVersion.deleteMany({where:{documentId,},});
         await tx.document.delete({where:{id:documentId,},});
     });
@@ -467,27 +506,40 @@ export const cleanupExpiredDrafts = async(
                 versions:true,
             },
         });
-    for(const document of drafts){
-        for(const version of document.versions){
-            try{
-                await deleteFileFromS3(
-                    version.storageKey
-                );
-            }catch{}
-        }
-        await prisma.$transaction(async(tx)=>{
-            await tx.documentVersion.deleteMany({
-                where:{
-                    documentId:document.id,
-                },
-            });
-            await tx.document.delete({
-                where:{
-                    id:document.id,
-                },
-            });
-        });
-    }
+for(const document of drafts){
+        for(const version of document.versions){
+            try{
+                await deleteFileFromS3(
+                    version.storageKey
+                );
+            }catch(error){
+                console.error(
+                    `DRAFT CLEANUP: Failed to delete S3 object ${version.storageKey}`,
+                    error.message
+                );
+            }
+        }
+        await prisma.$transaction(async(tx)=>{
+            await tx.document.update({
+                where:{
+                    id:document.id,
+                },
+                data:{
+                    currentVersionId:null,
+                },
+            });
+            await tx.documentVersion.deleteMany({
+                where:{
+                    documentId:document.id,
+                },
+            });
+            await tx.document.delete({
+                where:{
+                    id:document.id,
+                },
+            });
+        });
+    }
     return {
         cleanedDrafts:drafts.length,
     };
@@ -516,22 +568,51 @@ export const uploadDocumentVersion = async(user,documentId,file)=>{
     if(document.status!=="READY") throw new ApiError(400,"New versions can only be uploaded for published documents.");
     const versionId=randomUUID();
     const objectKey=`organizations/${user.unit.organizationId}/documents/${documentId}/${versionId}`;
-    let uploadedObject=null;
+    let version;
+    let uploadCommitted=false;
     try{
-        uploadedObject=await uploadFileToS3(file,objectKey);
-        const version=await prisma.$transaction(async(tx)=>{
+        const uploadedObject=await uploadFileToS3(file,objectKey);
+        version=await prisma.$transaction(async(tx)=>{
             const latestVersion=await tx.documentVersion.findFirst({where:{documentId,},orderBy:{versionNumber:"desc",},});
             const versionNumber=latestVersion?latestVersion.versionNumber+1:1;
             const version=await tx.documentVersion.create({data:{id:versionId,documentId,versionNumber,storageBucket:uploadedObject.bucket,storageKey:uploadedObject.key,originalFileName:file.originalname,mimeType:file.mimetype,fileSize:file.size,checksum:uploadedObject.checksum,createdById:user.id,},});
             await tx.document.update({where:{id:documentId,},data:{currentVersionId:version.id,status:"QUEUED",updatedAt:new Date(),},});
             return version;
         });
-        await dispatchDocumentProcessing({documentId,versionId:version.id,});
-        return version;
+        uploadCommitted=true;
     }catch(error){
-        if(uploadedObject){try{await deleteFileFromS3(objectKey);}catch{}}
+        if(uploadCommitted===false){try{await deleteFileFromS3(objectKey);}catch{}}
         throw error;
     }
+    try{
+        await dispatchDocumentProcessing({documentId,versionId:version.id,});
+    }catch(dispatchError){
+        try{
+            await prisma.$transaction(async(tx)=>{
+                const documentResult=await tx.document.updateMany({
+                    where:{
+                        id:documentId,
+                        currentVersionId:version.id,
+                        status:"QUEUED",
+                    },
+                    data:{status:"FAILED",},
+                });
+                if(documentResult.count===1){
+                    await tx.documentVersion.updateMany({
+                        where:{ id:version.id, documentId, },
+                        data:{ processingStatus:"FAILED", },
+                    });
+                }
+            });
+        }catch(markFailedError){
+            console.error(
+                `DOCUMENT VERSION: Failed to mark ${documentId} version ${version.id} as FAILED after dispatch failure`,
+                markFailedError
+            );
+        }
+        throw dispatchError;
+    }
+    return version;
 };
 
 export const getDocumentDownloadUrl = async(

@@ -8,6 +8,9 @@ import {
 import { generateToken } from "../utils/jwt.js";
 import ApiError from "../utils/ApiError.js";
 import {
+    normalizeRequiredEmail,
+} from "../utils/email.js";
+import {
     recordFailedLogin,
     clearEmailLoginFailures,
 } from "./authRateLimit.service.js";
@@ -17,11 +20,35 @@ export const registerUser = async ({
     email,
     password,
 }) => {
-    const existingUser = await prisma.user.findUnique({
-        where: {
-            email,
-        },
-    });
+    /*
+     * Registration stores the same canonical form that
+     * login looks up.
+     *
+     * Storing the raw input here would let
+     * `User@Email.com` become an account that no
+     * subsequent login can ever match, because
+     * `loginUser` normalizes its input before lookup.
+     */
+
+    const normalizedEmail =
+        normalizeRequiredEmail(email);
+
+    /*
+     * Compared case-insensitively so any pre-existing
+     * row that was stored with uppercase characters
+     * still blocks a duplicate registration before the
+     * lowercase backfill migration runs.
+     */
+
+    const existingUser =
+        await prisma.user.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
+        });
 
     if (existingUser) {
         throw new ApiError(
@@ -34,13 +61,34 @@ export const registerUser = async ({
         password
     );
 
-    const user = await prisma.user.create({
-        data: {
-            fullName,
-            email,
-            passwordHash,
-        },
-    });
+    /*
+     * The duplicate check above is a read, so two
+     * concurrent registrations can both pass it. The
+     * unique index is the real guard; map its violation
+     * to the same 409 instead of letting it surface as a
+     * 500.
+     */
+
+    let user;
+
+    try {
+        user = await prisma.user.create({
+            data: {
+                fullName,
+                email: normalizedEmail,
+                passwordHash,
+            },
+        });
+    } catch (error) {
+        if(error.code === "P2002"){
+            throw new ApiError(
+                409,
+                "User already exists"
+            );
+        }
+
+        throw error;
+    }
 
     const token = generateToken(user);
 
@@ -74,7 +122,7 @@ export const loginUser = async ({
      */
 
     const normalizedEmail =
-        email.trim().toLowerCase();
+        normalizeRequiredEmail(email);
 
     const user = await prisma.user.findUnique({
         where: {

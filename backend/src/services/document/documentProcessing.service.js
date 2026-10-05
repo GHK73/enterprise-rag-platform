@@ -4,7 +4,6 @@ import {
     buildProcessingPayload,
     processDocumentWithAI,
     handleProcessingSuccess,
-    handleProcessingFailure,
 } from "./documentAI.service.js";
 import { invalidateOrganizationQueryCache } from "../query/queryCache.service.js";
 import { dispatchDocumentProcessing } from "./documentProcessingDispatcher.service.js";
@@ -131,12 +130,19 @@ async function processDocument({ documentId, versionId }) {
             );
         }
     } catch (error) {
-        await handleProcessingFailure(error);
-        await markProcessingFailed(
-            documentId,
-            versionId,
-            error
-        );
+        try {
+            await markProcessingFailed(
+                documentId,
+                versionId,
+                error
+            );
+        } catch (markFailureError) {
+            console.error(
+                `DOCUMENT PROCESSING: Failed to mark ${documentId} version ${versionId} as FAILED`,
+                markFailureError
+            );
+        }
+
         throw error;
     }
 }

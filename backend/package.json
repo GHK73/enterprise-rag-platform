@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "bench:redis": "node scripts/bench-redis.mjs"
   },
   "keywords": [],
   "author": "",

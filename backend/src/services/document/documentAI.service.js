@@ -29,13 +29,8 @@ async function handleProcessingSuccess(response) {
     return response;
 }
 
-async function handleProcessingFailure(error) {
-    throw error;
-}
-
 export {
     buildProcessingPayload,
     processDocumentWithAI,
     handleProcessingSuccess,
-    handleProcessingFailure,
 };

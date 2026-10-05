@@ -51,6 +51,14 @@ Administrative Permission ≠ Document Access
 Data Classification       ≠ Document Access
 ```
 
+### User Email Identity
+
+`User.email` is the account identity key and is `CITEXT` with a unique constraint, so uniqueness and equality are both case-insensitive at the database level. `registerUser` additionally stores the canonical `trim().toLowerCase()` form, which is what `loginUser` and the login rate limiter look up.
+
+Migration: `20261005101500_normalize_user_email` — enables `citext`, guards against pre-existing case-insensitive duplicates, backfills existing rows to lowercase, and converts the column.
+
+`Invitation.email` remains `TEXT`. It is not an identity column and is already compared case-insensitively where it matters.
+
 ## Document Management (Phase 5)
 
 | Model | Purpose |
@@ -288,37 +296,84 @@ Long-term vector multitenancy may add `OrganizationVectorPlacement` for shard ro
 
 ## Schema Risks
 
-Identified during the 2026-09-30 code audit. These are schema-level constraints that the application code currently violates; details and file references are in `docs/DEVELOPMENT.md`.
+Identified during the 2026-09-30 code audit. These are schema-level constraints and modelling gaps.
+Code-level defects, with file and line references, are in `docs/DEVELOPMENT.md`. Items marked FIXED or
+MITIGATED were addressed on the date shown; the underlying modelling gap is noted where it remains.
 
-## `Permission` Has No Access-Management Value
+## `Permission` Has No Access-Management Value — MITIGATED 2026-10-05
 
-The `Permission` enum contains only `INVITE_MEMBER`, `REMOVE_MEMBER`, `UPDATE_MEMBER`, `ASSIGN_ROLE`, `MOVE_MEMBER`, `CREATE_UNIT`, `UPDATE_UNIT`, `DELETE_UNIT`, and `MOVE_UNIT`.
+The `Permission` enum contains only `INVITE_MEMBER`, `REMOVE_MEMBER`, `UPDATE_MEMBER`, `ASSIGN_ROLE`, `MOVE_MEMBER`, `CREATE_UNIT`, `UPDATE_UNIT`, `DELETE_UNIT`, and `MOVE_UNIT`. There is no administrative permission meaning "may change document access policies".
 
-`MANAGE_ACCESS` exists only on `DocumentAccessAction`, which is the per-document action enum used by `DocumentAccessPolicy`. The service layer nevertheless checks `hasPermission(user.id, "MANAGE_ACCESS", …)` as an administrative permission, so document access mutations raise a Prisma enum validation error and return 500.
+The service layer previously checked `hasPermission(user.id, "MANAGE_ACCESS", …)`, which is a
+`DocumentAccessAction` and not a `Permission`, so every grant, update, and revoke raised a Prisma
+enum validation error and returned 500. Authority is now resolved from `DocumentAccessPolicy` rows,
+which is the correct source.
 
-The model needs an administrative permission representing "may change document access policies", plus a grant path that assigns it. Until then, `DocumentAccessPolicy` cannot be administered at all.
+The underlying schema gap remains: the enum still has no access-management value, so access
+administration cannot be delegated through the `PermissionGrant` mechanism the way membership
+administration can. It is now expressed through `ROLE`-subject policies instead — see Schema Changes
+2026-10-05. Adding a `MANAGE_DOCUMENT_ACCESS` permission plus a grant path would make access
+administration assignable the same way `ASSIGN_ROLE` is, and is the cleaner long-term model.
 
-## `Document.currentVersionId` Is `ON DELETE RESTRICT`
+## `Document.currentVersionId` Is `ON DELETE RESTRICT` — FIXED 2026-10-05
 
 ```text
 Document.currentVersion → DocumentVersion  (onDelete: Restrict)
 ```
 
-Any bulk delete of `DocumentVersion` rows while `Document.currentVersionId` still points at one of them fails with a foreign-key violation. Deleting a document therefore requires nulling `currentVersionId` first, then deleting versions, then deleting the document. `cleanupDraftUpload` does this correctly; `cleanupDeletedDocument` and `cleanupExpiredDrafts` do not, so both fail permanently.
+Any bulk delete of `DocumentVersion` rows while `Document.currentVersionId` still points at one of
+them fails with a foreign-key violation. Deleting a document therefore requires nulling
+`currentVersionId` first, then deleting versions, then deleting the document.
 
-This ordering constraint is not documented in the model and is easy to reintroduce.
+`cleanupDraftUpload`, `cleanupDeletedDocument`, and `cleanupExpiredDrafts` now all follow that
+ordering. Verified against the development database in rolled-back transactions: the old order fails
+with `violates RESTRICT setting of foreign key constraint "Document_currentVersionId_fkey"`, the
+corrected order completes. Before the fix, 6 soft-deleted documents and 1 expired draft were
+permanently stuck because of this.
 
-## Version-Level Processing State Is Never Written
+The ordering constraint is still not expressed in the schema and remains easy to reintroduce. A
+partial index or a database-level cascade would make it structural rather than conventional.
 
-`DocumentVersion.processingStatus` (`PENDING → QUEUED → PROCESSING → COMPLETED | FAILED`) is never updated by any code path. Every version remains `PENDING` for its entire lifetime.
+## Version-Level Processing State Is Now Written — FIXED 2026-10-04
 
-A version-level `FAILED` cannot be distinguished from a version still waiting to be processed, and the document-level status is the only usable signal. The column is currently dead weight, and a UI that filters or displays it will show incorrect data.
+`DocumentVersion.processingStatus` (`PENDING → QUEUED → PROCESSING → COMPLETED | FAILED`) was never
+updated by any code path, so every version stayed `PENDING` for its entire lifetime. A version-level
+`FAILED` could not be distinguished from a version still waiting to be processed.
 
-## Revocation Is Represented Twice
+`processDocument` now writes the column at each transition. A version-level `FAILED` is only written
+inside the same transaction as the guarded document update, and only when that update matched exactly
+one row, so a stale or duplicate job cannot mark a version that the worker does not own.
 
-`PermissionGrant` has both `isActive` and `revokedAt`. Revocation writes `revokedAt` and leaves `isActive: true`, while the permission check filters on `isActive` only.
+There is still no `processingError` column, so a version records *that* it failed but never *why*. A
+persisted failure reason is still needed for the UI.
 
-The two fields disagree after every revocation. Either `isActive` should be cleared alongside `revokedAt`, or the check should test `revokedAt: null`; keeping both invites exactly the drift described in `docs/DEVELOPMENT.md`.
+## Revocation Is Represented Twice — FIXED 2026-10-04
+
+`PermissionGrant` has both `isActive` and `revokedAt`. Revocation writes `revokedAt` and left
+`isActive: true`, while the permission check filtered on `isActive` only, so a re-invited member
+regained every permission they had before removal.
+
+`hasPermission` and `getUserPermissions` now filter on `revokedAt: null`, and `removeMember` sets
+`isActive: false` alongside `revokedAt`. Both fields now agree after a revocation.
+
+Keeping two representations of the same fact remains a modelling risk: the next code path that sets
+one without the other reintroduces the drift.
+
+## `MANAGE_ACCESS` Provisioning Is Per-Document, Not Tenant-Wide
+
+`DocumentAccessPolicy.documentId` is `NOT NULL`, so no policy can exist without naming a document. A
+tenant-wide or organization-wide `MANAGE_ACCESS` policy is therefore not expressible.
+
+Authority for access management is resolved from `MANAGE_ACCESS` policies on the target document, so
+the first delegation of that authority is gated on a grant of the authority being delegated. Before
+2026-10-05 the only producer was the publish-time seeding of a single `USER`-subject policy for the
+uploader, which made access management a single-owner feature with no bootstrap path.
+
+The current mitigation is per-document `ROLE`-subject policies for `OWNER` and `ADMIN`. That closes
+the deadlock but does not change the underlying constraint: there is no tenant-level default, and no
+way to express "all documents in this organization" other than writing a policy per document. Making
+`documentId` nullable, with a documented meaning for a NULL value, would allow a real tenant-level
+default.
 
 ## `QueryHistory` Has No Retention Policy
 
@@ -338,16 +393,121 @@ Every executed query is persisted, including evidence-insufficient fallbacks and
 | Referential integrity review | ✅ |
 | Prisma validation | ✅ |
 | Migration applied | ✅ |
+| Case-insensitive `User.email` | ✅ |
+| Role-subject `MANAGE_ACCESS` provisioning | ✅ |
 
-Migrations:
+Schema-level risks identified during the 2026-09-30 audit are listed under Schema Risks above. Code-level defects, and the file and line references for both, are in `docs/DEVELOPMENT.md`.
 
-```text
-20260630025915_init_auth
-20260630042656_make_user_organization_optional
-20260705113553_add_permission_grants
-20260705114531_add_permissions_capacity_invitations
-20260705120512_add_move_unit_permission
-20260709023350_add_organization_revision
-20260710095413_add_document_management
-20260927135626_add_query_history
-```
+---
+
+# Migrations
+
+Ten migrations are applied to the development database, confirmed with `npx prisma migrate status`.
+
+| Migration | Purpose |
+| --- | --- |
+| `20260630025915_init_auth` | Authentication foundation |
+| `20260630042656_make_user_organization_optional` | Allows a user to exist before joining an organization |
+| `20260705113553_add_permission_grants` | Permission grants |
+| `20260705114531_add_permissions_capacity_invitations` | Permissions, unit capacity, invitations |
+| `20260705120512_add_move_unit_permission` | `MOVE_UNIT` |
+| `20260709023350_add_organization_revision` | Organization revision tracking |
+| `20260710095413_add_document_management` | Documents, versions, access policies, access audit |
+| `20260927135626_add_query_history` | Query history |
+| `20261005101500_normalize_user_email` | `citext` extension, duplicate guard, lowercase backfill, `User.email` as `CITEXT` |
+| `20261005140000_seed_manage_access_role_policies` | Backfills `OWNER` and `ADMIN` `MANAGE_ACCESS` policies for published documents |
+
+---
+
+# Schema Changes (2026-10-05)
+
+## Case-Insensitive User Email
+
+`User.email` is now `String @unique @db.Citext`. Before this, `registerUser` stored and checked the raw
+input while `loginUser` looked up `email.trim().toLowerCase()`, so a user who registered as
+`User@Email.com` could never authenticate, and `Alice@Corp.com` / `alice@corp.com` created two
+accounts for one person.
+
+### Migration `20261005101500_normalize_user_email`
+
+1. `CREATE EXTENSION IF NOT EXISTS citext`.
+2. A guard that raises with an explanatory message if two accounts already share an address
+   case-insensitively. Merging them is a judgment call that depends on which tenant and which
+   documents each one owns, so the migration refuses rather than guessing.
+3. Backfills existing rows to `LOWER(BTRIM("email"))`, so every current account is reachable by a
+   normalized login.
+4. Converts `User.email` to `CITEXT`. The existing `@unique` constraint is rebuilt on the new type
+   and becomes case-insensitive, so uniqueness holds even if a caller writes an unnormalized address.
+
+`Invitation.email` is deliberately left as `TEXT`. It is not an identity column, it is already
+compared case-insensitively where it matters, and `citext` there would add an extension dependency
+without adding a guarantee.
+
+The application-level check is now advisory only — any future write path that forgets to normalize
+cannot reintroduce the duplicate-account defect, because the constraint lives in the schema.
+
+### Verification
+
+Applied to the development database with `npx prisma migrate deploy`; the Prisma client was
+regenerated afterwards. `User.email` reports as `citext` (`citext` 1.8), `User_email_key` is in place,
+and all three existing accounts are intact and lowercase.
+
+All three pre-existing accounts still resolve when logged in with an uppercase address — each returns
+401 on a wrong password, which proves the lookup found the account and reached the password check
+rather than failing as an unknown email. A new mixed-case registration stores lowercase and
+authenticates with its original casing, a duplicate registration in another casing returns 409, and a
+raw SQL insert of a mixed-case duplicate is rejected by `User_email_key` directly, independent of
+application code.
+
+Before applying, all four migration statements were run inside a transaction and rolled back,
+confirming they apply cleanly and the guard passes on current data. A pre-migration backup of the
+`User` table was taken. Test records were deleted; the user count is unchanged at 3.
+
+## `ROLE`-Subject `MANAGE_ACCESS` Policies
+
+`createInitialDocumentAccessPolicies` now creates a `ROLE`-subject ALLOW `MANAGE_ACCESS` policy for
+`OWNER` and for `ADMIN`, alongside the uploader's `USER`-subject policies.
+
+### Why this was a schema constraint, not only a code gap
+
+`DocumentAccessPolicy.documentId` is `NOT NULL`, so a tenant-wide `MANAGE_ACCESS` policy cannot be
+expressed. Combined with the fact that the only producer of a `MANAGE_ACCESS` policy was the
+publish-time seeding of a single `USER`-subject policy for the uploader, this produced a deadlock:
+authority is resolved *from* `MANAGE_ACCESS` policies, so the first delegation was gated on the
+authority being delegated. No document could ever be access-managed by anyone but its uploader.
+
+Making `documentId` nullable would permit a tenant-level policy, but per-document `ROLE` policies
+express the same intent without a nullable-column change and without changing how the authorization
+query is scoped.
+
+### Migration `20261005140000_seed_manage_access_role_policies`
+
+Backfills the same two policies for every already-published document (`status <> 'DRAFT'`). The
+`INSERT` is guarded by `NOT EXISTS` on `(documentId, subjectRole, action, isActive)`, so it is
+idempotent and re-running inserts nothing. `grantedById` is set to the document's `uploadedById`,
+which satisfies the `onDelete: Restrict` foreign key to `User`.
+
+### Verification
+
+The migration was first executed inside a transaction that was deliberately rolled back. It inserted
+18 policies across the 9 published documents (9 `OWNER` + 9 `ADMIN`), and a second execution inside
+the same transaction inserted 0, confirming the `NOT EXISTS` guard. Policy count was confirmed back
+at 0 after rollback.
+
+Then applied to the development database with `npx prisma migrate deploy`:
+
+| Measure | Before | After |
+| --- | --- | --- |
+| `MANAGE_ACCESS` policies | 7 (all `USER`) | 25 (7 `USER`, 18 `ROLE`) |
+| Held by a non-uploader | 0 | 18 |
+| Published documents with no `MANAGE_ACCESS` policy | 2 of 9 | 0 of 9 |
+
+All 18 seeded policies are active. Document statuses covered: `READY`, `PROCESSING`, `DELETED`,
+`EXPIRED`. The tenant has one `OWNER` and one `ADMIN`, so two members can now manage access on every
+published document; the third is a `MEMBER` and correctly cannot.
+
+This grants standing `MANAGE_ACCESS` to every `ADMIN` in the tenant on every document — an `ADMIN`
+can now grant, edit, revoke, upload a new version, and re-dispatch processing for documents they did
+not upload. Narrowing it to specific roles or units is a policy decision, not a schema one: the
+`ROLE` subject and `UNIT_AND_DESCENDANTS` scope already exist and would express it without another
+migration.
