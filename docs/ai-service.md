@@ -33,18 +33,37 @@ Backend → POST /api/v1/process-document
 
 **Retrieval flow**
 
-```text
+~~~text
 Backend POST /api/v1/query
   → AI service POST /api/v1/retrieve { query, organization_id, top_k }
       → ensure collection → embed query
       → search Qdrant (candidate_limit = min(top_k * 5, 200))
-  ← RetrievalResponse { query, results[] }
+      ← RetrievalResponse { query, results[] }
+  → backend validates each result's document_id and version_id
   → backend authorizes document_ids via policy checks
   → backend filters candidates to authorized documents
   → backend reranks and generates answer with LLM
-```
+~~~
 
-The AI service intentionally retrieves **more** candidates than `top_k` (`CANDIDATE_MULTIPLIER = 5`, capped at `MAX_CANDIDATES = 200`) because backend authorization narrows the set. The AI service filters by `organization_id` only.
+The AI service intentionally retrieves **more** candidates than `top_k` (`CANDIDATE_MULTIPLIER = 5`, capped at `MAX_CANDIDATES = 200`) because backend authorization narrows the set. The AI service filters by `organization_id` only — it does not and cannot apply document-level access policies.
+
+**Chunk metadata contract.** Every Qdrant point stores a payload and every retrieval result returns the following fields:
+
+| Field | Stored in Qdrant | Returned by /retrieve | Used by backend for |
+| --- | --- | --- | --- |
+| `organization_id` | Yes (keyword index) | No | AI-service tenant filter only |
+| `document_id` | Yes (keyword index) | Yes | Document identity → authorization lookup |
+| `version_id` | Yes (keyword index) | Yes | Version freshness check against `Document.currentVersionId` |
+| `chunk_id` | Yes (keyword index) | Yes | Source citation in the LLM prompt |
+| `page_number` | Yes | Yes | Source citation |
+| `text` | Yes | Yes | Document content passed to LLM (after authorization) |
+| `block_ids` | Yes | Yes | Source traceability |
+| `metadata` | Yes | Yes | Diagnostic context |
+| `score` | — | Yes | Reranking (score-based sort only) |
+
+**Authorization boundary.** Qdrant retrieval results are candidate evidence, not proof of authorization. The backend validates each `document_id` against a PostgreSQL `Document` row (organization match, `isDeleted = false`, `status = 'READY'`, `currentVersionId` not null) and then evaluates `DocumentAccessPolicy` rows for the `QUERY` action with deny-overrides-allow and deny-by-default semantics. Chunks whose `version_id` does not match the document's current version are discarded before reranking or generation. No document text from an unauthorized or stale candidate ever reaches a model.
+
+The AI service does contain `filter_authorized_candidates()` and `select_top_k()` helpers on `RetrievalService`, but these are **not called by the backend** — the backend performs authorization itself via `authorizeQueryDocuments` and `authorizeCandidates` in `query.service.js` and `documentAccess.service.js`. These helpers exist as unused utilities and must not be relied upon for authorization.
 
 ## Routes
 
@@ -80,7 +99,13 @@ Tables render as markdown-style text; images/figures use `caption` or `ocr_text`
 
 `backend/src/services/document/documentAI.service.js` creates a presigned S3 URL and sends `{ document_id, version_id, organization_id, file_url, file_name }` to `${config.ai.url}/api/v1/process-document`. `config.ai.url` must contain only the base URL, without a trailing `/api/v1`.
 
-The query flow lives in `backend/src/services/query/`: `queryAI.service.js` calls `/retrieve`; `query.service.js` orchestrates cache → retrieve → authorize → filter → rerank → evidence check → prompt → LLM → guardrail; `query.controller.js` returns `{ query, answer, sources, evidence, usedLLM, outputGuardPassed }`.
+The query flow lives in `backend/src/services/query/`:
+
+- `queryAI.service.js` — POSTs `/api/v1/retrieve` with `{ query, organization_id, top_k }`; a 30 s timeout applies.
+- `query.service.js` — orchestrates: cache → retrieve → validate document IDs → authorize → filter by version → rerank → evidence sufficiency → safe context → prompt → LLM → citation validation → output guardrail → save history.
+- `query.controller.js` — validates input (non-empty query, `topK` 1–20), invokes the orchestrator, returns `{ query, answer, sources, evidence, usedLLM, outputGuardPassed }`.
+
+Two independent guardrails run after LLM generation: citation validation (`answerValidation.service.js`, rejects `[Source N]` references to unauthorized sources) and the output guardrail (`outputGuardrail.service.js`, rejects answers containing prompt-extraction or chain-of-thought patterns). History is saved even when evidence is insufficient or the guardrail blocks the answer — the record is marked `usedLLM: false` or `outputGuardPassed: false` accordingly.
 
 ## Configuration
 
@@ -130,14 +155,14 @@ Implemented: FastAPI processing and retrieval routes; PDF/DOCX/TXT extraction wi
 
 ## What we are going to do
 
-1. End-to-end test with a local Qdrant collection and a real sample document.
-2. Processing status reporting, retries, and metrics.
-3. Multi-tenant isolation tests (verify `organization_id` filtering).
-4. Backend `authorizeQueryDocuments` must verify the user belongs to the organization.
-5. Enforce `MIN_CHUNK_SIZE` in chunking.
-6. Hybrid search and reranking after filtered retrieval works.
-7. Grounded LLM generation, citations, and evaluation after authorization-safe retrieval is complete.
-8. Consolidate the two settings modules.
+1. ~~End-to-end test with a local Qdrant collection and a real sample document~~ — backend integration is in place; the backend calls `/retrieve` and authorizes results. Full end-to-end with a live Qdrant cluster and real indexed documents is pending live verification.
+2. Processing status reporting, retries, and metrics — `processingError` column is planned; the backend exposes no failure reason, progress, or queue position today.
+3. ~~Multi-tenant isolation tests (verify `organization_id` filtering)~~ — the backend's `authorizeQueryDocuments` scopes every policy query to the user's organization; the AI service filters Qdrant by `organization_id`.
+4. ~~Backend `authorizeQueryDocuments` must verify the user belongs to the organization~~ — implemented: it queries `DocumentAccessPolicy` with `organizationId: user.unit.organizationId` and rejects users without a unit (403).
+5. Enforce `MIN_CHUNK_SIZE` in chunking — defined as 100 in `app/config/chunking.py` but not yet enforced in `ChunkingService.chunk()`.
+6. Hybrid search and reranking after filtered retrieval works — reranking is score-based only; model-based reranking is deferred.
+7. Grounded LLM generation, citations, and evaluation after authorization-safe retrieval is complete — the backend calls Bedrock Converse with a system prompt and validates citations and output guardrails. Evaluation framework is not started.
+8. Consolidate the two settings modules (`config.py` and `settings.py`) — still pending.
 
 ## Constraints for Future Changes
 
@@ -146,3 +171,4 @@ Implemented: FastAPI processing and retrieval routes; PDF/DOCX/TXT extraction wi
 - Do not pass retrieved text to an LLM until backend-authorized document/version filtering is applied.
 - Preserve the separation between extraction, chunking, embedding, and vector-store services.
 - Docling failure must remain a warning, not an error.
+- The AI service's own `filter_authorized_candidates()` and `select_top_k()` methods are convenience utilities, not authorization boundaries. The backend must always independently authorize via PostgreSQL before any document text reaches a model.

@@ -78,7 +78,7 @@ Pages may fetch page-specific data, manage page-specific state, coordinate API c
 
 ## 9. API Integration
 
-All backend requests use the shared Axios configuration `src/api/axios.js` (baseURL `http://localhost:5000/api/v1`, currently hardcoded — no environment variable). A request interceptor reads `localStorage.token` and attaches `Authorization: Bearer <token>`. There is no response interceptor, so no global 401 handling or token refresh; session invalidation is handled by `AuthContext`. Every caller reads `error?.response?.data?.message`. Feature wrappers such as `src/api/document.api.js` own endpoint paths and unwrap `response.data.data`, so pages never touch Axios directly.
+All backend requests use the shared Axios configuration `src/api/axios.js` (`baseURL` from `import.meta.env.VITE_API_BASE_URL` with a fallback to `http://localhost:5000/api/v1`). A request interceptor reads `localStorage.token` and attaches `Authorization: Bearer <token>`. A response interceptor catches HTTP 401 responses, clears the token from `localStorage`, and redirects to `/login`; there is no token refresh. Every caller reads `error?.response?.data?.message`. Feature wrappers such as `src/api/document.api.js` own endpoint paths and unwrap `response.data.data`, so pages never touch Axios directly.
 
 Rules: do not construct base URLs in pages or components; protected requests must use the stored JWT; invalid authentication must clear the session; show backend validation messages when useful; keep API logic out of reusable visual components; avoid duplicate request logic when an API function already exists.
 
@@ -89,7 +89,7 @@ Register / Login → Receive JWT → Store Token → Verify Session
 → Update Authentication Context → Access Protected Routes
 ```
 
-`AuthContext` is the only authentication state container: state `token, user, loading`; storage `localStorage` key `"token"`; exposed `token, user, loading, login, logout, refreshUser`. `login(token)` writes the token and updates context. On every `token` change, a session verification effect calls `GET /auth/me`; a failed verification calls `logout()`. `ProtectedRoute` renders nothing while loading, then redirects to `/login` when no token exists. `PublicRoute` renders nothing while loading, then redirects authenticated users to `/`.
+`AuthContext` is the only authentication state container: state `token, user, loading`; storage `localStorage` key `"token"`; exposed `token, user, loading, login, logout, refreshUser`. `login(token)` writes the token and updates context. On every `token` change, a session verification effect calls `GET /auth/me`; a failed verification calls `logout()`. `ProtectedRoute` shows a loading spinner while the session is being verified, then redirects to `/login` when no token exists. `PublicRoute` shows a loading spinner while loading, then redirects authenticated users to `/`. A global 401 response interceptor (in `axios.js`) also clears the session and redirects to `/login` on any 401 from the backend.
 
 ## 11. Route Strategy
 
@@ -154,7 +154,7 @@ Access history is append-only. The frontend renders a read-only table: Event →
 
 ## 16. Loading, Empty, and Error States
 
-Every data-driven interface handles loading, empty, success, validation error, permission error, and server error. Do not show blank pages while loading; empty states should explain what the user can do next; permission errors should not appear as generic failures; preserve backend validation messages; destructive actions require clear confirmation. Known deviation: `ProtectedRoute` and `PublicRoute` return `null` while the session is being verified, producing a blank frame.
+Every data-driven interface handles loading, empty, success, validation error, permission error, and server error. Do not show blank pages while loading; empty states should explain what the user can do next; permission errors should not appear as generic failures; preserve backend validation messages; destructive actions require clear confirmation. Known deviation: `ProtectedRoute` and `PublicRoute` show a loading spinner while the session is being verified; the spinner is a static "Loading..." text rather than a branded progress indicator.
 
 ## 17. Responsive Design
 
