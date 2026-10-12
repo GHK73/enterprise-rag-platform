@@ -4,6 +4,7 @@ import app from "./src/app.js";
 import config from "./src/config/config.js";
 import prisma from "./src/config/prisma.js";
 import { initializeDocumentQueue } from "./src/services/document/documentQueue.service.js";
+import { recoverStrandedPublications } from "./src/services/document/documentLifecycle.service.js";
 import "./src/workers/document.worker.js";
 
 const startServer = async () => {
@@ -19,6 +20,18 @@ const startServer = async () => {
             if (config.redis.enabled) {
                 await initializeDocumentQueue();
                 console.log("Document processing queue initialized.");
+            }
+
+            /*
+             * Re-dispatch publications that were committed
+             * but never dispatched because the process died
+             * between the commit and the dispatch call.
+             */
+            const recovery = await recoverStrandedPublications();
+            if (recovery.strandedDocuments > 0) {
+                console.log(
+                    `Publication recovery: ${recovery.recoveredDocuments} of ${recovery.strandedDocuments} stranded publications re-dispatched.`
+                );
             }
         });
     } catch (error) {

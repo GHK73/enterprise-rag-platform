@@ -2,31 +2,37 @@
 
 Implementation progress for the Enterprise RAG Platform frontend.
 
-Backend reference: [`docs/DEVELOPMENT.md`](DEVELOPMENT.md)
+- Architecture and standards: `docs/frontendDevelopment.md`
+- Backend reference: `docs/DEVELOPMENT.md`
+- File-level fix history: `docs/frontendChangelog.md`
 
-Architecture reference: [`docs/frontendDevelopment.md`](frontendDevelopment.md)
+## 1. Current Project Status
 
----
+**Active Phase:** Phase 6 — Document Processing UI (complete) · **Next:** Phase 7 — Retrieval Interface
 
-# Current Status
-
-**Active Phase:** Phase 5 — Document Management UI
-
-| Area | Status |
+| Module | Status |
 | --- | --- |
-| Frontend Foundation | ✅ |
-| Authentication | ✅ |
+| Frontend Foundation (axios instance, API wrapper, protected routes, AuthContext) | ✅ |
+| Authentication (login, register, session verification via `GET /auth/me`) | ✅ |
 | Dashboard | ✅ |
-| Organization Management | ✅ |
-| Access & Administration UI | ✅ |
-| Organization Synchronization | ✅ |
-| Document API Layer | ✅ |
-| Document Routes & Navigation | ✅ |
-| Document Management UI | ✅ |
+| Organization Management (units, members, capacity, tree) | ✅ |
+| Access & Administration UI (permissions, invitations) | ✅ |
+| Phase 5 — Document Management UI (library, draft upload, details, access policies, access history, deletion/recovery) | ✅ |
+| Phase 6 — Document Processing UI (processing queue, reprocess) | ✅ |
+| Query Interface (basic) | ✅ |
 
----
+**Verification status (2026-10-12):**
 
-# Local Setup
+| Check | Result |
+| --- | --- |
+| `npm run lint` (frontend) | ✅ 0 errors, 0 warnings — verified by execution |
+| `npm run build` (frontend) | ✅ Succeeds (150 modules) — verified by execution |
+| Automated tests | ❌ None exist — frontend has no test runner |
+| Runtime / integration / E2E verification | ❌ Not performed — see checklist in §4.5 |
+
+Lint and build success do **not** establish that API integration, authorization, processing, or recovery flows work. Features are verified by code inspection only until the §4.5 checklist is executed.
+
+### Local Setup
 
 ```bash
 cd frontend
@@ -34,415 +40,236 @@ npm install
 npm run dev
 ```
 
----
-
-# Foundation ✅
-
-Implemented:
-
-- Shared `axios.js` instance with a JWT request interceptor
-- Shared `document.api.js` wrapper for every document endpoint
-- Protected document routes contributed from `routes/DocumentRoutes.jsx`
-- Document navigation in the Navbar
-- `AuthContext` with session verification through `GET /auth/me`
-
-**Routes**
+### Routes
 
 ```text
 /documents                    → Document Library
 /documents/new                → Create Draft
 /documents/:documentId/upload → Upload Draft File
 /documents/:documentId        → Document Details
+/documents/queue              → Processing Queue
+/query                        → Query Interface
 ```
 
----
+## 2. Completed Functionality
 
-## Document Library ⏳
+**Document Library** — listing from `GET /documents` (all documents the user can VIEW); client-side search across title and description; classification filter; lifecycle filter (7 selectable statuses; `StatusBadge` renders all 8 incl. EXPIRED, which is not filterable because the backend excludes EXPIRED from `GET /documents`); show-deleted toggle (`includeDeleted=true`); empty/error/loading states with retry and manual refresh; status badges, classification, current version, last-updated timestamp, draft-expiry display.
 
-Implemented:
+**Draft Upload Flow** — draft creation via `POST /documents/drafts` (title, description, classification) → navigate to upload route; reusable `UploadCard`/`SelectedFileCard` components; client-side validation (25 MB maximum; PDF/TXT/DOC/DOCX by MIME — **see bug 1: DOC is rejected by the backend**); Axios upload progress; remove/replace uploaded file (`DELETE /documents/drafts/:id/upload`); draft status and expiry shown on the upload page.
 
-- Document listing from `GET /documents`
-- Client-side search across title and description
-- Classification filter (`GENERAL`, `INTERNAL`, `CONFIDENTIAL`, `RESTRICTED`)
-- Lifecycle filter select (7 statuses: DRAFT, SUBMITTED, QUEUED, PROCESSING, READY, FAILED, DELETED)
-- Show-deleted toggle revealing `DELETED` rows
-- Clear-filters control
-- Empty and error states with retry
-- Lifecycle status badges
-- Classification display
-- Current version display
-- Last updated timestamp
-- Expired-draft flag derived from `draftExpiresAt`
-- Draft expiry date displayed
-- Manual refresh
-- Navigation to document details
+**Document Details** — metadata, lifecycle status badge, current version, version history with per-version download; publish with confirmation dialog (button rendered only for DRAFT); download latest version (blocked for DRAFT, PROCESSING, DELETED, EXPIRED); upload new version only when READY; delete (soft), restore, and permanent-cleanup workflows with confirmation dialogs; access management panel and read-only access-history panel; processing status polling at 3-second intervals that **stops** at terminal states (READY, FAILED, DELETED, EXPIRED) with effect cleanup on unmount/route change; derived action guards.
 
-- Server-side search, sorting, and pagination (deferred to future enhancement)
+**Access Management** — policy table with subject, subject type, action, effect, scope, temporary expiry; grant/edit/revoke (revoke requires a user-supplied reason); subject selection (`ORGANIZATION`, `UNIT`, `ROLE`, `USER`; roles `ADMIN`, `OWNER`, `MANAGER`, `MEMBER`); actions `QUERY`, `VIEW`, `DOWNLOAD`, `MANAGE_ACCESS` (immutable while editing); effects `ALLOW`/`DENY`; unit scope `UNIT_ONLY`/`UNIT_AND_DESCENDANTS`; temporary access with ISO `validUntil` (client enforces max 7 days, matching backend `MAX_TEMPORARY_ACCESS_DAYS = 7`); validation blocks submit for unresolved ORGANIZATION subjects, UNIT subjects without scope, and temporary access without expiry. The payload matches the backend access-policy model exactly.
 
----
+**Access History** — read-only audit table from `GET /documents/:id/access/history`: event type, subject, actor, timestamp, reason, state changes; loading, error, and empty states.
 
-## Draft Upload Flow ⏳
+**Deletion & Recovery** — soft delete (`DELETE /documents/:id`), restore (`PATCH /documents/:id/restore`), permanent cleanup (`DELETE /documents/:id/cleanup`); deleted documents visible via show-deleted toggle. Backend semantics: soft delete preserves versions and policies; permanent cleanup deletes all S3 objects, versions, access policies, audit records, and the document — but does **not** remove Qdrant vectors (backend gap, §3).
 
-Implemented:
+**Document Processing UI (Phase 6)** — `/documents/queue` listing documents in QUEUED, PROCESSING, FAILED; summary cards (Queued/Processing/Failed counts), client-side search and lifecycle filter; auto-refresh toggle (5-second interval) plus manual refresh; reprocess button for FAILED documents (`POST /documents/:id/versions/:currentVersionId/reprocess`), guarded on `currentVersionId`; links to document details.
 
-- Draft creation through `POST /documents/drafts` with title, description, and classification
-- Redirect to the upload route after draft creation
-- File selection with reusable upload and selected-file components
-- Client-side validation: 25 MB maximum, PDF / TXT / DOC / DOCX by MIME type
-- Upload progress driven by the Axios progress event
-- Draft upload through `POST /documents/drafts/:id/upload`
-- Redirect to document details after a successful upload
-- Local file removal before upload
-- Draft expiry and status visibility on upload page
-- Replace/delete uploaded file (can remove/replace already uploaded draft file)
+**Query Interface (basic)** — query form with textarea and `topK` (1–20); `POST /query` with loading/error states; answer display; sources rendered as links to document details with relevance score; evidence displayed as raw JSON (bug 4); previous-queries panel from `GET /query/history` with `limit`/`offset` pagination (limit 10) and click-to-fill.
 
----
+## 3. Known Limitations and Bugs
 
-## Document Details ⏳
+### Bugs (frontend)
 
-Implemented:
+| # | Severity | Issue |
+| --- | --- | --- |
+| 1 | High | **DOC MIME mismatch.** `UploadDocument.jsx` and `DocumentDetails.jsx` allow `application/msword` (.doc), but the backend accepts only PDF, TXT, DOCX (`backend/src/utils/fileValidation.js`). A .doc file passes client validation and fails server upload with a 400. Fix: remove `application/msword` from frontend `ALLOWED_TYPES` (or add it to the backend allow-list deliberately). |
+| 2 | Medium | **Misleading FAILED guidance.** The FAILED banner on Document Details says "upload a new version or retry later", but "Upload New Version" is disabled unless status is `READY`. Reprocess is only available on the Processing Queue page. The banner should point to the queue, or the details page should expose the reprocess action. |
+| 3 | Medium | **Queue polling never terminates and refetches everything.** `DocumentProcessingQueue` refetches the entire organization document list (`GET /documents`) every 5 s and filters client-side; auto-refresh runs indefinitely while the page is open. Details-page polling (3 s) does stop at terminal states; the queue page should stop refreshing when no QUEUED/PROCESSING documents remain, and the backend should expose a filtered processing-status endpoint. |
+| 4 | Medium | **Evidence rendered as raw JSON.** `Query.jsx` always renders `evidence` via `JSON.stringify` in a `<pre>` block; `evidence.sufficient` and `evidence.reason` are never surfaced to the user. |
+| 5 | Low | **Query history fails silently** (empty `catch` in `loadHistory`); the panel just stays empty on error. |
+| 6 | Low | **Reprocess button is visible to all queue viewers.** Authorization (`MANAGE_ACCESS`) is enforced server-side (403 for unauthorized users), so this is a UX issue only. |
 
-- Document metadata and description
-- Current lifecycle status badge
-- Current version display
-- Version history with per-version download
-- Publish draft (with confirmation dialog)
-- Download latest version
-- Upload new version (only when `READY`)
-- Upload progress and client-side validation
-- Delete workflow with a dedicated confirmation dialog
-- Restore workflow with a dedicated confirmation dialog
-- Permanent cleanup workflow with a dedicated confirmation dialog
-- Queued, processing, and failed-state messages
-- Access management panel
-- Access history panel
-- Page-level loading, error, and action-error states
-- Derived action guards: publish requires `DRAFT`; download is blocked for `DRAFT` and `PROCESSING`
-- Real-time processing status polling
-- Draft upload actions on details page (remove/replace/upload)
+### Limitations (require backend changes)
 
-Remaining:
-
----
-
-## Access Management ✅ (field/contract fixes applied)
-
-Implemented:
-
-- Load access policies
-- Load organization, organization units, and organization members in one parallel batch
-- Policy table with subject, subject type, permission, and temporary expiry
-- Grant access
-- Revoke access (dedicated dialog with user-supplied reason)
-- Edit access policy
-- Subject selection (`ORGANIZATION`, `UNIT`, `ROLE`, `USER`)
-- Action selection (`QUERY`, `VIEW`, `DOWNLOAD`, `MANAGE_ACCESS`), immutable while editing
-- Effect selection (`ALLOW` / `DENY`) sent as `effect`
-- Unit scope selection (`UNIT_ONLY`, `UNIT_AND_DESCENDANTS`)
-- Role values `ADMIN`, `MANAGER`, `MEMBER`
-- Temporary access with an ISO `validUntil`, `null` when permanent
-- Subject-specific payload fields (`subjectOrganizationId`, `subjectUnitId`, `subjectRole`, `subjectUserId`)
-- Organization name resolved from the API instead of a hardcoded label
-- Member labels fall back through `fullName` → `name` → `email`
-- Reason field
-- Validation blocking submit for unresolved `ORGANIZATION` subjects, `UNIT` subjects without scope, and temporary access without an expiry
-
-Implemented (2026-10-12):
-
-- Revoke access with dedicated dialog and user-supplied reason
-- Draft upload page shows draft info, expiry, status; supports removing/replacing uploaded file
-- Document details polls status while QUEUED/PROCESSING for real-time updates
-- Document table displays draft expiry date
-- Dashboard has Documents quick access link
-
-Remaining:
-
----
-
-## Access History ✅ (field/contract fixes applied)
-
-Implemented:
-
-- API integration with `GET /documents/:documentId/access/history`
-- Read-only table
-- Event type, subject, actor, timestamp, and reason columns
-- Subject and actor fallbacks (`Unknown`, `System`)
-- Loading, error, and empty states
-- `previousState` and `newState` rendering from audit records
-- State Change column
-
-Implemented (2026-10-12):
-
-- Revoke access with dedicated dialog and user-supplied reason
-- Draft upload page shows draft info, expiry, status; supports removing/replacing uploaded file
-- Document details polls status while QUEUED/PROCESSING for real-time updates
-- Document table displays draft expiry date
-- Dashboard has Documents quick access link
-
-Fixed (2026-10-06):
-
-- Backend now resolves `actorName` and `subjectName` server-side, so the audit trail can identify who did what
-- `AccessHistoryRow.jsx` now reads `actorName`/`subjectName` from the backend instead of nonexistent `actor?.name`/`subjectName` relations
-- Added State Change column rendering `previousState` and `newState`
-
-Remaining:
-
-- Timeline view
-- Richer policy change details
-
----
-
-## Deletion & Recovery ⏳
-
-Implemented:
-
-- Delete confirmation dialog
-- Restore confirmation dialog
-- Permanent cleanup dialog
-- API integration
-- Deleted-document view inside the library (show-deleted filter and deleted marker)
-
----
-
-# Known Issues
-
-Found by a full read-through audit on 2026-09-30. Every item was verified by reading the code and checking the corresponding backend endpoint.
-
-## Blocking
-
-## Backend Contract Mismatches
-
-## Component Contract Mismatches
-
-## Form and State Defects
-
-## Lower Severity
-
-- `App.jsx:29-99` has no catch-all route, so any unknown URL renders a blank page.
-- `routes/index.js:1` re-exports `default` from `DocumentRoutes.jsx`, which has no default export. Unreferenced today, so the build survives, but any import from `./routes` fails.
-- `Register.jsx:32-36` calls `navigate("/")` twice around `login(token)`, implying the token is not stored by `login`.
-- `Organization.jsx:98-107` logs organization load state to the console on every render.
-- `Home.jsx:36` nests `<main>` inside the `<main>` in `PublicLayout.jsx:10`.
-- `MemberCard.jsx` (360 lines) is never imported, and diverges from the member UI actually in use.
-- Dead exports in `organization.utils.js` and the organization hooks, including expand/collapse-all helpers that imply a capability that does not exist.
-- File inputs are never reset after a rejected selection, so re-picking the same file fires no change event; upload progress renders `NaN%` when `Content-Length` is absent.
-- `Organization.jsx:98-107` console logging and `MembersPanel.jsx:236-262` offering unit destinations the backend rejects.
-- No `dangerouslySetInnerHTML` or `innerHTML` anywhere; all user and LLM text is rendered as escaped JSX children. There is no retrieval UI yet, so the risky case does not currently exist.
-
-## Previously Reported and Still Open
-
-## Previously Reported and Fixed
-
-- The lifecycle filter is now wired. `DocumentFilters` accepts `lifecycle` / `onLifecycleChange`, `DocumentLibrary` passes exactly those, `handleClearFilters` calls a defined handler, and the select is controlled. Verified as the only caller.
-
-**Fixed (2026-10-06):**
-
-- **Permissions page crash on grant flow** — Replaced optimistic prepend with full refetch via `handleMemberSelection` after grant; added `fetchPermissionGrants` to refresh "My Permissions" after grant/revoke.
-- **Organization unit/member mutations silently discarded** — Fixed `Organization.jsx` to pass real `setOrganizationUnits` and `setOrganizationMembers` from `useOrganizationData` instead of empty functions.
-- **Document details bricks after soft delete** — Added `includeDeleted` parameter to `getDocumentById`; `loadDocument` now retries with `includeDeleted=true` on 404; delete/restore/cleanup handlers pass `true` when reloading.
-- **Deleted-document filter never matched** — Added `includeDeleted` parameter to `getDocuments`; `DocumentLibrary` passes `showDeleted` state; effect dependency on `showDeleted` added.
-- **Access policy rows read nonexistent fields** — `AccessPolicyRow.jsx` now reads `effect`/`validUntil` and resolves subject names from loaded organization/units/members; `AccessPolicyTable.jsx` filters out revoked policies (`isActive: false`).
-- **Access history rows read nonexistent fields** — Backend now resolves `actorName`/`subjectName` server-side; `AccessHistoryRow.jsx` reads these fields; `AccessHistoryTable.jsx` added State Change column with `previousState`/`newState`.
-- **Document download calls wrong route** — Removed dead `getDocumentDownloadUrl`; `downloadDocument` now uses correct backend route `/:documentId/download` and `/:documentId/versions/:versionId/download`.
-- **Member role options mismatch** — Updated `MembersPanel.jsx` to use backend-valid roles: `ADMIN`, `MANAGER`, `MEMBER` (removed `OWNER`).
-- **AccessPolicyForm datetime UTC/local bug** — Added `utcToLocalDatetime` and `localDatetimeToUtc` helpers for proper timezone handling.
-- **subjectId not cleared on subjectType change** — Added effect to clear `subjectId`, `scope`, and `formError` when `subjectType` changes.
-- **resetForm only runs when not editing** — Now runs after every successful submit; clears form for both create and edit flows.
-- **Validation without messages** — Added `formError` state with field-level messages; validation now checks 7-day cap and `validUntil > now`.
-- **Temporary grants routed through wrong endpoint** — `DocumentAccess.jsx` now uses `grantTemporaryDocumentAccess` when `isTemporary` is true.
-- **axios.js hardcoded baseURL, no 401 handling** — Added `VITE_API_BASE_URL` env var support; added response interceptor for global 401 handling (clears token, redirects to login).
-- **ProtectedRoute/PublicRoute blank frame** — Added loading spinner UI (`route-loading` class in `index.css`) instead of returning `null`.
-- **Register.jsx double navigate** — Removed redundant `localStorage.setItem` and second `navigate("/")`; `login()` already stores token.
-- **Organization.jsx console logging** — Removed debug `console.log` from render.
-- **Home.jsx nested `<main>`** — Changed `<main className="home">` to `<div className="home">` to avoid nesting inside `PublicLayout`'s `<main>`.
-- **routes/index.js broken export** — Fixed export to use named export `documentRoutes` instead of non-existent default.
-- **DocumentHeader canDownload blocks DELETED/EXPIRED** — Added checks for `DELETED` and `EXPIRED` statuses.
-- **Upload state not reset on route change** — Added reset of `showUploadSection`, `selectedVersionFile`, `versionUploadProgress`, `actionError` in effect keyed on `documentId`.
-- **Invitations.jsx loading hang** — Moved `if(!user)` check inside `try` block so `finally` always runs and clears loading.
-- **useOrganizationRevision stale snapshot** — Fixed `handleRefreshOrganizationChanges` to set revision only after mismatch check; added `setCheckingRevision(false)` in mismatch branch.
-- **Permissions.jsx My Permissions stale** — Added `fetchPermissionGrants` and call it after grant and revoke.
-
----
-
-# Target Workflow
-
-```text
-Create Draft
-        │
-        ▼
-Upload File
-        │
-        ▼
-Configure Access
-        │
-        ▼
-Review
-        │
-        ▼
-Publish
-        │
-        ▼
-Processing
-        │
-        ▼
-Ready
-```
-
-Document lifecycle currently supports:
-
-```text
-Draft
-Submitted
-Queued
-Processing
-Ready
-Failed
-Deleted
-```
-
-`Configure Access` and `Review` are only reachable from the document details page after publishing, not inside the draft upload flow.
-
----
-
-# Future Roadmap
-
-| Phase | Focus |
+| Area | Limitation |
 | --- | --- |
-| Phase 6 | Document Processing UI (queue status, processing progress, retry handling) |
-| Phase 7 | Retrieval Interface (semantic search, citations, streaming responses) |
-| Phase 8 | Search & Analytics (search history, retrieval metrics, usage analytics) |
-| Phase 9 | Organization & Retrieval Settings |
-| Phase 10 | UI Polish (notifications, accessibility, responsive improvements, loading skeletons) |
+| Processing observability | Backend exposes no failure reason, processing stage, queue position, or progress percentage — the UI can only show status and counts. |
+| Search & pagination | `GET /documents` supports no search, sort, or pagination parameters; library search is client-side only. Query history already uses server-side `limit`/`offset`, so the two interfaces have different scalability characteristics. |
+| Streaming | `POST /query` returns a single JSON response; no SSE/WebSocket support exists for streaming answers. |
+| Upload limits | Backend validates MIME type only — no file-size limit and no extension check. The 25 MB limit exists only in the frontend and can be bypassed by a crafted request. |
+| Vector cleanup | Permanent cleanup deletes S3 objects and DB records but not Qdrant vectors, leaving orphaned embeddings. |
+| Version downloads | Behavior for missing/inaccessible versions depends on backend 403/404 handling; the frontend shows the returned error message. An empty version list renders "No versions available." |
 
----
+### Authorization boundary note
 
-# Frontend Structure
+All sensitive operations are independently authorized server-side (`authorizeDocumentAction`, `authorizeQueryDocuments` in `backend/src/services/document/documentAccess.service.js`). Frontend action guards are UX convenience only. For the RAG flow, the backend filters retrieval candidates by QUERY policy **before** building the LLM context (`authorizeCandidates` in `backend/src/services/query/query.service.js`), so unauthorized document content must not reach the LLM. This is a backend-enforced guarantee, not a frontend one.
+
+## 4. Current Phase and Acceptance Criteria
+
+### 4.1 Target Workflow (corrected to match implementation)
+
+The backend has **no review/approval step** and no pre-publish access configuration. The actual workflow:
+
+```text
+Create Draft (DRAFT)
+        │
+        ▼
+Upload File (one file per draft)
+        │
+        ▼
+Publish  ── DRAFT → SUBMITTED (owner-only; creates initial access policies)
+        │
+        ▼
+Processing ── SUBMITTED → QUEUED → PROCESSING (automatic dispatch)
+        │
+        ▼
+Ready (READY)  or  Failed (FAILED → Reprocess from queue)
+        │
+        ▼
+Post-publish actions (from Document Details):
+  • Configure Access (requires MANAGE_ACCESS)
+  • Access-history review (read-only audit trail)
+  • Upload new version (READY only)
+  • Download (READY only)
+```
+
+- **Configure Access** is reachable only after publishing because the backend requires `MANAGE_ACCESS` on a non-draft document. It is intentionally **not** part of the pre-publish flow.
+- **Review** is not an approval gate; it is the read-only access-history audit on the details page.
+
+### 4.2 Document Lifecycle (8 statuses)
+
+```text
+DRAFT ──publish──▶ SUBMITTED ──▶ QUEUED ──▶ PROCESSING ──▶ READY
+  │                                                          │
+  └──auto-expire (24h)──▶ EXPIRED                ┌───────────┴───────────┐
+                                                  ▼                       ▼
+                                           new version               soft delete
+                                           (→ QUEUED)                     │
+                                                                          ▼
+                                                                      DELETED
+                                                                     ┌──────┴──────┐
+                                                                     ▼             ▼
+                                                                 restore      permanent
+                                                                 (→ READY)    cleanup
+```
+
+| From | To | Trigger |
+| --- | --- | --- |
+| DRAFT | SUBMITTED | Publish (owner only) |
+| DRAFT | EXPIRED | Automatic after 24 h (`DRAFT_EXPIRY_HOURS`) |
+| SUBMITTED | QUEUED | Automatic dispatch |
+| QUEUED | PROCESSING | Worker pickup |
+| PROCESSING | READY / FAILED | Processing result |
+| READY | QUEUED | New version upload (`MANAGE_ACCESS`) |
+| READY | DELETED | Soft delete (owner only) |
+| DELETED | READY | Restore (owner only) |
+| DELETED | — | Permanent cleanup (owner only) |
+
+### 4.3 Phase 6 Acceptance Criteria
+
+| Criterion | Status | Evidence |
+| --- | --- | --- |
+| Processing states displayed (QUEUED/PROCESSING/FAILED) | ✅ Met | Queue page filters, summary cards, status badges |
+| Retry behavior for failed processing | ✅ Met | Reprocess for FAILED current version; server enforces `MANAGE_ACCESS` |
+| Polling termination at terminal states | ✅ Met (details) / ⚠️ Partial (queue) | Details: 3 s interval stops at READY/FAILED/DELETED/EXPIRED. Queue: 5 s refresh never stops (bug 3) |
+| Failure messages | ⚠️ Partial | Generic "Processing failed" banner; backend exposes no `failureReason` field |
+| Progress indicators (stage, percent, queue position) | ❌ Not met | Not implementable without backend support (§3 limitations) |
+| Navigation back to document details | ✅ Met | Queue rows link to `/documents/:id` |
+| Failure-state guidance | ❌ Not met | FAILED banner misdirects users (bug 2) |
+
+**Phase 6 conclusion:** complete for the functionality the backend supports. The two unmet criteria require backend changes (failure-reason exposure, progress/queue-position endpoints) and are logged as limitations rather than frontend work.
+
+### 4.4 Phase 7 Scope — Retrieval Interface
+
+**Already delivered (not Phase 7 work):** semantic/vector retrieval via Qdrant through the AI service, answer + sources with document links, `topK` 1–20, query history with server-side pagination.
+
+**Phase 7 deliverables (beyond the current Query page):**
+
+1. **Evidence rendering** — replace the raw JSON dump with a structured view; surface `evidence.sufficient` and `evidence.reason`; show an explicit "insufficient evidence" state when `sufficient === false`
+2. **Citation display and validation** — render per-source citation data (backend embeds citation info in `sources`; there is no separate `citations` field) and validate that every cited claim maps to a returned source
+3. **Streaming responses** — incremental answer rendering; **blocked on backend** SSE/chunked support, which does not exist yet
+4. **Query failure UX** — timeout, empty-result, and history-error handling (bug 5)
+
+**Phase 8+** (unchanged): Search & Analytics, Organization & Retrieval Settings, UI Polish.
+
+### 4.5 Pre-Production Verification Checklist (not yet executed)
+
+No automated tests exist. Before considering the frontend production-ready, manually verify and record results for:
+
+- [ ] Draft creation → file upload → publish → processing → READY (happy path end to end)
+- [ ] Draft auto-expiry after 24 h and EXPIRED handling
+- [ ] Access grant/edit/revoke, including DENY precedence and temporary-access expiry
+- [ ] Delete → restore → permanent cleanup; confirm version history behavior at each step
+- [ ] Per-version download; behavior when a version is missing or inaccessible
+- [ ] Reprocess of a FAILED document
+- [ ] Query authorization: confirm a user without QUERY permission cannot retrieve content from a document (backend-enforced; verify with two accounts)
+- [ ] Frontend/backend request-response format agreement on every endpoint in `document.api.js`
+- [ ] Fix bugs 1–3 in §3
+
+## 5. Change History
+
+Detailed file-level fixes are recorded in [`docs/frontendChangelog.md`](frontendChangelog.md).
+
+| Date | Summary |
+| --- | --- |
+| 2026-10-06 | Initial implementation: foundation, auth, dashboard, organization management, document API layer, routes. Fixed early integration issues (permissions refetch, organization setters, access field mappings, axios baseURL/401 handling). |
+| 2026-10-12 | Phase 5: resolved 80 lint errors across Document Management UI; added missing state/imports; fixed effect dependencies; removed unused `MemberCard.jsx` and dead tree helpers; fixed file-input reset and unit-move hierarchy validation. Phase 6: added Processing Queue page, reprocess API, route, and Navbar link. Added Query page (`/query`) with answer/evidence/sources and paginated history. Added 404 catch-all route. |
+| 2026-10-12 | Document audit: corrected workflow and lifecycle definitions (8 statuses incl. EXPIRED; no review step; access config is post-publish), split file-level fixes into `frontendChangelog.md`, added known-limitations section, Phase 6 acceptance criteria, Phase 7 scope, and pre-production verification checklist. Verified lint (0/0) and build by execution. |
+
+## Appendix: Frontend Structure
 
 ```text
 frontend/
 └── src/
     ├── api/
-    │   ├── axios.js
-    │   └── document.api.js
-    │
+    │   ├── axios.js            # JWT interceptor, 401 handling, env baseURL
+    │   └── document.api.js     # All document endpoint wrappers
     ├── components/
     │   ├── Navbar/
     │   ├── ProtectedRoute/
     │   └── PublicRoute/
-    │
     ├── context/
     │   └── AuthContext.jsx
-    │
     ├── layouts/
     │   └── PublicLayout.jsx
-    │
     ├── pages/
-    │   ├── Home/
-    │   ├── Login/
-    │   ├── Register/
-    │   ├── Dashboard/
-    │   ├── CreateOrganization/
-    │   ├── Invitations/
-    │   ├── Permissions/
-    │   ├── Organization/
-    │   │   ├── components/
-    │   │   ├── hooks/
-    │   │   ├── utils/
-    │   │   └── Organization.jsx
-    │   │
-    │   └── Documents/
-    │       ├── components/
-    │       │   ├── AccessHistoryRow.jsx
-    │       │   ├── AccessHistoryTable.jsx
-    │       │   ├── AccessPolicyForm.jsx
-    │       │   ├── AccessPolicyRow.jsx
-    │       │   ├── AccessPolicyTable.jsx
-    │       │   ├── CleanupDocumentDialog.jsx
-    │       │   ├── DeleteDocumentDialog.jsx
-    │       │   ├── PublishConfirmationDialog.jsx
-    │       │   ├── PublishConfirmationDialog.jsx\n    │       │   ├── RevokeAccessDialog.jsx
-    │       │   ├── PublishConfirmationDialog.jsx
-    │       │   ├── DocumentAccess.jsx
-    │       │   ├── DocumentAccessHistory.jsx
-    │       │   ├── DocumentFilters.jsx
-    │       │   ├── DocumentHeader.jsx
-    │       │   ├── DocumentTable.jsx
-    │       │   ├── RestoreDocumentDialog.jsx
-    │       │   ├── SelectedFileCard.jsx
-    │       │   ├── StatusBadge.jsx
-    │       │   ├── SubjectSelector.jsx
-    │       │   ├── SubjectValueSelector.jsx
-    │       │   └── UploadCard.jsx
-    │       ├── CreateDocument.jsx
-    │       ├── DocumentLibrary.jsx
-    │       ├── UploadDocument.jsx
-    │       └── DocumentDetails.jsx
-    │
+    │   ├── Home/ Login/ Register/ Dashboard/
+    │   ├── CreateOrganization/ Invitations/ Permissions/
+    │   ├── Organization/       # components/, hooks/, utils/
+    │   ├── Documents/
+    │   │   ├── components/     # dialogs, forms, selectors, tables
+    │   │   ├── CreateDocument.jsx
+    │   │   ├── DocumentLibrary.jsx
+    │   │   ├── UploadDocument.jsx
+    │   │   ├── DocumentDetails.jsx
+    │   │   └── DocumentProcessingQueue.jsx
+    │   ├── Query.jsx
+    │   └── NotFound/
     ├── routes/
     │   ├── DocumentRoutes.jsx
+    │   ├── QueryRoutes.jsx
     │   └── index.js
-    │
     ├── App.jsx
     ├── main.jsx
     └── index.css
 ```
 
----
+## Appendix: Document API Reference (`document.api.js`)
 
-# Next Development Step
-
-## Phase 5 Complete — Move to Phase 6
-
-All Phase 5 items are complete:
-
-- Document Library
-- Draft Upload Flow
-- Document Details
-- Access Management
-- Access History
-- Deletion & Recovery
-- Query
-
-After completing these workflows, development will continue with **Phase 6 — Document Processing UI**.
-
----
-
-# Overall Progress
-
-| Module | Progress |
+| Function | Endpoint |
 | --- | --- |
-| Frontend Foundation | ✅ Complete |
-| Authentication | ✅ Complete |
-| Dashboard | ✅ Complete |
-| Organization Management | ✅ Complete |
-| Access & Administration | ✅ Complete |
-| Document API Layer | ✅ Complete |
-| Document Library | Complete |
-| Draft Upload Flow | Complete |
-| Document Details | Complete |
-| Access Management | Complete |
-| Access History | Complete |
-| Deletion & Recovery | Complete |
-| Query | Complete |
-
----
-
-# Current Focus
-
-The frontend has resolved all blocking issues and major contract mismatches identified in the 2026-09-30 audit. Phase 5 is complete.
-
-After completing these workflows, development will continue with **Phase 6 — Document Processing UI**.
-
----
-
-# Query Page
-
-Implemented (2026-10-12):
-
-- New `/query` route contributed via `src/routes/QueryRoutes.jsx`
-- Query form with textarea and `topK` (1–20) input
-- POST `/query` execution with loading and error states
-- Answer, evidence, and sources display (sources link to document details)
-- Previous queries panel using `GET /query/history` with `limit`/`offset` pagination
-- Click-to-fill previous query into the input field
-- Backend can return non-text data (evidence/sources) rendered as JSON and document links
+| `createDocumentDraft` | `POST /documents/drafts` |
+| `updateDocumentDraft` | `PATCH /documents/:id` |
+| `getDocuments` | `GET /documents` (`?includeDeleted=true`) |
+| `getDocumentById` | `GET /documents/:id` (`?includeDeleted=true`) |
+| `expireDocumentDrafts` | `POST /documents/cleanup/expired-drafts` |
+| `uploadDraft` | `POST /documents/drafts/:id/upload` |
+| `deleteDraftUpload` | `DELETE /documents/drafts/:id/upload` |
+| `publishDocumentDraft` | `POST /documents/drafts/:id/publish` |
+| `getDocumentVersions` | `GET /documents/:id/versions` |
+| `getDocumentVersionById` | `GET /documents/:id/versions/:vid` |
+| `uploadDocumentVersion` | `POST /documents/:id/versions` |
+| `getDocumentAccessPolicies` | `GET /documents/:id/access` |
+| `grantDocumentAccess` | `POST /documents/:id/access` |
+| `updateDocumentAccessPolicy` | `PATCH /documents/access/:policyId` |
+| `revokeDocumentAccess` | `DELETE /documents/access/:policyId` |
+| `grantTemporaryDocumentAccess` | `POST /documents/:id/access/temporary` |
+| `getDocumentAccessHistory` | `GET /documents/:id/access/history` |
+| `downloadDocument` | `GET /documents/:id/download` or `GET /documents/:id/versions/:vid/download` |
+| `deleteDocument` | `DELETE /documents/:id` |
+| `restoreDocument` | `PATCH /documents/:id/restore` |
+| `cleanupDeletedDocument` | `DELETE /documents/:id/cleanup` |
+| `reprocessDocument` | `POST /documents/:id/versions/:vid/reprocess` |

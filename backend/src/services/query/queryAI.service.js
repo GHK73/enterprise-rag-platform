@@ -1,14 +1,13 @@
 // backend/src/services/query/queryAI.service.js
-import axios from "axios";
-import config from "../../config/config.js";
+import aiClient from "../../config/ai.js";
 
 export const retrieveFromAI = async (
     query,
     topK = 5,
     organizationId
 ) => {
-    const response = await axios.post(
-        `${config.ai.url}/api/v1/retrieve`,
+    const response = await aiClient.post(
+        "/api/v1/retrieve",
         {
             query,
             organization_id: organizationId,

@@ -9,11 +9,30 @@ import { invalidateOrganizationQueryCache } from "../query/queryCache.service.js
 import { dispatchDocumentProcessing } from "./documentProcessingDispatcher.service.js";
 import { authorizeDocumentAction } from "./documentAccess.service.js";
 
+/*
+ * States from which the worker may enter PROCESSING:
+ * SUBMITTED (initial publication dispatch), QUEUED
+ * (version upload or manual reprocess dispatch), and
+ * FAILED (BullMQ retry of a failed job). PROCESSING is
+ * deliberately absent: a duplicate job for a document
+ * that is already being processed must not re-enter.
+ */
+const PROCESSING_SOURCE_STATUSES = [
+    "SUBMITTED",
+    "QUEUED",
+    "FAILED",
+];
+
 async function updateProcessingStatus(documentId, versionId, status) {
     return await prisma.document.updateMany({
         where: {
             id: documentId,
             currentVersionId: versionId,
+            ...(status === "PROCESSING" && {
+                status: {
+                    in: PROCESSING_SOURCE_STATUSES,
+                },
+            }),
         },
         data: {
             status,

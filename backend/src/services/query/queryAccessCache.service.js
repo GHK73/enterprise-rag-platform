@@ -14,13 +14,6 @@ const buildQueryHash = (query) => {
         .digest("hex");
 };
 
-const buildAccessScopeHash = (scope) => {
-    return crypto
-        .createHash("sha256")
-        .update(JSON.stringify(scope))
-        .digest("hex");
-};
-
 const buildCacheKey = (
     organizationId,
     accessScopeHash,
@@ -34,10 +27,6 @@ const buildCacheKey = (
         topK,
         buildQueryHash(query),
     ].join(":");
-};
-
-export const buildQueryAccessScopeHash = (scope) => {
-    return buildAccessScopeHash(scope);
 };
 
 export const getCachedAuthorizedQuery = async (

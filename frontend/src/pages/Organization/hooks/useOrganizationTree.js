@@ -56,52 +56,52 @@ const useOrganizationTree = (
         ]);
 
     useEffect(() => {
+        async function sync() {
+            if (
+                !rootUnit
+            ) {
+                return;
+            }
 
-        if (
-            !rootUnit
-        ) {
-            return;
+            if (
+                !selectedUnitId
+            ) {
+                setSelectedUnitId(
+                    rootUnit.id
+                );
+            }
         }
-
-        if (
-            !selectedUnitId
-        ) {
-
-            setSelectedUnitId(
-                rootUnit.id
-            );
-        }
-
+        sync();
     }, [
         rootUnit,
         selectedUnitId,
     ]);
 
     useEffect(() => {
+        async function sync() {
+            if (
+                !selectedUnitId
+            ) {
+                return;
+            }
 
-        if (
-            !selectedUnitId
-        ) {
-            return;
+            const exists =
+                organizationUnits.some(
+                    (unit) =>
+                        unit.id ===
+                        selectedUnitId
+                );
+
+            if (
+                !exists
+            ) {
+                setSelectedUnitId(
+                    rootUnit?.id ??
+                    null
+                );
+            }
         }
-
-        const exists =
-            organizationUnits.some(
-                (unit) =>
-                    unit.id ===
-                    selectedUnitId
-            );
-
-        if (
-            !exists
-        ) {
-
-            setSelectedUnitId(
-                rootUnit?.id ??
-                null
-            );
-        }
-
+        sync();
     }, [
         organizationUnits,
         selectedUnitId,
@@ -152,25 +152,6 @@ const useOrganizationTree = (
             );
         };
 
-    const expandAll =
-        () => {
-
-            setExpandedUnitIds(
-                organizationUnits.map(
-                    (unit) =>
-                        unit.id
-                )
-            );
-        };
-
-    const collapseAll =
-        () => {
-
-            setExpandedUnitIds(
-                []
-            );
-        };
-
     return {
 
         rootUnit,
@@ -190,10 +171,6 @@ const useOrganizationTree = (
         handleSelectUnit,
 
         handleToggleUnit,
-
-        expandAll,
-
-        collapseAll,
     };
 };
 

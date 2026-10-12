@@ -1,4 +1,4 @@
-import { retrieveFromAI } from "./queryAI.service.js";
+import { retrieveFromAI as defaultRetrieveFromAI } from "./queryAI.service.js";
 import { rerankCandidates } from "./reranking.service.js";
 import {
     authorizeQueryDocuments,
@@ -30,7 +30,7 @@ const saveQueryHistory = async ({
     evidence,
     usedLLM,
     outputGuardPassed,
-}) => {
+}, prismaClient = prisma) => {
     const organizationId = user?.unit?.organizationId;
 
     if (!organizationId || !user?.id) {
@@ -40,7 +40,7 @@ const saveQueryHistory = async ({
         );
     }
 
-    await prisma.queryHistory.create({
+    await prismaClient.queryHistory.create({
         data: {
             organizationId,
             userId: user.id,
@@ -56,7 +56,8 @@ const saveQueryHistory = async ({
 
 const validateCurrentCandidates = async (
     organizationId,
-    candidates
+    candidates,
+    prismaClient = prisma
 ) => {
     if (!candidates?.length) {
         return [];
@@ -74,7 +75,7 @@ const validateCurrentCandidates = async (
         return [];
     }
 
-    const documents = await prisma.document.findMany({
+    const documents = await prismaClient.document.findMany({
         where: {
             id: {
                 in: documentIds,
@@ -112,7 +113,8 @@ const validateCurrentCandidates = async (
 
 const authorizeCandidates = async (
     user,
-    candidates
+    candidates,
+    authorizeQueryDocuments
 ) => {
     const documentIds = [
         ...new Set(
@@ -152,11 +154,42 @@ const authorizeCandidates = async (
     });
 };
 
+/*
+ * Pipeline dependencies. Every boundary (AI retrieval,
+ * Redis caches, authorization, LLM generation, output
+ * guard, history persistence) is injectable so the
+ * full pipeline — including the response contract and
+ * the insufficient-evidence fallback — can be
+ * integration-tested without live infrastructure.
+ */
+const defaultDependencies = {
+    prisma,
+    retrieveFromAI: defaultRetrieveFromAI,
+    getCachedQuery,
+    setCachedQuery,
+    getCachedAuthorizedQuery,
+    setCachedAuthorizedQuery,
+    getQueryAccessScopeFingerprint,
+    authorizeQueryDocuments,
+    buildSafeContext,
+    buildRAGPrompt,
+    checkEvidenceSufficiency,
+    generateQueryAnswer,
+    validateOutputGuard,
+    saveQueryHistory,
+};
+
 export const retrieveAuthorizedCandidates = async (
     user,
     query,
-    topK = 5
+    topK = 5,
+    injectedDependencies = {}
 ) => {
+    const dependencies = {
+        ...defaultDependencies,
+        ...injectedDependencies,
+    };
+
     const organizationId = user?.unit?.organizationId;
 
     if (!organizationId) {
@@ -166,7 +199,7 @@ export const retrieveAuthorizedCandidates = async (
         );
     }
 
-    const cachedCandidates = await getCachedQuery(
+    const cachedCandidates = await dependencies.getCachedQuery(
         organizationId,
         query,
         topK
@@ -187,7 +220,7 @@ export const retrieveAuthorizedCandidates = async (
             results: candidates,
         };
     } else {
-        retrievalResponse = await retrieveFromAI(
+        retrievalResponse = await dependencies.retrieveFromAI(
             query,
             topK,
             organizationId
@@ -195,7 +228,7 @@ export const retrieveAuthorizedCandidates = async (
 
         candidates = retrievalResponse.results || [];
 
-        await setCachedQuery(
+        await dependencies.setCachedQuery(
             organizationId,
             query,
             topK,
@@ -204,13 +237,13 @@ export const retrieveAuthorizedCandidates = async (
     }
 
     const accessScopeHash =
-        await getQueryAccessScopeFingerprint(user);
+        await dependencies.getQueryAccessScopeFingerprint(user);
 
     let authorizedCandidates = null;
 
     if (rawCacheHit) {
         authorizedCandidates =
-            await getCachedAuthorizedQuery(
+            await dependencies.getCachedAuthorizedQuery(
                 organizationId,
                 accessScopeHash,
                 query,
@@ -221,7 +254,8 @@ export const retrieveAuthorizedCandidates = async (
             authorizedCandidates =
                 await validateCurrentCandidates(
                     organizationId,
-                    authorizedCandidates
+                    authorizedCandidates,
+                    dependencies.prisma
                 );
         }
     }
@@ -230,10 +264,11 @@ export const retrieveAuthorizedCandidates = async (
         authorizedCandidates =
             await authorizeCandidates(
                 user,
-                candidates
+                candidates,
+                dependencies.authorizeQueryDocuments
             );
 
-        await setCachedAuthorizedQuery(
+        await dependencies.setCachedAuthorizedQuery(
             organizationId,
             accessScopeHash,
             query,
@@ -247,7 +282,7 @@ export const retrieveAuthorizedCandidates = async (
         topK
     );
 
-    const evidence = checkEvidenceSufficiency(
+    const evidence = dependencies.checkEvidenceSufficiency(
         rerankedCandidates
     );
 
@@ -256,7 +291,7 @@ export const retrieveAuthorizedCandidates = async (
             "I couldn't find sufficient information in the authorized documents to answer this question.";
 
         try {
-            await saveQueryHistory({
+            await dependencies.saveQueryHistory({
                 user,
                 query: retrievalResponse.query,
                 answer,
@@ -264,7 +299,7 @@ export const retrieveAuthorizedCandidates = async (
                 evidence,
                 usedLLM: false,
                 outputGuardPassed: false,
-            });
+            }, dependencies.prisma);
         } catch (historyError) {
             console.error(
                 "QUERY HISTORY: failed to save insufficient-evidence record:",
@@ -289,27 +324,27 @@ export const retrieveAuthorizedCandidates = async (
     const {
         context,
         sources,
-    } = buildSafeContext(
+    } = dependencies.buildSafeContext(
         rerankedCandidates
     );
 
-    const prompt = buildRAGPrompt(
+    const prompt = dependencies.buildRAGPrompt(
         retrievalResponse.query,
         context
     );
 
-    const answerResult = await generateQueryAnswer({
+    const answerResult = await dependencies.generateQueryAnswer({
         evidence,
         prompt,
         sources,
     });
 
-    const guardedAnswer = validateOutputGuard(
+    const guardedAnswer = dependencies.validateOutputGuard(
         answerResult.answer
     );
 
     try {
-        await saveQueryHistory({
+        await dependencies.saveQueryHistory({
             user,
             query: retrievalResponse.query,
             answer: guardedAnswer.answer,
@@ -317,7 +352,7 @@ export const retrieveAuthorizedCandidates = async (
             evidence,
             usedLLM: answerResult.usedLLM,
             outputGuardPassed: guardedAnswer.safe,
-        });
+        }, dependencies.prisma);
     } catch (historyError) {
         console.error(
             "QUERY HISTORY: failed to save query record:",

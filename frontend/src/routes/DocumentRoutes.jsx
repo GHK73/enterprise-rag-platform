@@ -4,6 +4,7 @@ import DocumentLibrary from "../pages/Documents/DocumentLibrary";
 import CreateDocument from "../pages/Documents/CreateDocument";
 import UploadDocument from "../pages/Documents/UploadDocument";
 import DocumentDetails from "../pages/Documents/DocumentDetails";
+import DocumentProcessingQueue from "../pages/Documents/DocumentProcessingQueue";
 
 export const documentRoutes = (
     <>
@@ -11,6 +12,11 @@ export const documentRoutes = (
         <Route
             path="/documents"
             element={<DocumentLibrary />}
+        />
+
+        <Route
+            path="/documents/queue"
+            element={<DocumentProcessingQueue />}
         />
 
         <Route

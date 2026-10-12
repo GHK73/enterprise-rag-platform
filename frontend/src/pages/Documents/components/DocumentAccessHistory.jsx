@@ -1,6 +1,7 @@
 import {
     useEffect,
     useState,
+    useCallback,
 } from "react";
 
 import { getDocumentAccessHistory } from "../../../api/document.api";
@@ -19,7 +20,7 @@ const DocumentAccessHistory = ({
     const [error, setError] =
         useState("");
 
-    const loadHistory = async () => {
+    const loadHistory = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
@@ -38,11 +39,14 @@ const DocumentAccessHistory = ({
         } finally {
             setLoading(false);
         }
-    };
+    }, [documentId]);
 
     useEffect(() => {
-        loadHistory();
-    }, [documentId]);
+        async function initialize() {
+            await loadHistory();
+        }
+        initialize();
+    }, [loadHistory]);
 
     if (loading) {
         return (

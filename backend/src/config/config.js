@@ -52,6 +52,26 @@ export default {
     },
 
     rateLimit: {
+        /*
+         * Behavior when Redis is unavailable and a
+         * rate-limit check cannot be executed:
+         *
+         * "open"   — allow the request through
+         *            (availability-first; the default)
+         * "closed" — reject with 503
+         *            (protection-first; prevents
+         *            unbounded LLM and processing load
+         *            during a Redis outage)
+         *
+         * See docs/DEVELOPMENT.md — Known Backend
+         * Issues for the policy rationale.
+         */
+        unavailablePolicy:
+            process.env.RATE_LIMIT_UNAVAILABLE_POLICY ===
+                "closed"
+                ? "closed"
+                : "open",
+
         query: {
             capacity: Number(
                 process.env.QUERY_RATE_LIMIT_CAPACITY || 30
@@ -73,6 +93,27 @@ export default {
             ),
             refillIntervalSeconds: Number(
                 process.env.DOCUMENT_UPLOAD_RATE_LIMIT_REFILL_INTERVAL || 60
+            ),
+        },
+
+        login: {
+            emailMaxAttempts: Number(
+                process.env.LOGIN_RATE_LIMIT_EMAIL_MAX_ATTEMPTS || 5
+            ),
+            ipMaxAttempts: Number(
+                process.env.LOGIN_RATE_LIMIT_IP_MAX_ATTEMPTS || 20
+            ),
+            windowSeconds: Number(
+                process.env.LOGIN_RATE_LIMIT_WINDOW_SECONDS || 15 * 60
+            ),
+        },
+
+        registration: {
+            ipMaxAttempts: Number(
+                process.env.REGISTRATION_RATE_LIMIT_IP_MAX_ATTEMPTS || 5
+            ),
+            windowSeconds: Number(
+                process.env.REGISTRATION_RATE_LIMIT_WINDOW_SECONDS || 15 * 60
             ),
         },
     },

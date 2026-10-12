@@ -283,3 +283,14 @@ export const cleanupDeletedDocument = async (
 
     return response.data;
 };
+
+export const reprocessDocument = async (
+    documentId,
+    versionId
+) => {
+    const response = await api.post(
+        `/documents/${documentId}/versions/${versionId}/reprocess`
+    );
+
+    return response.data;
+};

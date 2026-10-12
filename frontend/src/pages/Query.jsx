@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import api from "../../api/axios";
+import api from "@api/axios";
 import "./Query.css";
 
 const Query = () => {
@@ -13,7 +13,6 @@ const Query = () => {
     const [history, setHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyOffset, setHistoryOffset] = useState(0);
-    const [historyTotal, setHistoryTotal] = useState(0);
     const HISTORY_LIMIT = 10;
 
     const loadHistory = async (offset = 0) => {
@@ -25,8 +24,7 @@ const Query = () => {
             const data = response.data.data;
             setHistory(data.history || []);
             setHistoryOffset(data.offset);
-            setHistoryTotal(data.history.length + offset);
-        } catch (err) {
+        } catch {
             // silent fail for history
         } finally {
             setHistoryLoading(false);

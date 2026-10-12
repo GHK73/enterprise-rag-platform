@@ -342,23 +342,90 @@ const validateDocumentAccessAuthority = async(
 };
 
 const isDocumentAccessPolicyActive = (policy)=>{
-    if(!policy.isActive){
-        return false;
-    }
-    const now = new Date();
-    if(
-        policy.validFrom &&
-        policy.validFrom > now
-    ){
-        return false;
-    }
-    if(
-        policy.validUntil &&
-        policy.validUntil <= now
-    ){
-        return false;
-    }
-    return true;
+    if(!policy.isActive){
+        return false;
+    }
+    const now = new Date();
+    if(
+        policy.validFrom &&
+        policy.validFrom > now
+    ){
+        return false;
+    }
+    if(
+        policy.validUntil &&
+        policy.validUntil <= now
+    ){
+        return false;
+    }
+    return true;
+};
+
+/*
+ * Shared subject matcher. Every authorization path
+ * (single-action, batched listing, query authorization,
+ * access-scope fingerprint) must resolve a policy against
+ * a user with this function so the paths cannot disagree.
+ * Exported for tests: the matching rules are the security
+ * core of the platform.
+ */
+export const policyMatchesUser = (
+    policy,
+    user,
+    userUnitHierarchy
+)=>{
+    switch(policy.subjectType){
+        case "ORGANIZATION":
+            return policy.subjectOrganizationId ===
+                user.unit.organizationId;
+        case "UNIT":
+            if(policy.scope === "UNIT_ONLY"){
+                return policy.subjectUnitId === user.unitId;
+            }
+            if(policy.scope === "UNIT_AND_DESCENDANTS"){
+                return userUnitHierarchy.has(
+                    policy.subjectUnitId
+                );
+            }
+            return false;
+        case "ROLE":
+            return policy.subjectRole === user.role;
+        case "USER":
+            return policy.subjectUserId === user.id;
+        default:
+            return false;
+    }
+};
+
+export const evaluatePolicyMatches = (
+    policies,
+    user,
+    userUnitHierarchy
+)=>{
+    const matches = [];
+    for(const policy of policies){
+        if(!isDocumentAccessPolicyActive(policy)){
+            continue;
+        }
+        if(policyMatchesUser(policy, user, userUnitHierarchy)){
+            matches.push(policy);
+        }
+    }
+    return matches;
+};
+
+/*
+ * DENY always wins over ALLOW; an empty match set is
+ * a denial. Exported for tests.
+ */
+export const resolvePolicyDecision = (matches)=>{
+    if(matches.some((policy) => policy.effect === "DENY")){
+        return "denied";
+    }
+    if(matches.some((policy) => policy.effect === "ALLOW")){
+        return "allowed";
+    }
+    return "denied";
 };
 
 const validateTemporaryAccess = (
@@ -387,96 +454,112 @@ const validateTemporaryAccess = (
 };
 
 export const grantDocumentAccess = async(
-    user,
-    documentId,
-    accessData
+    user,
+    documentId,
+    accessData
 )=>{
-    const document = await getActiveDocument(
-        user,
-        documentId
-    );
-    return prisma.$transaction(async(tx)=>{
-        const resolvedAccessData =
-            await resolveAccessSubject(
-                tx,
-                document.organizationId,
-                accessData
-            );
-        await validateDocumentAccessPolicy(
-            tx,
-            document,
-            resolvedAccessData
-        );
-        await validateDocumentAccessAuthority(
-            tx,
-            user,
-            document,
-            resolvedAccessData
-        );
-        const policy =
-            await tx.documentAccessPolicy.create({
-                data:{
-                    organizationId:
-                        document.organizationId,
-                    documentId:
-                        document.id,
-                    ...resolvedAccessData,
-                    action:
-                        accessData.action,
-                    effect:
-                        accessData.effect,
-                    validFrom:
-                        accessData.validFrom ??
-                        new Date(),
-                    validUntil:
-                        accessData.validUntil ??
-                        null,
-                    grantedById:
-                        user.id,
-                },
-            });
-        await tx.documentAccessAudit.create({
-            data:{
-                organizationId:
-                    policy.organizationId,
-                documentId:
-                    policy.documentId,
-                policyId:
-                    policy.id,
-                actorId:
-                    user.id,
-                subjectType:
-                    policy.subjectType,
-                subjectOrganizationId:
-                    policy.subjectOrganizationId,
-                subjectUnitId:
-                    policy.subjectUnitId,
-                subjectRole:
-                    policy.subjectRole,
-                subjectUserId:
-                    policy.subjectUserId,
-                eventType:"CREATED",
-                previousState:null,
-                newState:{
-                    action:policy.action,
-                    effect:policy.effect,
-                    scope:policy.scope,
-                    validFrom:policy.validFrom,
-                    validUntil:policy.validUntil,
-                    isActive:policy.isActive,
-                },
-                reason:
-                    accessData.reason ??
-                    null,
-            },
-        });
-        return policy;
-    }).then(async (policy) => {
-        await invalidateOrganizationAuthorizedQueryCache(
-            policy.organizationId
-        );
-        return policy;
-    });
+    const document = await getActiveDocument(
+        user,
+        documentId
+    );
+    try {
+        return await prisma.$transaction(async(tx)=>{
+            const resolvedAccessData =
+                await resolveAccessSubject(
+                    tx,
+                    document.organizationId,
+                    accessData
+                );
+            await validateDocumentAccessPolicy(
+                tx,
+                document,
+                resolvedAccessData
+            );
+            await validateDocumentAccessAuthority(
+                tx,
+                user,
+                document,
+                resolvedAccessData
+            );
+            const policy =
+                await tx.documentAccessPolicy.create({
+                    data:{
+                        organizationId:
+                            document.organizationId,
+                        documentId:
+                            document.id,
+                        ...resolvedAccessData,
+                        action:
+                            accessData.action,
+                        effect:
+                            accessData.effect,
+                        validFrom:
+                            accessData.validFrom ??
+                            new Date(),
+                        validUntil:
+                            accessData.validUntil ??
+                            null,
+                        grantedById:
+                            user.id,
+                    },
+                });
+            await tx.documentAccessAudit.create({
+                data:{
+                    organizationId:
+                        policy.organizationId,
+                    documentId:
+                        policy.documentId,
+                    policyId:
+                        policy.id,
+                    actorId:
+                        user.id,
+                    subjectType:
+                        policy.subjectType,
+                    subjectOrganizationId:
+                        policy.subjectOrganizationId,
+                    subjectUnitId:
+                        policy.subjectUnitId,
+                    subjectRole:
+                        policy.subjectRole,
+                    subjectUserId:
+                        policy.subjectUserId,
+                    eventType:"CREATED",
+                    previousState:null,
+                    newState:{
+                        action:policy.action,
+                        effect:policy.effect,
+                        scope:policy.scope,
+                        validFrom:policy.validFrom,
+                        validUntil:policy.validUntil,
+                        isActive:policy.isActive,
+                    },
+                    reason:
+                        accessData.reason ??
+                        null,
+                },
+            });
+            return policy;
+        }).then(async (policy) => {
+            await invalidateOrganizationAuthorizedQueryCache(
+                policy.organizationId
+            );
+            return policy;
+        });
+    } catch (error) {
+        /*
+         * The pre-insert duplicate check is advisory.
+         * Under a concurrent grant race the partial
+         * unique index on active policies is the real
+         * guard, and its violation surfaces as P2002.
+         */
+        if (error?.code === "P2002") {
+            throw new ApiError(
+                409,
+                "An identical active access policy already exists."
+            );
+        }
+        throw error;
+    }
 };
 
 export const updateDocumentAccessPolicy = async(
@@ -484,7 +567,8 @@ export const updateDocumentAccessPolicy = async(
     policyId,
     accessData
 )=>{
-    return prisma.$transaction(async(tx)=>{
+    try {
+        return await prisma.$transaction(async(tx)=>{
         const policy =await getDocumentAccessPolicy(
             tx,
             user,
@@ -578,13 +662,27 @@ export const updateDocumentAccessPolicy = async(
                     null,
             },
         });
-        return updatedPolicy;
-    }).then(async (updatedPolicy) => {
-        await invalidateOrganizationAuthorizedQueryCache(
-            updatedPolicy.organizationId
-        );
-        return updatedPolicy;
-    });
+        return updatedPolicy;
+        }).then(async (updatedPolicy) => {
+            await invalidateOrganizationAuthorizedQueryCache(
+                updatedPolicy.organizationId
+            );
+            return updatedPolicy;
+        });
+    } catch (error) {
+        /*
+         * Flipping the effect can collide with an
+         * existing identical active policy; the
+         * partial unique index is the real guard.
+         */
+        if (error?.code === "P2002") {
+            throw new ApiError(
+                409,
+                "An identical active access policy already exists."
+            );
+        }
+        throw error;
+    }
 };
 
 export const revokeDocumentAccess = async(
@@ -822,59 +920,89 @@ export const authorizeDocumentAction = async(user,documentId,action)=>{
             user.unit.organizationId,
             user.unitId
         );
-    const matches = [];
-    for(const policy of policies){
-        if(!isDocumentAccessPolicyActive(policy)){
-            continue;
-        }
-        switch(policy.subjectType){
-            case "ORGANIZATION":
-                if(policy.subjectOrganizationId===user.unit.organizationId){
-                    matches.push(policy);
-                }
-                break;
-            case "UNIT":
-                if(
-                    policy.scope==="UNIT_ONLY" &&
-                    policy.subjectUnitId===user.unitId
-                ){
-                    matches.push(policy);
-                }
-                if(
-                    policy.scope==="UNIT_AND_DESCENDANTS" &&
-                    userUnitHierarchy.has(policy.subjectUnitId)
-                ){
-                    matches.push(policy);
-                }
-                break;
-            case "ROLE":
-                if(policy.subjectRole===user.role){
-                    matches.push(policy);
-                }
-                break;
-            case "USER":
-                if(policy.subjectUserId===user.id){
-                    matches.push(policy);
-                }
-                break;
-        }
-    }
-    if(matches.some(policy=>policy.effect==="DENY")){
+    const matches = evaluatePolicyMatches(
+        policies,
+        user,
+        userUnitHierarchy
+    );
+    if(resolvePolicyDecision(matches) === "denied"){
         throw new ApiError(
             403,
             "Access denied."
         );
     }
-    if(matches.some(policy=>policy.effect==="ALLOW")){
-        return {
-            document,
-            authorized:true,
-        };
+    return {
+        document,
+        authorized:true,
+    };
+};
+
+/*
+ * Batched authorization for listing endpoints.
+ *
+ * authorizeDocumentAction issues one policy query and
+ * one unit-hierarchy walk per document, which makes
+ * document listing N+1. This function issues two
+ * queries total and evaluates every document in
+ * memory with the same matcher and decision rules.
+ *
+ * Returns a Map of documentId -> boolean.
+ */
+export const authorizeDocumentsForAction = async(
+    user,
+    documentIds,
+    action
+)=>{
+    if(!user.unitId || !user.unit){
+        throw new ApiError(
+            403,
+            "User does not belong to an organization"
+        );
     }
-    throw new ApiError(
-        403,
-        "Access denied."
-    );
+    if(!documentIds?.length){
+        return new Map();
+    }
+    const policies =
+        await prisma.documentAccessPolicy.findMany({
+            where:{
+                documentId:{
+                    in:documentIds,
+                },
+                action,
+                organizationId:user.unit.organizationId,
+                isActive:true,
+            },
+        });
+    const userUnitHierarchy =
+        await getUserUnitHierarchy(
+            user.unit.organizationId,
+            user.unitId
+        );
+    const policiesByDocument = new Map();
+    for(const policy of policies){
+        const documentPolicies =
+            policiesByDocument.get(policy.documentId) ||
+            [];
+        documentPolicies.push(policy);
+        policiesByDocument.set(
+            policy.documentId,
+            documentPolicies
+        );
+    }
+    const decisions = new Map();
+    for(const documentId of documentIds){
+        const matches = evaluatePolicyMatches(
+            policiesByDocument.get(documentId) || [],
+            user,
+            userUnitHierarchy
+        );
+        decisions.set(
+            documentId,
+            resolvePolicyDecision(matches) ===
+                "allowed"
+        );
+    }
+    return decisions;
 };
 
 const getUserUnitHierarchy = async (organizationId, userUnitId) => {
@@ -930,49 +1058,20 @@ export const getQueryAccessScopeFingerprint = async (user) => {
                 updatedAt: true,
             },
         });
-    const userUnitHierarchy =
-        await getUserUnitHierarchy(
-            organizationId,
-            user.unitId
-        );
-    const matchedPolicies = policies
-        .filter(isDocumentAccessPolicyActive)
-        .filter((policy) => {
-            switch (policy.subjectType) {
-                case "ORGANIZATION":
-                    return (
-                        policy.subjectOrganizationId ===
-                        organizationId
-                    );
-                case "UNIT":
-                    if (
-                        policy.scope === "UNIT_ONLY" &&
-                        policy.subjectUnitId === user.unitId
-                    ) {
-                        return true;
-                    }
-                    if (
-                        policy.scope ===
-                            "UNIT_AND_DESCENDANTS" &&
-                        userUnitHierarchy.has(
-                            policy.subjectUnitId
-                        )
-                    ) {
-                        return true;
-                    }
-                    return false;
-                case "ROLE":
-                    return (
-                        policy.subjectRole === user.role
-                    );
-                case "USER":
-                    return (
-                        policy.subjectUserId === user.id
-                    );
-                default:
-                    return false;
-            }
-        })
+    const userUnitHierarchy =
+        await getUserUnitHierarchy(
+            organizationId,
+            user.unitId
+        );
+    const matchedPolicies = policies
+        .filter(isDocumentAccessPolicyActive)
+        .filter((policy) =>
+            policyMatchesUser(
+                policy,
+                user,
+                userUnitHierarchy
+            )
+        )
         .map((policy) => ({
             id: policy.id,
             documentId: policy.documentId,
@@ -1057,74 +1156,27 @@ export const authorizeQueryDocuments = async (
             user.unit.organizationId,
             user.unitId
         );
-    const authorizedDocumentIds = [];
-    for (const document of documents) {
-        const documentPolicies =
-            policies.filter(
-                (policy) =>
-                    policy.documentId === document.id
-            );
-        const activePolicies =
-            documentPolicies.filter(
-                isDocumentAccessPolicyActive
-            );
-        const matches = [];
-        for (const policy of activePolicies) {
-            switch (policy.subjectType) {
-                case "ORGANIZATION":
-                    if (
-                        policy.subjectOrganizationId ===
-                        user.unit.organizationId
-                    ) {
-                        matches.push(policy);
-                    }
-                    break;
-                case "UNIT":
-                    if (
-                        policy.scope === "UNIT_ONLY" &&
-                        policy.subjectUnitId === user.unitId
-                    ) {
-                        matches.push(policy);
-                    }
-                    if (
-                        policy.scope ===
-                            "UNIT_AND_DESCENDANTS" &&
-                        userUnitHierarchy.has(
-                            policy.subjectUnitId
-                        )
-                    ) {
-                        matches.push(policy);
-                    }
-                    break;
-                case "ROLE":
-                    if (
-                        policy.subjectRole === user.role
-                    ) {
-                        matches.push(policy);
-                    }
-                    break;
-                case "USER":
-                    if (
-                        policy.subjectUserId === user.id
-                    ) {
-                        matches.push(policy);
-                    }
-                    break;
-            }
-        }
-        const hasDeny = matches.some(
-            (policy) => policy.effect === "DENY"
-        );
-        const hasAllow = matches.some(
-            (policy) => policy.effect === "ALLOW"
-        );
-        if (!hasDeny && hasAllow) {
-            authorizedDocumentIds.push({
-                documentId: document.id,
-                currentVersionId:
-                    document.currentVersionId,
-            });
-        }
-    }
-    return authorizedDocumentIds;
+    const authorizedDocumentIds = [];
+    for (const document of documents) {
+        const documentPolicies =
+            policies.filter(
+                (policy) =>
+                    policy.documentId === document.id
+            );
+        const matches = evaluatePolicyMatches(
+            documentPolicies,
+            user,
+            userUnitHierarchy
+        );
+        if (
+            resolvePolicyDecision(matches) === "allowed"
+        ) {
+            authorizedDocumentIds.push({
+                documentId: document.id,
+                currentVersionId:
+                    document.currentVersionId,
+            });
+        }
+    }
+    return authorizedDocumentIds;
 };

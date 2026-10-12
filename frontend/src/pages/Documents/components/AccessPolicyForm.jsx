@@ -115,71 +115,77 @@ const AccessPolicyForm = ({
         return true;
     };
 
-    useEffect(() => {
+useEffect(() => {
         if (!editing || !initialValues) {
             return;
         }
 
-        setSubjectType(
-            initialValues.subjectType ||
-                "USER"
-        );
+        async function initialize() {
+            setSubjectType(
+                initialValues.subjectType ||
+                    "USER"
+            );
 
-        setSubjectId(
-            initialValues.subjectUserId ||
-                initialValues.subjectUnitId ||
-                initialValues.subjectRole ||
-                initialValues.subjectOrganizationId ||
-                ""
-        );
+            setSubjectId(
+                initialValues.subjectUserId ||
+                    initialValues.subjectUnitId ||
+                    initialValues.subjectRole ||
+                    initialValues.subjectOrganizationId ||
+                    ""
+            );
 
-        setAction(
-            initialValues.action ||
-                "QUERY"
-        );
+            setAction(
+                initialValues.action ||
+                    "QUERY"
+            );
 
-        setPermission(
-            initialValues.effect ||
-                initialValues.permission ||
-                "ALLOW"
-        );
+            setPermission(
+                initialValues.effect ||
+                    initialValues.permission ||
+                    "ALLOW"
+            );
 
-        setScope(
-            initialValues.scope ||
-                "UNIT_ONLY"
-        );
+            setScope(
+                initialValues.scope ||
+                    "UNIT_ONLY"
+            );
 
-        setTemporary(
-            Boolean(
-                initialValues.validUntil ||
-                    initialValues.expiresAt
-            )
-        );
+            setTemporary(
+                Boolean(
+                    initialValues.validUntil ||
+                        initialValues.expiresAt
+                )
+            );
 
-        setExpiresAt(
-            initialValues.validUntil
-                ? utcToLocalDatetime(
-                      initialValues.validUntil
-                  )
-                : initialValues.expiresAt
-                ? utcToLocalDatetime(
-                      initialValues.expiresAt
-                  )
-                : ""
-        );
+            setExpiresAt(
+                initialValues.validUntil
+                    ? utcToLocalDatetime(
+                          initialValues.validUntil
+                        )
+                    : initialValues.expiresAt
+                    ? utcToLocalDatetime(
+                          initialValues.expiresAt
+                        )
+                    : ""
+            );
 
-        setReason(
-            initialValues.reason || ""
-        );
+            setReason(
+                initialValues.reason || ""
+            );
+        }
+        initialize();
     }, [
         editing,
         initialValues,
     ]);
 
     useEffect(() => {
-        setSubjectId("");
-        setScope("UNIT_ONLY");
-        setFormError("");
+        async function reset() {
+            setSubjectId("");
+            setScope("UNIT_ONLY");
+            setFormError("");
+        }
+        reset();
     }, [subjectType]);
 
     const resetForm = () => {

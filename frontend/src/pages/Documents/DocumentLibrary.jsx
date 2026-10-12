@@ -2,6 +2,7 @@ import {
     useEffect,
     useMemo,
     useState,
+    useCallback,
 } from "react";
 
 import { Link } from "react-router-dom";
@@ -41,7 +42,7 @@ const DocumentLibrary = () => {
         setShowDeleted,
     ] = useState(false);
 
-    const loadDocuments = async () => {
+    const loadDocuments = useCallback(async () => {
         try {
             setLoading(true);
             setError("");
@@ -58,11 +59,14 @@ const DocumentLibrary = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [showDeleted]);
 
     useEffect(() => {
-        loadDocuments();
-    }, [showDeleted]);
+        async function initialize() {
+            await loadDocuments();
+        }
+        initialize();
+    }, [showDeleted, loadDocuments]);
 
     const filteredDocuments = useMemo(() => {
         return documents.filter(

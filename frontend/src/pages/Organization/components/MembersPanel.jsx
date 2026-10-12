@@ -1,5 +1,7 @@
 // frontend/src/pages/Organization/components/MembersPanel.jsx
 
+import { getValidParentType } from "../utils/organization.utils";
+
 const MembersPanel = ({
     selectedUnit,
 
@@ -39,6 +41,10 @@ const MembersPanel = ({
         return null;
     }
 
+    const validParentType = getValidParentType(selectedUnit.type);
+    const validDestinationUnits = validParentType
+        ? organizationUnits.filter((unit) => unit.type === validParentType)
+        : [];
 
     return (
         <div className="organization-members-panel">
@@ -233,33 +239,28 @@ const MembersPanel = ({
                                                             </option>
 
 
-                                                            {
-                                                                organizationUnits
-                                                                    .filter(
-                                                                        (unit) =>
-                                                                            unit.id !==
-                                                                            selectedUnit.id
-                                                                    )
-                                                                    .map(
-                                                                        (unit) => (
+{
+                                                                    validDestinationUnits
+                                                                        .map(
+                                                                            (unit) => (
 
-                                                                            <option
-                                                                                key={
-                                                                                    unit.id
-                                                                                }
-                                                                                value={
-                                                                                    unit.id
-                                                                                }
-                                                                            >
-                                                                                {
-                                                                                    unit.name
-                                                                                }
-                                                                            </option>
+                                                                                <option
+                                                                                    key={
+                                                                                        unit.id
+                                                                                    }
+                                                                                    value={
+                                                                                        unit.id
+                                                                                    }
+                                                                                >
+                                                                                    {
+                                                                                        unit.name
+                                                                                    }
+                                                                                </option>
 
+                                                                            )
                                                                         )
-                                                                    )
 
-                                                            }
+                                                                }
 
                                                         </select>
 

@@ -167,11 +167,30 @@ const createRateLimiter = ({
             );
 
             /*
-             * Fail open if Redis is unavailable.
+             * Documented outage policy
+             * (config.rateLimit.unavailablePolicy):
              *
-             * This prevents a Redis outage from
-             * taking down the API.
+             * "open" (default) — a Redis outage must
+             * not take the API down, so the request
+             * is allowed through. This is an explicit
+             * availability decision.
+             *
+             * "closed" — protection-first: reject the
+             * request with 503 so an outage cannot be
+             * used to bypass the query and upload
+             * buckets (LLM cost and processing load
+             * stay bounded).
              */
+            if (
+                config.rateLimit.unavailablePolicy ===
+                "closed"
+            ) {
+                throw new ApiError(
+                    503,
+                    "Rate limiting is temporarily unavailable. Please try again later."
+                );
+            }
+
             return next();
         }
     };

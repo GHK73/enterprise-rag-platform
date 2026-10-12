@@ -1,6 +1,4 @@
-import axios from "axios";
-
-import config from "../../config/config.js";
+import aiClient from "../../config/ai.js";
 import { getDownloadUrlFromS3 } from "../s3.service.js";
 
 async function buildProcessingPayload(document, version) {
@@ -20,8 +18,8 @@ async function buildProcessingPayload(document, version) {
 
 
 async function processDocumentWithAI(payload) {
-    const response = await axios.post(
-        `${config.ai.url}/api/v1/process-document`,
+    const response = await aiClient.post(
+        "/api/v1/process-document",
         payload
     );
 

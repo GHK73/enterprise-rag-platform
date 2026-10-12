@@ -11,91 +11,36 @@ import ApiError from "../../utils/ApiError.js";
 import { validateFile } from "../../utils/fileValidation.js";
 
 import {
-    uploadFileToS3,
-    deleteFileFromS3,
-    getDownloadUrlFromS3,
+    uploadFileToS3,
+    deleteFileFromS3,
+    getDownloadUrlFromS3,
 } from "../s3.service.js";
 
 import {
-    validateOrganizationMembership,
-    getDocument,
-    getActiveDocument,
-    getDraftDocument,
-    getDeletedDocument,
-    getDocumentWithVersions,
+    DRAFT_EXPIRY_HOURS,
+    validClassifications,
+    validateDocumentTransition,
+    validateOrganizationMembership,
+    isDraftExpired,
+    expireDraftIfNeeded,
+    expireOrganizationDrafts,
+    cleanupDraftUpload,
+    getActiveDocument,
+    getDraftDocument,
+    getDeletedDocument,
+    getDocumentWithVersions,
 } from "./documentHelpers.js";
 
 import {
-    authorizeDocumentAction,
+    authorizeDocumentAction,
+    authorizeDocumentsForAction,
 } from "./documentAccess.service.js";
-
-const DRAFT_EXPIRY_HOURS = 24;
-
-const validClassifications = [
-    "GENERAL",
-    "INTERNAL",
-    "CONFIDENTIAL",
-    "RESTRICTED",
-];
-
-const validDocumentTransitions = {
-    DRAFT:["SUBMITTED","EXPIRED"],
-    SUBMITTED:["QUEUED"],
-    QUEUED:["PROCESSING"],
-    PROCESSING:["READY","FAILED"],
-    READY:["QUEUED","DELETED"],
-};
 
 const authorizeDraftOwner = (user,document)=>{
     if(document.uploadedById!==user.id){
         throw new ApiError(403,"You do not have permission to modify this document draft.");
     }
     return document;
-};
-
-const isDraftExpired = (document)=>{
-    return (
-        document.status==="DRAFT" &&
-        document.draftExpiresAt &&
-        document.draftExpiresAt<=new Date()
-    );
-};
-
-const expireDraftIfNeeded = async(document)=>{
-    if(!isDraftExpired(document)){
-        return document;
-    }
-    return prisma.document.update({
-        where:{id:document.id,},
-        data:{status:"EXPIRED",},
-    });
-};
-
-const expireOrganizationDrafts = async(organizationId)=>{
-    return prisma.document.updateMany({
-        where:{
-            organizationId,
-            status:"DRAFT",
-            draftExpiresAt:{
-                lte:new Date(),
-            },
-        },
-        data:{
-            status:"EXPIRED",
-        },
-    });
-};
-
-const cleanupDraftUpload = async(tx,document,version)=>{
-    await tx.document.update({
-        where:{id:document.id,},
-        data:{
-            currentVersionId:null,
-        },
-    });
-    await tx.documentVersion.delete({
-        where:{id:version.id,},
-    });
 };
 
 const validateDraftForPublication = async(user,documentId)=>{
@@ -138,17 +83,10 @@ const validateDraftForPublication = async(user,documentId)=>{
     };
 };
 
-export const validateDocumentTransition = (currentStatus,nextStatus)=>{
-    const allowedTransitions =
-        validDocumentTransitions[currentStatus] || [];
-    if(!allowedTransitions.includes(nextStatus)){
-        throw new ApiError(
-            400,
-           `Document cannot transition from ${currentStatus} to ${nextStatus}.`
-        );
-    }
-    return true;
-};
+/*
+ * Transition validation for this module comes from the
+ * authoritative state machine in documentHelpers.js.
+ */
 
 const createInitialDocumentAccessPolicies = async(tx,user,document)=>{
     const actions=[
@@ -269,16 +207,6 @@ export const createDocumentDraft = async(user,documentData)=>{
     });
 };
 
-export const expireDocumentDrafts = async(user)=>{
-    validateOrganizationMembership(user);
-    const result = await expireOrganizationDrafts(
-        user.unit.organizationId
-    );
-    return {
-        expiredDocuments:result.count,
-    };
-};
-
 export const updateDocumentDraft = async(user,documentId,documentData)=>{
     const {title,description,classification} = documentData;
     const document = await getDraftDocument(user,documentId);
@@ -296,17 +224,31 @@ export const getDocuments = async(user)=>{
     validateOrganizationMembership(user);
     await expireOrganizationDrafts(user.unit.organizationId);
     const documents = await prisma.document.findMany({where:{organizationId:user.unit.organizationId,isDeleted:false,status:{not:"EXPIRED"},},orderBy:{createdAt:"desc",},});
+
+    /*
+     * Batched authorization: one policy query and one
+     * unit-hierarchy walk for the whole listing,
+     * instead of one authorizeDocumentAction call
+     * (two queries each) per non-draft document.
+     */
+    const nonDraftDocumentIds = documents
+        .filter((document) => document.status !== "DRAFT")
+        .map((document) => document.id);
+
+    const viewDecisions = await authorizeDocumentsForAction(
+        user,
+        nonDraftDocumentIds,
+        "VIEW"
+    );
+
     const visibleDocuments=[];
     for(const document of documents){
         if(document.status==="DRAFT"){
             if(document.uploadedById===user.id) visibleDocuments.push(document);
             continue;
         }
-        try{
-            await authorizeDocumentAction(user,document.id,"VIEW");
+        if(viewDecisions.get(document.id)){
             visibleDocuments.push(document);
-        }catch(error){
-            if(error.statusCode!==403) throw error;
         }
     }
     return visibleDocuments;
@@ -431,33 +373,134 @@ export const deleteDraftUpload = async(
 };
 
 export const publishDraft = async(user,documentId)=>{
-    const {document} =await validateDraftForPublication(user,documentId);
+    let document;
+    try{
+        ({document} =await validateDraftForPublication(user,documentId));
+    }catch(validationError){
+        /*
+         * A retry after a successful publication is
+         * idempotent: when the caller owns the document
+         * and it is already SUBMITTED, return the
+         * published document instead of an error.
+         */
+        if(validationError.statusCode === 400){
+            const published = await prisma.document.findUnique({
+                where:{id:documentId},
+            });
+            if(
+                published &&
+                published.status === "SUBMITTED" &&
+                published.organizationId ===
+                    user.unit.organizationId &&
+                published.uploadedById === user.id
+            ){
+                return published;
+            }
+        }
+        throw validationError;
+    }
     authorizeDraftOwner(user,document);
-    validateDocumentTransition(
-        document.status,
-        "SUBMITTED"
-    );
-    const publishedDocument = await prisma.$transaction(async(tx)=>{
-        const policies =await createInitialDocumentAccessPolicies(tx,user,document);
-        await createInitialDocumentAccessAudit(tx,user,policies);
-        return await tx.document.update({
-            where:{ id: document.id },
-            data:{
-                status:"SUBMITTED",
-                submittedAt:new Date(),
-            },
-        });
-    });
-    await dispatchDocumentProcessing({
-        documentId: publishedDocument.id,
-        versionId: publishedDocument.currentVersionId,
-    });
-    return publishedDocument;
+    validateDocumentTransition(
+        document.status,
+        "SUBMITTED"
+    );
+
+    /*
+     * The guarded status transition is the atomic
+     * publication primitive. updateMany takes a row
+     * lock, so concurrent publishes of the same draft
+     * serialize: only the request whose update matches
+     * creates the initial policies and audit records.
+     * Concurrent or retried publication therefore
+     * cannot produce duplicate ALLOW policies or
+     * duplicate CREATED audit rows.
+     */
+    const publication = await prisma.$transaction(async(tx)=>{
+        const transition = await tx.document.updateMany({
+            where:{
+                id:document.id,
+                status:"DRAFT",
+            },
+            data:{
+                status:"SUBMITTED",
+                submittedAt:new Date(),
+            },
+        });
+        if(transition.count !== 1){
+            return {published:false};
+        }
+        const policies =await createInitialDocumentAccessPolicies(tx,user,document);
+        await createInitialDocumentAccessAudit(tx,user,policies);
+        return {published:true};
+    });
+
+    if(!publication.published){
+        const currentDocument = await prisma.document.findUnique({
+            where:{id:document.id},
+        });
+        if(currentDocument?.status === "SUBMITTED"){
+            return currentDocument;
+        }
+        throw new ApiError(
+            409,
+            "Document is no longer a draft."
+        );
+    }
+
+    /*
+     * Dispatch runs after the commit. If dispatch
+     * fails, the document must not be stranded in
+     * SUBMITTED, which has no recovery path: the
+     * guarded transition below moves it to FAILED,
+     * from which reprocessDocument re-dispatches
+     * processing. The guard on currentVersionId
+     * ensures a version uploaded after publication
+     * cannot be marked failed by this path.
+     */
+    try{
+        await dispatchDocumentProcessing({
+            documentId:document.id,
+            versionId:document.currentVersionId,
+        });
+    }catch(dispatchError){
+        try{
+            await prisma.$transaction(async(tx)=>{
+                const transition = await tx.document.updateMany({
+                    where:{
+                        id:document.id,
+                        status:"SUBMITTED",
+                        currentVersionId:document.currentVersionId,
+                    },
+                    data:{status:"FAILED",},
+                });
+                if(transition.count === 1){
+                    await tx.documentVersion.updateMany({
+                        where:{
+                            id:document.currentVersionId,
+                            documentId:document.id,
+                        },
+                        data:{processingStatus:"FAILED",},
+                    });
+                }
+            });
+        }catch(markFailedError){
+            console.error(
+                `DOCUMENT PUBLISH: Failed to mark ${document.id} FAILED after dispatch failure`,
+                markFailedError.message
+            );
+        }
+        throw dispatchError;
+    }
+
+    return prisma.document.findUnique({
+        where:{id:document.id},
+    });
 };
 
 export const softDeleteDocument = async(user,documentId)=>{
     const document = await getActiveDocument(user,documentId);
     if(document.uploadedById!==user.id) throw new ApiError(403,"You do not have permission to delete this document.");
+    validateDocumentTransition(document.status,"DELETED");
     return prisma.document.update({where:{id:documentId,},data:{status:"DELETED",isDeleted:true,deletedAt:new Date(),deletedById:user.id,},});
 };
 
@@ -467,7 +510,83 @@ export const restoreDocument = async(user,documentId)=>{
     if(!document.currentVersionId) throw new ApiError(400,"Document has no current version.");
     const currentVersion = await prisma.documentVersion.findUnique({where:{id:document.currentVersionId,},});
     if(!currentVersion) throw new ApiError(400,"Document current version not found.");
-    return prisma.document.update({where:{id:documentId,},data:{status:"READY",isDeleted:false,deletedAt:null,deletedById:null,},});
+    /*
+     * Only a version that was successfully processed
+     * and indexed may be restored straight into the
+     * retrieval path. A version that never completed
+     * processing is restored to FAILED so
+     * reprocessDocument rebuilds it before the
+     * document becomes retrievable again.
+     */
+    const restoreStatus =
+        currentVersion.processingStatus === "READY"
+            ? "READY"
+            : "FAILED";
+
+    validateDocumentTransition(
+        "DELETED",
+        restoreStatus
+    );
+
+    return prisma.document.update({where:{id:documentId,},data:{status:restoreStatus,isDeleted:false,deletedAt:null,deletedById:null,},});
+};
+
+/*
+ * Crash recovery for publication.
+ *
+ * publishDraft commits the SUBMITTED transition and then
+ * dispatches processing outside the transaction. If the
+ * process dies in between, the document rests in SUBMITTED
+ * with no job queued, and no request-driven path can
+ * recover it (getDraftDocument rejects SUBMITTED and
+ * reprocessDocument requires FAILED).
+ *
+ * SUBMITTED is a transient state — no document should rest
+ * in it — so any SUBMITTED document found at startup is
+ * stranded and is re-dispatched. The guarded PROCESSING
+ * write in processDocument makes a redundant dispatch a
+ * 409 no-op, so reconciling a document that another
+ * instance is already dispatching is harmless.
+ */
+export const recoverStrandedPublications = async () => {
+    const stranded = await prisma.document.findMany({
+        where: {
+            status: "SUBMITTED",
+            isDeleted: false,
+        },
+        select: {
+            id: true,
+            currentVersionId: true,
+        },
+    });
+
+    let recovered = 0;
+
+    for (const document of stranded) {
+        if (!document.currentVersionId) {
+            continue;
+        }
+        try {
+            await dispatchDocumentProcessing({
+                documentId: document.id,
+                versionId: document.currentVersionId,
+            });
+            recovered += 1;
+            console.log(
+                `DOCUMENT RECOVERY: re-dispatched stranded publication ${document.id}`
+            );
+        } catch (error) {
+            console.error(
+                `DOCUMENT RECOVERY: failed to re-dispatch stranded publication ${document.id}:`,
+                error.message
+            );
+        }
+    }
+
+    return {
+        strandedDocuments: stranded.length,
+        recoveredDocuments: recovered,
+    };
 };
 
 export const cleanupDeletedDocument = async(user,documentId)=>{
@@ -572,6 +691,7 @@ export const uploadDocumentVersion = async(user,documentId,file)=>{
     const document = await getActiveDocument(user,documentId);
     await authorizeDocumentAction(user,documentId,"MANAGE_ACCESS");
     if(document.status!=="READY") throw new ApiError(400,"New versions can only be uploaded for published documents.");
+    validateDocumentTransition(document.status,"QUEUED");
     const versionId=randomUUID();
     const objectKey=`organizations/${user.unit.organizationId}/documents/${documentId}/${versionId}`;
     let version;

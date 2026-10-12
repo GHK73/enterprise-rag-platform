@@ -3,16 +3,21 @@ import config from "../config/config.js";
 
 const LOGIN_RATE_LIMIT_PREFIX = "rag:login";
 
-const LOGIN_EMAIL_MAX_ATTEMPTS = 5;
-const LOGIN_IP_MAX_ATTEMPTS = 20;
+const LOGIN_EMAIL_MAX_ATTEMPTS =
+    config.rateLimit.login.emailMaxAttempts;
+const LOGIN_IP_MAX_ATTEMPTS =
+    config.rateLimit.login.ipMaxAttempts;
 
-const LOGIN_WINDOW_SECONDS = 15 * 60;
+const LOGIN_WINDOW_SECONDS =
+    config.rateLimit.login.windowSeconds;
 
 const REGISTRATION_RATE_LIMIT_PREFIX = "rag:registration";
 
-const REGISTRATION_IP_MAX_ATTEMPTS = 5;
+const REGISTRATION_IP_MAX_ATTEMPTS =
+    config.rateLimit.registration.ipMaxAttempts;
 
-const REGISTRATION_WINDOW_SECONDS = 15 * 60;
+const REGISTRATION_WINDOW_SECONDS =
+    config.rateLimit.registration.windowSeconds;
 
 const normalizeEmail = (email) => {
     return email.trim().toLowerCase();

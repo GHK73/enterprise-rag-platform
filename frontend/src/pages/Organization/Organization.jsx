@@ -169,6 +169,7 @@ const Organization = () => {
 
     }, [
         selectedUnit,
+        capacity,
     ]);
 
 

@@ -96,6 +96,16 @@ function Navbar() {
                                 </NavLink>
 
                                 <NavLink
+                                    to="/documents/queue"
+                                    onClick={closeMenu}
+                                    className={({ isActive }) =>
+                                        isActive ? "active-nav-link" : ""
+                                    }
+                                >
+                                    Processing Queue
+                                </NavLink>
+
+                                <NavLink
                                     to="/permissions"
                                     onClick={closeMenu}
                                     className={({ isActive }) =>

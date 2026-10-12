@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import SelectedFileCard from "./SelectedFileCard";
 
 const UploadCard = ({
@@ -9,12 +10,22 @@ const UploadCard = ({
     onRemove,
     buttonText = "Upload File",
 }) => {
+    const fileInputRef = useRef(null);
+
+    const handleFileChange = (event) => {
+        onFileSelection(event);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    };
+
     return (
         <div className="upload-card">
 
             <input
                 type="file"
-                onChange={onFileSelection}
+                ref={fileInputRef}
+                onChange={handleFileChange}
             />
 
             <SelectedFileCard

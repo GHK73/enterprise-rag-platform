@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "test": "node --test tests/",
     "bench:redis": "node scripts/bench-redis.mjs"
   },
   "keywords": [],

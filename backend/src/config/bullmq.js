@@ -3,7 +3,6 @@ import { Queue } from "bullmq";
 import config from "./config.js";
 import redisConnection from "./redis.js";
 
-let connection = null;
 let bullmqConnection = null;
 let documentProcessingQueue = null;
 
@@ -13,8 +12,6 @@ if (config.redis.enabled) {
         maxRetriesPerRequest: null,
         enableOfflineQueue: true,
     };
-
-    connection = bullmqConnection;
 
     documentProcessingQueue = new Queue(
         "document-processing",
@@ -56,7 +53,6 @@ if (config.redis.enabled) {
 }
 
 export {
-    connection,
     bullmqConnection,
     documentProcessingQueue,
 };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import {
     getDocumentById,
@@ -15,6 +15,12 @@ import { useNavigate } from "react-router-dom";
 import DeleteDocumentDialog from "./components/DeleteDocumentDialog";
 import PublishConfirmationDialog from "./components/PublishConfirmationDialog.jsx";
 import { deleteDraftUpload } from "../../api/document.api";
+import DocumentHeader from "./components/DocumentHeader";
+import StatusBadge from "./components/StatusBadge";
+import UploadCard from "./components/UploadCard";
+import DocumentAccess from "./components/DocumentAccess";
+import DocumentAccessHistory from "./components/DocumentAccessHistory";
+import RestoreDocumentDialog from "./components/RestoreDocumentDialog";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
@@ -73,17 +79,14 @@ const DocumentDetails = () => {
         setShowRestoreDialog,
     ] = useState(false);
 
-    const [
-        showCleanupDialog,
-        setShowCleanupDialog,
-    ] = useState(false);
-
     const [showPublishDialog, setShowPublishDialog] =
         useState(false);
 
     const [removingFile, setRemovingFile] = useState(false);
 
-    const loadDocument = async (includeDeleted = false) => {
+    const [actionError, setActionError] = useState("");
+
+    const loadDocument = useCallback(async (includeDeleted = false) => {
         try {
             setLoading(true);
 
@@ -99,7 +102,7 @@ const DocumentDetails = () => {
         } catch (err) {
             // If not found and not already trying with includeDeleted, retry with includeDeleted
             if (err.response?.status === 404 && !includeDeleted) {
-                return loadDocument(true);
+                return getDocumentById(documentId, true).then(setDocument).finally(() => setLoading(false));
             }
             setPageError(
                 err?.response?.data?.message ||
@@ -108,9 +111,9 @@ const DocumentDetails = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [documentId]);
 
-    const loadVersions = async () => {
+    const loadVersions = useCallback(async () => {
         try {
             const response =
                 await getDocumentVersions(
@@ -121,7 +124,7 @@ const DocumentDetails = () => {
         } catch {
             setVersions([]);
         }
-    };
+    }, [documentId]);
     const handlePublish = async () => {
         try {
             setPublishing(true);
@@ -258,30 +261,18 @@ const handleRestore =
         }
     };
 
-const handleCleanup =
-    async () => {
+    const handleCleanup = async () => {
         try {
-
             setDeleting(true);
-
-            await cleanupDeletedDocument(
-                documentId
-            );
-
+            await cleanupDeletedDocument(documentId);
             navigate("/documents");
-
         } catch (err) {
-
             setActionError(
-                err?.response?.data
-                    ?.message ||
+                err?.response?.data?.message ||
                     "Failed to permanently delete document."
             );
-
         } finally {
-
             setDeleting(false);
-
         }
     };
 
@@ -390,14 +381,39 @@ const handleCleanup =
         }
     };
 
+    const handleVersionDownload = async (versionId) => {
+        try {
+            setDownloading(true);
+            setActionError("");
+
+            const response = await downloadDocument(documentId, versionId);
+
+            window.open(response.downloadUrl, "_blank");
+        } catch (err) {
+            setActionError(
+                err?.response?.data?.message ||
+                    "Failed to download document version."
+            );
+        } finally {
+            setDownloading(false);
+        }
+    };
+
     useEffect(() => {
-        loadDocument();
-        loadVersions();
-        setShowUploadSection(false);
-        setSelectedVersionFile(null);
-        setVersionUploadProgress(0);
-        setActionError("");
-    }, [documentId]);
+        let mounted = true;
+        async function initialize() {
+            await loadDocument();
+            await loadVersions();
+            if (mounted) {
+                setShowUploadSection(false);
+                setSelectedVersionFile(null);
+                setVersionUploadProgress(0);
+                setActionError("");
+            }
+        }
+        initialize();
+        return () => { mounted = false; };
+    }, [documentId, loadDocument, loadVersions]);
 
     useEffect(() => {
         if (
@@ -410,15 +426,15 @@ const handleCleanup =
             return;
         }
 
-        const interval = setInterval(() => {
-            loadDocument(true);
-            loadVersions();
+        const interval = setInterval(async () => {
+            await loadDocument(true);
+            await loadVersions();
         }, 3000);
 
         return () => {
             clearInterval(interval);
         };
-    }, [document]);
+    }, [document, loadDocument, loadVersions]);
     if (loading) {
         return (
             <div className="document-details-page">
@@ -485,11 +501,7 @@ const handleCleanup =
 
                         <button
                             className="danger-button"
-                            onClick={() =>
-                                setShowCleanupDialog(
-                                    true
-                                )
-                            }
+                            onClick={handleCleanup}
                         >
                             Delete Forever
                         </button>

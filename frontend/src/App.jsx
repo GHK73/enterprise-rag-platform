@@ -10,6 +10,7 @@ import PublicLayout from "./layouts/PublicLayout";
 import Home from "./pages/Home/Home";
 import Login from "./pages/Login/Login";
 import Register from "./pages/Register/Register";
+import NotFound from "./pages/NotFound/NotFound";
 
 import Dashboard from "./pages/Dashboard/Dashboard";
 import CreateOrganization from "./pages/CreateOrganization/CreateOrganization";
@@ -93,9 +94,10 @@ function App() {
                     element={<Invitations />}
                 />
 
-                {documentRoutes}
+{documentRoutes}
                 {queryRoutes}
 
+                <Route path="*" element={<NotFound />} />
             </Route>
 
         </Routes>

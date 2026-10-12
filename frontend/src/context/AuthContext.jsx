@@ -7,6 +7,7 @@ import {
 } from "react";
 import api from "../api/axios";
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext();
 
 function AuthProvider({ children }) {
@@ -44,7 +45,7 @@ function AuthProvider({ children }) {
 
             try {
                 await refreshUser();
-            } catch (error) {
+            } catch {
                 logout();
             } finally {
                 setLoading(false);

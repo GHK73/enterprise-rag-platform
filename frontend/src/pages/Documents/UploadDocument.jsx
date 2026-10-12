@@ -19,6 +19,12 @@ const UploadDocument = () => {
     const navigate = useNavigate();
 
     const [error, setError] = useState("");
+    const [loading, setLoading] = useState(true);
+    const [document, setDocument] = useState(null);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [removing, setRemoving] = useState(false);
 
     const hasUploadedFile = Boolean(document?.currentVersionId);
 

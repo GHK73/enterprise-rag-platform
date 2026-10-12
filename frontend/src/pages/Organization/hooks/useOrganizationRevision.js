@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 
 import api from "../../../api/axios";
 
@@ -43,37 +43,35 @@ const useOrganizationRevision = ({
             return response.data.data.revision;
         };
 
-        const syncOrganizationRevision =
-        async () => {
-    
+const syncOrganizationRevision = useCallback(async () => {
+
             try {
-    
+
                 const revision =
                     await fetchRevision();
-    
-    
+
+
                 setOrganizationRevision(
                     revision
                 );
-    
-    
+
+
                 setLatestOrganizationRevision(
                     revision
                 );
-    
+
             }
             catch (error) {
-    
+
                 setError(
                     error.response?.data
                         ?.message ||
                     "Failed to synchronize organization revision."
                 );
             }
-        };
+        }, [setError]);
 
-    const handleCheckRevision =
-        async () => {
+    const handleCheckRevision = useCallback(async () => {
 
             try {
 
@@ -102,7 +100,7 @@ const useOrganizationRevision = ({
                     false
                 );
             }
-        };
+        }, [setError]);
 
     const handleRefreshOrganizationChanges =
         async () => {
@@ -195,10 +193,11 @@ const useOrganizationRevision = ({
         };
 
     useEffect(() => {
-
-        syncOrganizationRevision();
-
-    }, []);
+        async function initialize() {
+            await syncOrganizationRevision();
+        }
+        initialize();
+    }, [syncOrganizationRevision]);
 
     useEffect(() => {
 
@@ -213,7 +212,7 @@ const useOrganizationRevision = ({
                 interval
             );
 
-    }, []);
+    }, [handleCheckRevision]);
 
     useEffect(() => {
 
@@ -239,7 +238,7 @@ const useOrganizationRevision = ({
                 handleVisibilityChange
             );
 
-    }, []);
+    }, [handleCheckRevision]);
 
     const hasOrganizationUpdates =
         useMemo(() => {

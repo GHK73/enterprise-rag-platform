@@ -10,12 +10,33 @@ export const validClassifications = [
     "RESTRICTED",
 ];
 
+/*
+ * Authoritative document lifecycle state machine.
+ *
+ * Every state-changing operation must validate its transition
+ * against this table. Do not introduce a second copy of the
+ * table in another module — see docs/DEVELOPMENT.md,
+ * Phase Overview.
+ *
+ * API-initiated transitions are validated with
+ * validateDocumentTransition. Worker-initiated transitions
+ * (QUEUED/SUBMITTED/FAILED -> PROCESSING, PROCESSING ->
+ * READY/FAILED) are enforced by guarded conditional writes
+ * in documentProcessing.service.js, which only match when
+ * the document is in an allowed source state.
+ *
+ * Terminal states: EXPIRED (physical cleanup only) and DELETED
+ * (restore or physical cleanup only).
+ */
 export const validDocumentTransitions = {
-    DRAFT:["SUBMITTED","EXPIRED"],
-    SUBMITTED:["QUEUED"],
-    QUEUED:["PROCESSING"],
-    PROCESSING:["READY","FAILED"],
-    READY:["DELETED"],
+    DRAFT: ["SUBMITTED", "EXPIRED"],
+    SUBMITTED: ["PROCESSING", "FAILED", "DELETED"],
+    QUEUED: ["PROCESSING", "FAILED", "DELETED"],
+    PROCESSING: ["READY", "FAILED", "DELETED"],
+    READY: ["QUEUED", "DELETED"],
+    FAILED: ["QUEUED", "PROCESSING", "DELETED"],
+    DELETED: ["READY", "FAILED"],
+    EXPIRED: [],
 };
 
 export const validateOrganizationMembership = (user)=>{
@@ -120,16 +141,21 @@ export const validateDocumentTransition = (currentStatus,nextStatus)=>{
     return true;
 };
 
+/*
+ * Deleting a draft upload must null Document.currentVersionId
+ * before deleting the version row: the relation is
+ * onDelete: Restrict, so deleting the version first is rejected
+ * while currentVersionId still points at it.
+ */
 export const cleanupDraftUpload = async(tx,document,version)=>{
-    await tx.documentVersion.delete({
-        where:{id:version.id,},
-    });
-
     await tx.document.update({
         where:{id:document.id,},
         data:{
             currentVersionId:null,
         },
+    });
+    await tx.documentVersion.delete({
+        where:{id:version.id,},
     });
 };
 

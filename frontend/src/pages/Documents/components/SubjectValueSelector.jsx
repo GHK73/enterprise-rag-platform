@@ -53,10 +53,6 @@ const SubjectValueSelector = ({
                         Select Role
                     </option>
 
-                    <option value="OWNER">
-                        OWNER
-                    </option>
-
                     <option value="ADMIN">
                         ADMIN
                     </option>

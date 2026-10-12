@@ -88,20 +88,13 @@ const useOrganizationData = () => {
         }, []);
 
     useEffect(() => {
-
-        refreshOrganization();
-
+        async function initialize() {
+            await refreshOrganization();
+        }
+        initialize();
     }, [refreshOrganization]);
 
-    const clearMessages =
-        () => {
-
-            setError("");
-
-            setMessage("");
-        };
-
-        return {
+    return {
 
             organization,
         

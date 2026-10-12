@@ -1,6 +1,7 @@
 import {
     useEffect,
     useState,
+    useCallback,
 } from "react";
 
 import {
@@ -15,6 +16,7 @@ import api from "../../../api/axios";
 
 import AccessPolicyForm from "./AccessPolicyForm";
 import AccessPolicyTable from "./AccessPolicyTable";
+import RevokeAccessDialog from "./RevokeAccessDialog";
 
 const DocumentAccess = ({
     documentId,
@@ -50,12 +52,13 @@ const DocumentAccess = ({
         setPolicyToRevoke,
     ] = useState(null);
 
-    const [revokeReason, setRevokeReason] =
+const [revokeReason, setRevokeReason] =
         useState("");
 
+    const [editingPolicy, setEditingPolicy] = useState(null);
 
-    const loadAccessPolicies =
-        async () => {
+
+const loadAccessPolicies = useCallback(async () => {
             try {
                 const response =
                     await getDocumentAccessPolicies(
@@ -68,10 +71,9 @@ const DocumentAccess = ({
             } catch {
                 setPolicies([]);
             }
-        };
+        }, [documentId]);
 
-    const loadOrganizationData =
-        async () => {
+    const loadOrganizationData = useCallback(async () => {
             try {
                 const [
                     organizationResponse,
@@ -108,18 +110,16 @@ const DocumentAccess = ({
                 setUnits([]);
                 setMembers([]);
             }
-        };
+        }, []);
 
-    const refreshData =
-        async () => {
+    const refreshData = useCallback(async () => {
             await Promise.all([
                 loadAccessPolicies(),
                 loadOrganizationData(),
             ]);
-        };
+        }, [loadAccessPolicies, loadOrganizationData]);
 
-    const loadData =
-        async () => {
+    const loadData = useCallback(async () => {
             try {
                 setLoading(true);
                 setError("");
@@ -134,7 +134,7 @@ const DocumentAccess = ({
             } finally {
                 setLoading(false);
             }
-        };
+        }, [refreshData]);
 
     const handleSubmit =
         async (accessData, isTemporary) => {
@@ -238,8 +238,11 @@ const DocumentAccess = ({
     };
 
     useEffect(() => {
-        loadData();
-    }, [documentId]);
+        async function initialize() {
+            await loadData();
+        }
+        initialize();
+    }, [documentId, loadData]);
 
     if (loading) {
         return (
