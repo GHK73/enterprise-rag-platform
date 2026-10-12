@@ -29,13 +29,14 @@ const Invitations = () => {
 
     useEffect(()=>{
         const fetchInvitationData = async()=>{
-            if(!user){
-                return;
-            }
-
             try{
                 setLoading(true);
                 setError("");
+
+                if(!user){
+                    setLoading(false);
+                    return;
+                }
 
                 if(hasOrganization){
                     const [

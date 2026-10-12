@@ -140,12 +140,12 @@ const MembersPanel = ({
                                                             }
                                                         >
 
-                                                            <option value="OWNER">
-                                                                OWNER
-                                                            </option>
-
                                                             <option value="ADMIN">
                                                                 ADMIN
+                                                            </option>
+
+                                                            <option value="MANAGER">
+                                                                MANAGER
                                                             </option>
 
                                                             <option value="MEMBER">

@@ -14,10 +14,15 @@ import {
     loginRateLimiter,
 } from "../middleware/loginRateLimit.middleware.js";
 
+import {
+    registrationRateLimiter,
+} from "../middleware/registrationRateLimit.middleware.js";
+
 const router = Router();
 
 router.post(
     "/register",
+    registrationRateLimiter,
     register
 );
 

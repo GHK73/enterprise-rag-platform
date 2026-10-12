@@ -9,7 +9,9 @@ async def main():
     request = ProcessDocumentRequest(
         document_id="test-document-001",
         version_id="test-version-001",
+        organization_id="test-org",
         file_url="http://127.0.0.1:9000/sample.pdf",
+        file_name="sample.pdf",
     )
 
     response = await processing_service.process_document(

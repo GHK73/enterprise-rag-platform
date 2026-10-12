@@ -1,5 +1,6 @@
 // backend/src/services/query/queryHistory.service.js
 import prisma from "../../config/prisma.js";
+import ApiError from "../../utils/ApiError.js";
 
 export const getQueryHistory = async (
     user,
@@ -9,7 +10,8 @@ export const getQueryHistory = async (
     const organizationId = user?.unit?.organizationId;
 
     if (!organizationId) {
-        throw new Error(
+        throw new ApiError(
+            403,
             "User organization could not be determined."
         );
     }

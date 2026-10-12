@@ -45,10 +45,6 @@ Issues that do not belong to a single defect, gap, or dead-code entry.
 
 - The rate limiter **fails open** when Redis is unavailable, so a Redis outage disables rate
   limiting rather than blocking traffic. Intentional, to keep the API available.
-- `validateTemporaryAccess` (`documentAccess.service.js:381-385`) throws `new ApiError(400, )`
-  with no message argument, so a temporary grant longer than the 7-day maximum
-  (`MAX_TEMPORARY_ACCESS_DAYS`, `:19`) returns a 400 with an empty message. The template literal
-  naming the limit was lost in the 2026-10-04 reformat.
 - `markProcessingFailed` accepts an `error` argument and discards it. There is no
   `processingError` column in the schema, so failure detail is log-only and a persisted
   reason is still needed for the UI.
@@ -60,30 +56,6 @@ Issues that do not belong to a single defect, gap, or dead-code entry.
 Found by a full read-through audit on 2026-09-30 and re-verified against the current code on
 2026-10-04. Defects resolved since the audit are recorded under Recent Changes with their dates.
 
-### 1. The query response payload is inverted
-
-`ApiResponse` takes `(statusCode, message, data)` (`utils/ApiResponse.js:4-13`), but
-`query.controller.js:47-61` calls
-`new ApiResponse(200, { query, answer, sources, ... }, "Query executed successfully.")`. The
-answer object lands in `message` and the string lands in `data`.
-
-The documented response shape (`data: { query, answer, sources, evidence, usedLLM,
-outputGuardPassed }`) is not produced; a client reading `response.data.answer` gets
-`undefined`. The two 400 branches have the mirror-image problem, passing `null` as the message
-and the error string as data. `queryHistory.controller.js:51-61` has the same inversion. Every
-other controller in the codebase uses the correct order.
-
-### 2. The security system prompt is never sent to the LLM
-
-`prompt.service.js:1` defines a 190-line `buildSystemPrompt()` covering the trust boundary,
-prompt-injection resistance, no chain-of-thought, and citation rules. It is imported nowhere in
-the repository. `llm.service.js` builds a `ConverseCommand` whose `messages` array contains a
-single `role: "user"` entry and no system content.
-
-Untrusted document text therefore reaches the model with no instruction establishing that it is
-data rather than instruction. The defences exist as dead code.
-
----
 
 ## Authorization Gaps
 
@@ -126,59 +98,21 @@ and rejects users with no unit before evaluating any policy.
   `Date.now()` to the BullMQ `jobId` so a re-dispatch is accepted instead of being silently
   dropped, but that also removes deduplication for a retried or double-clicked dispatch, which
   now queues a second identical job.
-- **Registration is not rate limited** — `POST /login` is protected, but `POST /register` is not,
-  so unlimited account creation remains possible. `express-rate-limit` is a dependency and is
-  used nowhere.
-- **Reprocess route is not rate limited** — `POST /:documentId/versions/:versionId/reprocess` is
-  authorized and re-dispatchable but is not covered by `documentUploadRateLimiter`, unlike the
-  two other dispatching routes.
 - **The access-scope fingerprint runs on every query** — `getQueryAccessScopeFingerprint` issues
   a full `QUERY` policy scan plus a unit-hierarchy walk per request. Correct, but it is a
   per-request database cost on the hot path and should be measured.
-- **Audit-log race condition** — `getDocumentAccessPolicy` (`documentHelpers.js:136`) uses the
-  global Prisma client rather than the transaction passed by its caller, so two concurrent
-  revocations can both read `isActive: true` and both write a `REVOKED` audit record.
 - **Divergent lifecycle transition tables** — `documentHelpers.validDocumentTransitions`
   (`READY: ["DELETED"]`) omits `READY → "QUEUED"`, which `documentLifecycle.service.js:41-47`
   includes. The helper's copy is exported and would reject a legitimate version upload. Neither
   table lists `QUEUED → "FAILED"`, which `uploadDocumentVersion` now writes on dispatch failure;
   no validator is consulted on that path, so it is not rejected. The validator is also only ever
   applied to the `→ SUBMITTED` hop, never to the transitions that actually move a document.
-- **Plain `Error` instead of `ApiError`** — `query.service.js`, `queryHistory.service.js`,
-  `llm.service.js`, and `prompt.service.js` throw bare `Error` for missing organization,
-  `PROMPT_REQUIRED`, `CONTEXT_REQUIRED`, and `EMPTY_LLM_RESPONSE`. `error.middleware.js` reads
-  `err.statusCode || 500`, so all of these return 500 instead of 400/403.
-- **Query history can lose a paid answer** — `saveQueryHistory` (`query.service.js:24`) runs
-  after generation; if the insert fails the whole request 500s and the completed LLM response is
-  discarded.
-- **Multer errors surface as 500** — `upload.middleware.js` enforces a 25 MB limit, but
-  `MulterError` has no `statusCode`, so an oversized upload returns 500 instead of 413.
-- **`retryAfter` is dropped and nothing is logged** — `error.middleware.js` serialises only
-  `{ success, message }`, discarding `error.retryAfter` set by the rate limiter, and never logs
-  the error or its stack. Every 500 in the system is currently unlogged.
-- **Redis outage stalls every Redis-backed request by ~10 s** — `config/redis.js:15-20` sets
-  `maxRetriesPerRequest: 10` with `commandTimeout: 10000` on the shared client, so a command issued
-  while disconnected waits for the full 10 s command timeout before it rejects. The fail-open
-  `catch` blocks are correct, but they only run after that stall, so a Redis outage does not take
-  the API down — it makes every rate-limited, cached, and login path hang. `commandTimeout`, not the
-  retry count, is what dominates: the retries never exhaust first. Measured at 10007.6 ms against a
-  refused endpoint and 10007.3 ms against a blackholed route, versus 39.7 ms median for the same
-  call with Redis healthy. Setting `enableOfflineQueue: false` on the shared client reduces the
-  outage path to ~0.1 ms; it must be overridden back to `true` for `bullmqConnection`, which needs to
-  queue commands while reconnecting. Not applied — see Recent Changes 2026-10-05.
-- **Redis TLS is unconditional** — `config/redis.js:10` sets `tls` regardless of
-  `config.redis.enabled` or whether the target speaks TLS. Harmless for the current deployment,
-  which is Upstash over TLS, but it breaks any plain local Redis.
 - **Redis is a single shared dependency with no fallback for reads** — both query caches and both
-  rate limiters degrade, but there is no circuit breaker, so every request during an outage pays
-  the full 10 s rather than being short-circuited at the middleware.
-- **Storage bucket is ignored** — `getDownloadUrlFromS3` uses `config.aws.bucket` and never
-  reads the persisted `version.storageBucket`, so a bucket rotation would produce 404s.
+  rate limiters degrade, but there is no circuit breaker, so every request during an outage is
+  short-circuited only by the fail-open `catch` blocks at the middleware/service layer.
 
 ## Dead Code
 
-- `prompt.service.js::buildSystemPrompt` — never imported. Its absence from the Bedrock call is
-  Blocking Defect 2.
 - `config/ai.js` (`aiClient`) — never imported; `documentAI.service.js` and `queryAI.service.js`
   create ad-hoc clients with inconsistent timeouts.
 - `authRateLimit.service.js::getLoginRateLimitConfig` — never imported; the thresholds are

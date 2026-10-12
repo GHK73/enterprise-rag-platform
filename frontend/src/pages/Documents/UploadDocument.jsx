@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { uploadDraft } from "../../api/document.api";
+import { uploadDraft, deleteDraftUpload, getDocumentById } from "../../api/document.api";
 import UploadCard from "./components/UploadCard";
 import "./UploadDocument.css";
 
@@ -18,43 +18,78 @@ const UploadDocument = () => {
 
     const navigate = useNavigate();
 
-    const [selectedFile, setSelectedFile] =
-        useState(null);
+    const [error, setError] = useState("");
 
-    const [uploading, setUploading] =
-        useState(false);
+    const hasUploadedFile = Boolean(document?.currentVersionId);
 
-    const [uploadProgress, setUploadProgress] = useState(0);
+    useEffect(() => {
+        const loadDraft = async () => {
+            try {
+                setLoading(true);
+                setError("");
+                const response = await getDocumentById(
+                    documentId,
+                    true
+                );
+                setDocument(response);
+            } catch (err) {
+                setError(
+                    err?.response?.data?.message ||
+                        "Failed to load draft."
+                );
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    const [error, setError] =
-        useState("");
+        loadDraft();
+    }, [documentId]);
+
     const handleFileSelection = (event) => {
-        const file = event.target.files[0];        
+        const file = event.target.files[0];
         if (!file) {
             return;
         }
-        setError("");    
+        setError("");
         if (!ALLOWED_TYPES.includes(file.type)) {
-            setSelectedFile(null);    
+            setSelectedFile(null);
             setError(
                 "Only PDF, TXT, DOC and DOCX files are supported."
-            );        
+            );
             return;
-       }    
+        }
         if (file.size > MAX_FILE_SIZE) {
-            setSelectedFile(null);    
-            setError(
-                "Maximum file size is 25 MB."
-            );    
+            setSelectedFile(null);
+            setError("Maximum file size is 25 MB.");
             return;
-        }        
+        }
         setSelectedFile(file);
     };
 
     const handleRemoveFile = () => {
         setSelectedFile(null);
-    
         setError("");
+    };
+
+    const handleRemoveUploadedFile = async () => {
+        try {
+            setRemoving(true);
+            setError("");
+            await deleteDraftUpload(documentId);
+            const response = await getDocumentById(
+                documentId,
+                true
+            );
+            setDocument(response);
+            setSelectedFile(null);
+        } catch (err) {
+            setError(
+                err?.response?.data?.message ||
+                    "Failed to remove uploaded file."
+            );
+        } finally {
+            setRemoving(false);
+        }
     };
 
     const handleUpload = async () => {
@@ -109,21 +144,70 @@ const UploadDocument = () => {
                 </p>
             </div>
 
+            {document && (
+                <div className="upload-document-info">
+                    <p>
+                        <strong>Title:</strong>{" "}
+                        {document.title}
+                    </p>
+                    {document.status && (
+                        <p>
+                            <strong>Status:</strong>{" "}
+                            {document.status}
+                        </p>
+                    )}
+                    {document.draftExpiresAt && (
+                        <p>
+                            <strong>Draft expires:</strong>{" "}
+                            {new Date(
+                                document.draftExpiresAt
+                            ).toLocaleString()}
+                        </p>
+                    )}
+                    {hasUploadedFile && (
+                        <div className="upload-existing-file">
+                            <p>
+                                This draft already has an uploaded
+                                file.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={
+                                    handleRemoveUploadedFile
+                                }
+                                disabled={removing || uploading}
+                                className="secondary"
+                            >
+                                {removing
+                                    ? "Removing..."
+                                    : "Remove Uploaded File"}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {error && (
                 <div className="upload-error">
                     {error}
                 </div>
             )}
 
-            <UploadCard
-                selectedFile={selectedFile}
-                uploading={uploading}
-                uploadProgress={uploadProgress}
-                onFileSelection={handleFileSelection}
-                onUpload={handleUpload}
-                onRemove={handleRemoveFile}
-                buttonText="Upload Draft"
-            />
+            {!loading && (
+                <UploadCard
+                    selectedFile={selectedFile}
+                    uploading={uploading}
+                    uploadProgress={uploadProgress}
+                    onFileSelection={handleFileSelection}
+                    onUpload={handleUpload}
+                    onRemove={handleRemoveFile}
+                    buttonText={
+                        hasUploadedFile
+                            ? "Replace File"
+                            : "Upload Draft"
+                    }
+                />
+            )}
         </div>
     );
 };

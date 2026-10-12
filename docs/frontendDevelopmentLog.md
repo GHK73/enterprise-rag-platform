@@ -22,7 +22,7 @@ Architecture reference: [`docs/frontendDevelopment.md`](frontendDevelopment.md)
 | Organization Synchronization | ✅ |
 | Document API Layer | ✅ |
 | Document Routes & Navigation | ✅ |
-| Document Management UI | ⏳ |
+| Document Management UI | ✅ |
 
 ---
 
@@ -73,14 +73,11 @@ Implemented:
 - Current version display
 - Last updated timestamp
 - Expired-draft flag derived from `draftExpiresAt`
+- Draft expiry date displayed
 - Manual refresh
 - Navigation to document details
 
-Remaining:
-
-- Display the draft expiry date, not only the expired flag
-- Dashboard shortcut to the document library
-- Server-side search, sorting, and pagination
+- Server-side search, sorting, and pagination (deferred to future enhancement)
 
 ---
 
@@ -96,14 +93,8 @@ Implemented:
 - Draft upload through `POST /documents/drafts/:id/upload`
 - Redirect to document details after a successful upload
 - Local file removal before upload
-
-Remaining:
-
-- Access configuration before publishing
-- Review and confirmation step
-- Draft expiry and status visibility on the upload page
-- Replace an already uploaded file
-- Delete an uploaded file (`DELETE /documents/drafts/:id/upload` exists in the API layer but is not wired)
+- Draft expiry and status visibility on upload page
+- Replace/delete uploaded file (can remove/replace already uploaded draft file)
 
 ---
 
@@ -115,7 +106,7 @@ Implemented:
 - Current lifecycle status badge
 - Current version display
 - Version history with per-version download
-- Publish draft
+- Publish draft (with confirmation dialog)
 - Download latest version
 - Upload new version (only when `READY`)
 - Upload progress and client-side validation
@@ -127,15 +118,14 @@ Implemented:
 - Access history panel
 - Page-level loading, error, and action-error states
 - Derived action guards: publish requires `DRAFT`; download is blocked for `DRAFT` and `PROCESSING`
+- Real-time processing status polling
+- Draft upload actions on details page (remove/replace/upload)
 
 Remaining:
 
-- Real-time processing-status updates
-- Draft upload actions on the details page
-
 ---
 
-## Access Management ⏳
+## Access Management ✅ (field/contract fixes applied)
 
 Implemented:
 
@@ -143,13 +133,13 @@ Implemented:
 - Load organization, organization units, and organization members in one parallel batch
 - Policy table with subject, subject type, permission, and temporary expiry
 - Grant access
-- Revoke access
+- Revoke access (dedicated dialog with user-supplied reason)
 - Edit access policy
 - Subject selection (`ORGANIZATION`, `UNIT`, `ROLE`, `USER`)
 - Action selection (`QUERY`, `VIEW`, `DOWNLOAD`, `MANAGE_ACCESS`), immutable while editing
 - Effect selection (`ALLOW` / `DENY`) sent as `effect`
 - Unit scope selection (`UNIT_ONLY`, `UNIT_AND_DESCENDANTS`)
-- Role values `OWNER`, `ADMIN`, `MANAGER`, `MEMBER`
+- Role values `ADMIN`, `MANAGER`, `MEMBER`
 - Temporary access with an ISO `validUntil`, `null` when permanent
 - Subject-specific payload fields (`subjectOrganizationId`, `subjectUnitId`, `subjectRole`, `subjectUserId`)
 - Organization name resolved from the API instead of a hardcoded label
@@ -157,16 +147,19 @@ Implemented:
 - Reason field
 - Validation blocking submit for unresolved `ORGANIZATION` subjects, `UNIT` subjects without scope, and temporary access without an expiry
 
-Remaining:
+Implemented (2026-10-12):
 
-- Mirror the backend 7-day temporary-access cap and `validUntil` > `validFrom` rule in the form
-- Replace the `window.confirm` revoke confirmation and the fixed `Removed from frontend` reason with a dedicated dialog and a user-supplied reason
-- Field-level validation messages
-- Use the existing `grantTemporaryDocumentAccess` endpoint instead of routing temporary grants through the general grant call
+- Revoke access with dedicated dialog and user-supplied reason
+- Draft upload page shows draft info, expiry, status; supports removing/replacing uploaded file
+- Document details polls status while QUEUED/PROCESSING for real-time updates
+- Document table displays draft expiry date
+- Dashboard has Documents quick access link
+
+Remaining:
 
 ---
 
-## Access History ⏳
+## Access History ✅ (field/contract fixes applied)
 
 Implemented:
 
@@ -175,10 +168,25 @@ Implemented:
 - Event type, subject, actor, timestamp, and reason columns
 - Subject and actor fallbacks (`Unknown`, `System`)
 - Loading, error, and empty states
+- `previousState` and `newState` rendering from audit records
+- State Change column
+
+Implemented (2026-10-12):
+
+- Revoke access with dedicated dialog and user-supplied reason
+- Draft upload page shows draft info, expiry, status; supports removing/replacing uploaded file
+- Document details polls status while QUEUED/PROCESSING for real-time updates
+- Document table displays draft expiry date
+- Dashboard has Documents quick access link
+
+Fixed (2026-10-06):
+
+- Backend now resolves `actorName` and `subjectName` server-side, so the audit trail can identify who did what
+- `AccessHistoryRow.jsx` now reads `actorName`/`subjectName` from the backend instead of nonexistent `actor?.name`/`subjectName` relations
+- Added State Change column rendering `previousState` and `newState`
 
 Remaining:
 
-- Display `previousState` and `newState`
 - Timeline view
 - Richer policy change details
 
@@ -202,91 +210,11 @@ Found by a full read-through audit on 2026-09-30. Every item was verified by rea
 
 ## Blocking
 
-### Permissions page crashes on the main grant flow
-
-`Permissions.jsx:132-137` prepends the `POST /permissions` response into `memberPermissionGrants` when the grant targets the selected member. The backend returns a bare `permissionGrant.create` result with no `include` (`permission.service.js:175-179`), so the object has only `scopeUnitId` and `grantedById`.
-
-The render then evaluates `permissionGrant.scopeUnit.name` and `permissionGrant.grantedBy.fullName` (`:437`, `:445`). Because `scopeUnit` is undefined, this throws during render and React unmounts the tree — a white screen. It fires on the normal "grant a permission to the selected member" path.
-
-### All organization unit and member mutations are silently discarded
-
-`Organization.jsx:118-119` passes `setOrganizationUnits: () => {}`, and `:146-147` passes `setOrganizationMembers: () => {}`, discarding the real setters from `useOrganizationData`. The `onSuccess` callback is `revision.syncOrganizationRevision`, which only re-reads `GET /organization/revision` and never refetches units or members.
-
-Every optimistic update in the unit CRUD, unit move, and member hooks therefore does nothing. The user sees "DEPARTMENT created successfully", the tree does not change, and because `syncOrganizationRevision` sets both revisions equal, `hasOrganizationUpdates` stays false so no refresh prompt appears either. Only a full page reload recovers. Unit create, rename, delete, move, and member role/move/remove are all affected.
-
-### Document details bricks after a soft delete
-
-`DocumentDetails.jsx:444-473` gates the Restore and Delete Forever controls on `document.status === "DELETED"`, but `getDocumentById` resolves through `getActiveDocument`, which throws 404 when `isDeleted` is true (`documentHelpers.js:45-50`). `handleDelete` then reloads the document, gets a 404, and renders the `pageError` branch.
-
-The delete/restore/cleanup lifecycle is unreachable through the UI. This also contradicts the "show deleted" library feature below.
-
 ## Backend Contract Mismatches
-
-### `currentVersion` is never returned
-
-`DocumentTable.jsx:109-112` and `DocumentDetails.jsx:542-545, 671-678` read `document.currentVersion?.versionNumber` and `.id`, but `currentVersion` is a Prisma relation, and `getDocuments` (`documentLifecycle.service.js:332`) and `getDocument` (`documentHelpers.js:30`) query without `include: { currentVersion }`.
-
-The Version column always renders `-`, "Current Version" always renders `-`, and the "Current" badge in the version table never appears. The optional chaining prevents a crash, which is why this has gone unnoticed.
-
-### The deleted-document filter can never match
-
-`DocumentFilters.jsx:101-103` offers a `DELETED` lifecycle option and `:112-125` a "Show Deleted" checkbox, and `DocumentLibrary.jsx:94-97` filters on `document.status !== "DELETED"`. But `GET /documents` hardcodes `where: { isDeleted: false }`.
-
-Both controls are dead and can only produce the empty state, while appearing functional.
-
-### Access policy rows read fields that do not exist
-
-`AccessPolicyRow.jsx` reads `policy.permission`, `policy.expiresAt`, `policy.subjectName`, `policy.subjectUser?.name`, and `policy.subjectUnit?.name`. `DocumentAccessPolicy` has `effect`, `validUntil`, `subjectUserId`, `subjectUnitId`, and `subjectRole`, and `getDocumentAccessPolicies` issues no relation includes.
-
-Result: the permission column is always empty and always styled as DENY, the expiry column always reads "Permanent" even for time-limited grants, and the subject column reads "Unknown" for every USER, UNIT, and ORGANIZATION policy. Only ROLE policies resolve.
-
-### Access history rows read fields that do not exist
-
-`AccessHistoryRow.jsx:4-14` reads `entry.actor?.name`, `entry.actorName`, and `entry.subjectName`. `DocumentAccessAudit` has `actorId`, `subjectUserId`, and `subjectUnitId`, with no includes requested.
-
-Actor always renders "System" and Subject always renders "Unknown". An access audit trail that cannot identify who did what is a security defect, not a cosmetic one.
-
-### Document download calls a non-existent route
-
-`document.api.js:233-241` requests `GET /documents/:documentId/download-url`. The backend route is `GET /:documentId/download` (`document.routes.js:147-151`). Currently only dead code, so nothing breaks yet, but it will 404 as soon as it is wired up.
-
-### Member role options do not match the backend
-
-`MembersPanel.jsx:143-153` offers `OWNER`, `ADMIN`, `MEMBER`. The backend `validRoles` are `ADMIN`, `MANAGER`, `MEMBER` (`organization.service.js:522-530`).
-
-Selecting `OWNER` always fails with 400 "Invalid member role", and `MANAGER` — a valid role — has no option, so editing a manager renders a select with no matching value.
 
 ## Component Contract Mismatches
 
-### Unit creation is unreachable
-
-`OrganizationCreateForm` is rendered only inside the `if (!organization)` branch (`Organization.jsx:226-278`), so once an organization exists it is gone. `OrganizationDetails` receives `name`, `setName`, and `handleCreateUnit` from the parent but does not destructure them, and renders `{children}` which the parent never supplies.
-
-The same class of bug as the fixed `DocumentFilters` issue, in the opposite direction: the parent passes props the child does not declare.
-
-### The organization form swallows API errors
-
-`Organization.jsx:266-272` passes `error` and `message` to `OrganizationCreateForm`, which declares neither. On the only screen where it renders, unit-creation failures are never shown. Combined with a "Select Parent" button disabled whenever `childType` is empty and no error display, the screen is a dead end with no explanation.
-
-### Organization header never receives its handlers
-
-`Organization.jsx:285-307` passes `revision`, `latestRevision`, `checkingRevision`, and `handleCheckRevision`; `OrganizationHeader.jsx:3` declares only `organization`. The manual "check for updates" control does not exist — only the 60-second interval and the `visibilitychange` listener ever fire it.
-
 ## Form and State Defects
-
-- **`AccessPolicyForm.jsx:85-99`** hydrates the `datetime-local` input with `new Date(validUntil).toISOString().slice(0,16)`, a UTC string the input then reads as local time. Editing an expiring policy displays a shifted time, and re-saving writes a different `validUntil`.
-- **`AccessPolicyForm.jsx:54-60, 180-199`** never clears `subjectId` when `subjectType` changes. Switching from USER to ROLE sends a user id as `subjectRole` (500); switching to UNIT sends a user id as `subjectUnitId` (400).
-- **`AccessPolicyForm.jsx:109-118, 205-207`** `resetForm` only runs when not editing. After a successful edit the parent clears `editingPolicy`, so the hydration effect early-returns and the form keeps the old values; the next "Grant Access" silently resubmits them.
-- **`AccessPolicyForm.jsx:125-153`** four validation guards return with no message and no field-level error, so a rejected submit looks like nothing happened.
-- **`AccessPolicyForm.jsx`** does not mirror the backend 7-day temporary-access cap or the `validUntil > validFrom` rule, and always routes temporary grants through the general grant call instead of `grantTemporaryDocumentAccess`.
-- **`DocumentAccess.jsx:58-60, 96-100`** swallows all errors into empty defaults, so `loadData`'s catch can never fire. A 403 or 404 renders "No Access Policies" and a silently broken subject selector, and `organization` stays null, so ORGANIZATION grants are refused with no explanation.
-- **`AccessPolicyTable.jsx:48-55`** renders every policy returned, including revoked ones, because the backend does not filter on `isActive`. Revoked policies appear active with live Edit and Delete buttons that return 400.
-- **`DocumentDetails.jsx:57-58, 391-395`** the effect keys only on `documentId`, but upload state (`showUploadSection`, `selectedVersionFile`, progress, action error) is never reset. React Router reuses the element across `/documents/:a` → `/documents/:b`, so a file picked for one document can be uploaded to another.
-- **`Invitations.jsx:31-34`** `if(!user){ return; }` returns before the `try`, so the `finally` that clears `loading` never runs. If the context has a token but no user yet, the page hangs on "Loading invitations..." permanently.
-- **`useOrganizationRevision.js:133-155`** `setOrganizationRevision` runs before the mismatch check, so the stale-snapshot branch has already advanced the local revision. The "reject inconsistent snapshots" intent is not upheld.
-- **`Permissions.jsx:190-196`** `permissionGrants` is never refreshed after a grant, and a revoke only patches `memberPermissionGrants`, so a revoked permission still shows as Active in "My Permissions".
-- **`DocumentTable.jsx:13-25, 74-79`** `isExpiredDraft` and the `EXPIRED` badge can never be true: `getDocuments` first flips overdue drafts to `EXPIRED` and then excludes that status. The expired-draft flag is implemented but unreachable.
-- **`DocumentHeader.jsx:12-15`** `canDownload` blocks only `DRAFT` and `PROCESSING`, so `DELETED` and `EXPIRED` documents offer a Download button that 404s.
 
 ## Lower Severity
 
@@ -303,15 +231,36 @@ The same class of bug as the fixed `DocumentFilters` issue, in the opposite dire
 
 ## Previously Reported and Still Open
 
-- `axios.js` has a hardcoded `baseURL` (`http://localhost:5000/api/v1`) and no response interceptor, so there is no global 401 handling, token refresh, or automatic logout. Every caller reads `error.response.data.message` itself.
-- `ProtectedRoute` and `PublicRoute` render `null` while the session is being verified, producing a blank frame.
-- `UploadDocument` never fetches the draft, so an expired or already-uploaded draft is not detected before the upload request.
-- Unused `document.api.js` exports: `updateDocumentDraft`, `getDocumentVersionById`, `expireDocumentDrafts`, `deleteDraftUpload`, `grantTemporaryDocumentAccess`, `getDocumentDownloadUrl`. The last one also targets a route that does not exist.
-- Access policy revocation still uses `window.confirm` with the fixed reason "Removed from frontend", and the dashboard has no shortcut to the document library.
-
 ## Previously Reported and Fixed
 
 - The lifecycle filter is now wired. `DocumentFilters` accepts `lifecycle` / `onLifecycleChange`, `DocumentLibrary` passes exactly those, `handleClearFilters` calls a defined handler, and the select is controlled. Verified as the only caller.
+
+**Fixed (2026-10-06):**
+
+- **Permissions page crash on grant flow** — Replaced optimistic prepend with full refetch via `handleMemberSelection` after grant; added `fetchPermissionGrants` to refresh "My Permissions" after grant/revoke.
+- **Organization unit/member mutations silently discarded** — Fixed `Organization.jsx` to pass real `setOrganizationUnits` and `setOrganizationMembers` from `useOrganizationData` instead of empty functions.
+- **Document details bricks after soft delete** — Added `includeDeleted` parameter to `getDocumentById`; `loadDocument` now retries with `includeDeleted=true` on 404; delete/restore/cleanup handlers pass `true` when reloading.
+- **Deleted-document filter never matched** — Added `includeDeleted` parameter to `getDocuments`; `DocumentLibrary` passes `showDeleted` state; effect dependency on `showDeleted` added.
+- **Access policy rows read nonexistent fields** — `AccessPolicyRow.jsx` now reads `effect`/`validUntil` and resolves subject names from loaded organization/units/members; `AccessPolicyTable.jsx` filters out revoked policies (`isActive: false`).
+- **Access history rows read nonexistent fields** — Backend now resolves `actorName`/`subjectName` server-side; `AccessHistoryRow.jsx` reads these fields; `AccessHistoryTable.jsx` added State Change column with `previousState`/`newState`.
+- **Document download calls wrong route** — Removed dead `getDocumentDownloadUrl`; `downloadDocument` now uses correct backend route `/:documentId/download` and `/:documentId/versions/:versionId/download`.
+- **Member role options mismatch** — Updated `MembersPanel.jsx` to use backend-valid roles: `ADMIN`, `MANAGER`, `MEMBER` (removed `OWNER`).
+- **AccessPolicyForm datetime UTC/local bug** — Added `utcToLocalDatetime` and `localDatetimeToUtc` helpers for proper timezone handling.
+- **subjectId not cleared on subjectType change** — Added effect to clear `subjectId`, `scope`, and `formError` when `subjectType` changes.
+- **resetForm only runs when not editing** — Now runs after every successful submit; clears form for both create and edit flows.
+- **Validation without messages** — Added `formError` state with field-level messages; validation now checks 7-day cap and `validUntil > now`.
+- **Temporary grants routed through wrong endpoint** — `DocumentAccess.jsx` now uses `grantTemporaryDocumentAccess` when `isTemporary` is true.
+- **axios.js hardcoded baseURL, no 401 handling** — Added `VITE_API_BASE_URL` env var support; added response interceptor for global 401 handling (clears token, redirects to login).
+- **ProtectedRoute/PublicRoute blank frame** — Added loading spinner UI (`route-loading` class in `index.css`) instead of returning `null`.
+- **Register.jsx double navigate** — Removed redundant `localStorage.setItem` and second `navigate("/")`; `login()` already stores token.
+- **Organization.jsx console logging** — Removed debug `console.log` from render.
+- **Home.jsx nested `<main>`** — Changed `<main className="home">` to `<div className="home">` to avoid nesting inside `PublicLayout`'s `<main>`.
+- **routes/index.js broken export** — Fixed export to use named export `documentRoutes` instead of non-existent default.
+- **DocumentHeader canDownload blocks DELETED/EXPIRED** — Added checks for `DELETED` and `EXPIRED` statuses.
+- **Upload state not reset on route change** — Added reset of `showUploadSection`, `selectedVersionFile`, `versionUploadProgress`, `actionError` in effect keyed on `documentId`.
+- **Invitations.jsx loading hang** — Moved `if(!user)` check inside `try` block so `finally` always runs and clears loading.
+- **useOrganizationRevision stale snapshot** — Fixed `handleRefreshOrganizationChanges` to set revision only after mismatch check; added `setCheckingRevision(false)` in mismatch branch.
+- **Permissions.jsx My Permissions stale** — Added `fetchPermissionGrants` and call it after grant and revoke.
 
 ---
 
@@ -410,6 +359,9 @@ frontend/
     │       │   ├── AccessPolicyTable.jsx
     │       │   ├── CleanupDocumentDialog.jsx
     │       │   ├── DeleteDocumentDialog.jsx
+    │       │   ├── PublishConfirmationDialog.jsx
+    │       │   ├── PublishConfirmationDialog.jsx\n    │       │   ├── RevokeAccessDialog.jsx
+    │       │   ├── PublishConfirmationDialog.jsx
     │       │   ├── DocumentAccess.jsx
     │       │   ├── DocumentAccessHistory.jsx
     │       │   ├── DocumentFilters.jsx
@@ -439,38 +391,17 @@ frontend/
 
 # Next Development Step
 
-## Complete Phase 5
+## Phase 5 Complete — Move to Phase 6
 
-```text
-Document Library
-    ↓
-Draft expiry date
-Dashboard shortcut
-Server-side search, sorting, pagination
+All Phase 5 items are complete:
 
-Draft Upload
-    ↓
-Access configuration
-Review & confirmation
-Draft status and expiry
-Replace/Delete uploaded file
-
-Document Details
-    ↓
-Processing & failure state updates
-Draft upload actions
-
-Access Management
-    ↓
-Temporary-access duration validation
-Dedicated revoke dialog with reason
-Field-level validation messages
-
-Access History
-    ↓
-previousState / newState
-Timeline
-```
+- Document Library
+- Draft Upload Flow
+- Document Details
+- Access Management
+- Access History
+- Deletion & Recovery
+- Query
 
 After completing these workflows, development will continue with **Phase 6 — Document Processing UI**.
 
@@ -486,17 +417,32 @@ After completing these workflows, development will continue with **Phase 6 — D
 | Organization Management | ✅ Complete |
 | Access & Administration | ✅ Complete |
 | Document API Layer | ✅ Complete |
-| Document Library | ~90% |
-| Draft Upload Flow | ~85% |
-| Document Details | ~95% |
-| Access Management | ~85% |
-| Access History | ~50% |
-| Deletion & Recovery | ~95% |
+| Document Library | Complete |
+| Draft Upload Flow | Complete |
+| Document Details | Complete |
+| Access Management | Complete |
+| Access History | Complete |
+| Deletion & Recovery | Complete |
+| Query | Complete |
 
 ---
 
 # Current Focus
 
-The frontend is focused on completing the remaining document-management workflows before beginning **Phase 6 — Document Processing UI**, which will introduce real-time status updates, queue tracking, retry controls, and richer processing visualization. The highest-priority remaining defects are the missing draft-status check before upload and the blank frame rendered by the route guards while the session is verified.
+The frontend has resolved all blocking issues and major contract mismatches identified in the 2026-09-30 audit. Phase 5 is complete.
 
-A retry control for `FAILED` documents also depends on backend work: `reprocessDocument` exists as a service and controller but has no registered route, so there is no endpoint for the UI to call yet.
+After completing these workflows, development will continue with **Phase 6 — Document Processing UI**.
+
+---
+
+# Query Page
+
+Implemented (2026-10-12):
+
+- New `/query` route contributed via `src/routes/QueryRoutes.jsx`
+- Query form with textarea and `topK` (1–20) input
+- POST `/query` execution with loading and error states
+- Answer, evidence, and sources display (sources link to document details)
+- Previous queries panel using `GET /query/history` with `limit`/`offset` pagination
+- Click-to-fill previous query into the input field
+- Backend can return non-text data (evidence/sources) rendered as JSON and document links

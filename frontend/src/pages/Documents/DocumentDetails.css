@@ -97,3 +97,25 @@
 .document-version-table .secondary-button {
     padding: 0.45rem 0.9rem;
 }
+.history-event {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    background: #e0f2fe;
+    color: #075985;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.history-state {
+    max-width: 320px;
+    word-break: break-word;
+}
+
+.document-actions-row {
+    margin-bottom: 1rem;
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}

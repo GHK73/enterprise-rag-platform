@@ -86,6 +86,16 @@ function Navbar() {
                                 </NavLink>
 
                                 <NavLink
+                                    to="/query"
+                                    onClick={closeMenu}
+                                    className={({ isActive }) =>
+                                        isActive ? "active-nav-link" : ""
+                                    }
+                                >
+                                    Query
+                                </NavLink>
+
+                                <NavLink
                                     to="/permissions"
                                     onClick={closeMenu}
                                     className={({ isActive }) =>

@@ -23,7 +23,6 @@ export const getUserQueryHistory = asyncHandler(
             return res.status(400).json(
                 new ApiResponse(
                     400,
-                    null,
                     "limit must be an integer between 1 and 100."
                 )
             );
@@ -36,7 +35,6 @@ export const getUserQueryHistory = asyncHandler(
             return res.status(400).json(
                 new ApiResponse(
                     400,
-                    null,
                     "offset must be a non-negative integer."
                 )
             );
@@ -51,12 +49,12 @@ export const getUserQueryHistory = asyncHandler(
         return res.status(200).json(
             new ApiResponse(
                 200,
+                "Query history fetched successfully.",
                 {
                     history,
                     limit: parsedLimit,
                     offset: parsedOffset,
-                },
-                "Query history fetched successfully."
+                }
             )
         );
     }

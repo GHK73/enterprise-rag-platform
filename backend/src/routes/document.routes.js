@@ -115,6 +115,7 @@ router.get(
 router.post(
     "/:documentId/versions/:versionId/reprocess",
     authenticate,
+    documentUploadRateLimiter,
     reprocessDocument
 );
 

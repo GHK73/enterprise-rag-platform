@@ -8,14 +8,19 @@ from app.config.logger import (
     configure_logger,
     logger,
 )
+from app.core.exceptions import register_exception_handlers
+from app.services.vectorstore import qdrant_vector_store
 
 configure_logger()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting AI Service...")
     yield
     logger.info("Stopping AI Service...")
+    await qdrant_vector_store.close()
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -23,7 +28,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+register_exception_handlers(app)
 app.include_router(api_router)
+
 
 @app.get("/")
 async def root():

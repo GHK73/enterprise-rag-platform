@@ -374,16 +374,17 @@ export const uploadDraft = async(
             });
             return version;
         });
-    }catch(error){
-        if(uploadedObject){
-            try{
-                await deleteFileFromS3(
-                    objectKey
-                );
-            }catch{}
-        }
-        throw error;
-    }
+    }catch(error){
+        if(uploadedObject){
+            try{
+                await deleteFileFromS3(
+                    objectKey,
+                    uploadedObject.bucket
+                );
+            }catch{}
+        }
+        throw error;
+    }
 };
 
 export const deleteDraftUpload = async(
@@ -420,12 +421,13 @@ export const deleteDraftUpload = async(
             version
         );
     });
-    await deleteFileFromS3(
-        version.storageKey
-    );
-    return {
-        message:"Draft upload deleted successfully.",
-    };
+    await deleteFileFromS3(
+        version.storageKey,
+        version.storageBucket
+    );
+    return {
+        message:"Draft upload deleted successfully.",
+    };
 };
 
 export const publishDraft = async(user,documentId)=>{
@@ -474,7 +476,10 @@ export const cleanupDeletedDocument = async(user,documentId)=>{
     if(document.uploadedById!==user.id) throw new ApiError(403,"You do not have permission to permanently delete this document.");
     for(const version of document.versions){
         try{
-            await deleteFileFromS3(version.storageKey);
+            await deleteFileFromS3(
+                version.storageKey,
+                version.storageBucket
+            );
         }catch(error){
             console.error(
                 `DOCUMENT CLEANUP: Failed to delete S3 object ${version.storageKey}`,
@@ -507,19 +512,20 @@ export const cleanupExpiredDrafts = async(
             },
         });
 for(const document of drafts){
-        for(const version of document.versions){
-            try{
-                await deleteFileFromS3(
-                    version.storageKey
-                );
-            }catch(error){
-                console.error(
-                    `DRAFT CLEANUP: Failed to delete S3 object ${version.storageKey}`,
-                    error.message
-                );
-            }
+    for(const version of document.versions){
+        try{
+            await deleteFileFromS3(
+                version.storageKey,
+                version.storageBucket
+            );
+        }catch(error){
+            console.error(
+                `DOCUMENT CLEANUP: Failed to delete S3 object ${version.storageKey}`,
+                error.message
+            );
         }
-        await prisma.$transaction(async(tx)=>{
+    }
+    await prisma.$transaction(async(tx)=>{
             await tx.document.update({
                 where:{
                     id:document.id,
@@ -581,7 +587,7 @@ export const uploadDocumentVersion = async(user,documentId,file)=>{
         });
         uploadCommitted=true;
     }catch(error){
-        if(uploadCommitted===false){try{await deleteFileFromS3(objectKey);}catch{}}
+        if(uploadCommitted===false){try{await deleteFileFromS3(objectKey,uploadedObject.bucket);}catch{}}
         throw error;
     }
     try{
@@ -647,10 +653,11 @@ export const getDocumentDownloadUrl = async(
             "Document version not found."
         );
     }
-    const downloadUrl =
-        await getDownloadUrlFromS3(
-            version.storageKey
-        );
+    const downloadUrl =
+        await getDownloadUrlFromS3(
+            version.storageKey,
+            version.storageBucket
+        );
     return {
         documentId,
         versionId:version.id,

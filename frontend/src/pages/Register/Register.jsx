@@ -15,7 +15,7 @@ function Register() {
     const navigate = useNavigate();
     const { login } = useContext(AuthContext);
 
-    async function handleSubmit(event) {
+async function handleSubmit(event) {
         event.preventDefault();
     
         setError("");
@@ -26,13 +26,9 @@ function Register() {
                 email,
                 password,
             });
-    
+        
             const token = response.data.data.token;
             login(token);
-            navigate("/");
-    
-            localStorage.setItem("token", token);
-    
             navigate("/");
         } catch (error) {
             setError(

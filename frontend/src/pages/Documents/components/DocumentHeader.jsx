@@ -12,7 +12,9 @@ const DocumentHeader = ({
     const canDownload =
         !downloading &&
         document.status !== "DRAFT" &&
-        document.status !== "PROCESSING";
+        document.status !== "PROCESSING" &&
+        document.status !== "DELETED" &&
+        document.status !== "EXPIRED";
 
     return (
         <div className="document-header">
@@ -28,15 +30,17 @@ const DocumentHeader = ({
                         "No description"}
                 </p>
 
-                <p className="document-current-status">
-
-                    Current Status:
-                    <strong>
-                        {" "}
-                        {document.status}
-                    </strong>
-
-                </p>
+                {document.draftExpiresAt &&
+                    document.status === "DRAFT" && (
+                        <p className="document-current-status">
+                            Draft Expires:{" "}
+                            <strong>
+                                {new Date(
+                                    document.draftExpiresAt
+                                ).toLocaleString()}
+                            </strong>
+                        </p>
+                    )}
 
             </div>
 
@@ -63,6 +67,10 @@ const DocumentHeader = ({
                         ? "Downloading..."
                         : document.status === "PROCESSING"
                         ? "Processing..."
+                        : document.status === "DELETED"
+                        ? "Deleted"
+                        : document.status === "EXPIRED"
+                        ? "Expired"
                         : "Download"}
                 </button>
 

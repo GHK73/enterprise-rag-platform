@@ -21,6 +21,7 @@ import PublicRoute from "./components/PublicRoute/PublicRoute";
 import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
 
 import { documentRoutes } from "./routes/DocumentRoutes";
+import { queryRoutes } from "./routes/QueryRoutes";
 
 function App() {
 
@@ -93,6 +94,7 @@ function App() {
                 />
 
                 {documentRoutes}
+                {queryRoutes}
 
             </Route>
 

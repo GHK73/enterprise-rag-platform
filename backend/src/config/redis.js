@@ -7,10 +7,13 @@ const redisConnection = {
     username: config.redis.username,
     password: config.redis.password,
 
-    tls: {
-        rejectUnauthorized: false,
-        servername: config.redis.host,
-    },
+    tls:
+        config.redis.username || config.redis.password
+            ? {
+                  rejectUnauthorized: false,
+                  servername: config.redis.host,
+              }
+            : undefined,
 
     maxRetriesPerRequest: 10,
     enableReadyCheck: true,
@@ -20,6 +23,8 @@ const redisConnection = {
     commandTimeout: 10000,
 
     keepAlive: 10000,
+
+    enableOfflineQueue: false,
 
     retryStrategy: (times) => {
         return Math.min(times * 500, 5000);

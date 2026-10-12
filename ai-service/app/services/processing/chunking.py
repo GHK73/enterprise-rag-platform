@@ -6,6 +6,9 @@ from app.schemas.document import (
     BlockType,
     Document,
     DocumentBlock,
+    TableBlock,
+    ImageBlock,
+    FigureBlock,
     TextBlock,
 )
 
@@ -65,11 +68,12 @@ class ChunkingService:
             current_blocks: list[DocumentBlock] = []
 
             for block in page.blocks:
+                text = self._block_to_text(block)
 
-                if not self._is_text_block(block):
+                if text is None:
                     continue
 
-                text = block.text.strip()
+                text = text.strip()
 
                 if not text:
                     continue
@@ -177,6 +181,30 @@ class ChunkingService:
 
         return chunks
 
+    def _block_to_text(self, block: DocumentBlock) -> str | None:
+        if isinstance(block, TextBlock):
+            return block.text
+
+        if block.block_type == BlockType.TABLE:
+            table = block
+            lines: list[str] = []
+            if table.headers:
+                lines.append(" | ".join(table.headers))
+                lines.append(" | ".join(["---"] * len(table.headers)))
+            for row in table.rows:
+                lines.append(" | ".join(row))
+            return "\n".join(lines)
+
+        if block.block_type in (BlockType.IMAGE, BlockType.FIGURE):
+            image = block
+            if image.caption:
+                return image.caption
+            if hasattr(image, "ocr_text") and image.ocr_text:
+                return image.ocr_text
+            return None
+
+        return None
+
     def _create_chunk(
         self,
         chunk_index: int,
@@ -218,20 +246,6 @@ class ChunkingService:
         return text[
             max(0, len(text) - self.chunk_overlap):
         ]
-
-    @staticmethod
-    def _is_text_block(
-        block: DocumentBlock,
-    ) -> bool:
-        if isinstance(block, TextBlock):
-            return bool(block.text.strip())
-
-        return block.block_type in {
-            BlockType.TEXT,
-            BlockType.HEADING,
-            BlockType.LIST,
-            BlockType.CODE,
-        }
 
 
 chunking_service = ChunkingService()

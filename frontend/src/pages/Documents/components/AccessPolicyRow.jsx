@@ -2,31 +2,63 @@ const AccessPolicyRow = ({
     policy,
     onEdit,
     onDelete,
+    organization,
+    units,
+    members,
 }) => {
-    const formatExpiry = (expiresAt) => {
-        if (!expiresAt) {
+    const formatExpiry = (validUntil) => {
+        if (!validUntil) {
             return "Permanent";
         }
 
         return new Date(
-            expiresAt
+            validUntil
         ).toLocaleString();
     };
 
-    const subjectName =
-        policy.subjectName ||
-        policy.subjectUser?.name ||
-        policy.subjectUnit?.name ||
-        policy.subjectRole ||
-        "Unknown";
+    const resolveSubjectName = () => {
+        switch (policy.subjectType) {
+            case "ORGANIZATION":
+                return organization?.name || "Organization";
+            case "UNIT": {
+                const unit = units?.find(
+                    (u) => u.id === policy.subjectUnitId
+                );
+                return unit?.name || "Unknown Unit";
+            }
+            case "ROLE":
+                return policy.subjectRole || "Unknown Role";
+            case "USER": {
+                const member = members?.find(
+                    (m) => m.id === policy.subjectUserId
+                );
+                return (
+                    member?.fullName ||
+                    member?.name ||
+                    member?.email ||
+                    "Unknown User"
+                );
+            }
+            default:
+                return "Unknown";
+        }
+    };
+
+    const subjectName = resolveSubjectName();
+    const isRevoked = !policy.isActive;
 
     return (
-        <tr>
+        <tr className={isRevoked ? "revoked-row" : ""}>
 
             <td>
                 <strong>
                     {subjectName}
                 </strong>
+                {isRevoked && (
+                    <small className="document-deleted">
+                        Revoked
+                    </small>
+                )}
             </td>
 
             <td>
@@ -37,13 +69,13 @@ const AccessPolicyRow = ({
 
                 <span
                     className={
-                        policy.permission ===
+                        policy.effect ===
                         "ALLOW"
                             ? "permission-badge allow"
                             : "permission-badge deny"
                     }
                 >
-                    {policy.permission}
+                    {policy.effect}
                 </span>
 
             </td>
@@ -51,7 +83,7 @@ const AccessPolicyRow = ({
             <td>
 
                 {formatExpiry(
-                    policy.expiresAt
+                    policy.validUntil
                 )}
 
             </td>
@@ -63,6 +95,7 @@ const AccessPolicyRow = ({
                     <button
                         type="button"
                         className="secondary-button"
+                        disabled={isRevoked}
                         onClick={() =>
                             onEdit(policy)
                         }
@@ -73,6 +106,7 @@ const AccessPolicyRow = ({
                     <button
                         type="button"
                         className="danger-button"
+                        disabled={isRevoked}
                         onClick={() =>
                             onDelete(policy)
                         }

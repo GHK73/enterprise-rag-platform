@@ -5,6 +5,12 @@ import {
 
 import config from "../../config/config.js";
 
+import {
+    buildSystemPrompt,
+} from "./prompt.service.js";
+
+import ApiError from "../../utils/ApiError.js";
+
 const client = new BedrockRuntimeClient({
     region: config.llm.region,
 });
@@ -16,11 +22,20 @@ export const generateAnswer = async (
         typeof prompt !== "string" ||
         !prompt.trim()
     ) {
-        throw new Error("PROMPT_REQUIRED");
+        throw new ApiError(
+            400,
+            "PROMPT_REQUIRED"
+        );
     }
 
     const command = new ConverseCommand({
         modelId: config.llm.modelId,
+
+        system: [
+            {
+                text: buildSystemPrompt(),
+            },
+        ],
 
         messages: [
             {
@@ -52,7 +67,8 @@ export const generateAnswer = async (
             .trim();
 
     if (!answer) {
-        throw new Error(
+        throw new ApiError(
+            502,
             "EMPTY_LLM_RESPONSE"
         );
     }

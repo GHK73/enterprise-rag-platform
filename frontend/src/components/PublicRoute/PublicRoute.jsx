@@ -8,7 +8,11 @@ function PublicRoute({ children }) {
     const { token, loading } = useContext(AuthContext);
 
     if (loading) {
-        return null;
+        return (
+            <div className="route-loading">
+                Loading...
+            </div>
+        );
     }
 
     if (token) {

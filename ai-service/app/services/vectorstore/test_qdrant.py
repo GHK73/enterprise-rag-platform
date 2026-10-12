@@ -85,6 +85,7 @@ async def main() -> None:
         await qdrant_vector_store.upsert_chunks(
             document_id=DOCUMENT_ID,
             version_id=VERSION_ID,
+            organization_id="test-org",
             embedded_chunks=embedded_chunks,
         )
 
@@ -162,6 +163,7 @@ async def main() -> None:
 
         results = await qdrant_vector_store.search(
             query_vector=query_vector,
+            organization_id="test-org",
             limit=5,
         )
 

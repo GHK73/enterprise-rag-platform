@@ -36,7 +36,7 @@ function Home() {
     }
 
     return (
-        <main className="home">
+        <div className="home">
 
             <section className="hero-section">
 
@@ -150,7 +150,7 @@ function Home() {
 
             </section>
 
-        </main>
+        </div>
     );
 }
 

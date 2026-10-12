@@ -26,6 +26,8 @@ class RetrievalService:
             request.top_k,
         )
 
+        await qdrant_vector_store.ensure_collection()
+
         query_embedding = embedding_service.embed_texts(
             [request.query]
         )[0]

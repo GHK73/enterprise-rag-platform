@@ -34,18 +34,18 @@ export const uploadFileToS3 = async (file, objectKey) => {
     };
 };
 
-export const deleteFileFromS3 = async (objectKey) => {
+export const deleteFileFromS3 = async(objectKey, bucket = config.aws.bucket)=>{
     await s3Client.send(
         new DeleteObjectCommand({
-            Bucket: config.aws.bucket,
+            Bucket: bucket,
             Key: objectKey,
         })
     );
 };
 
-export const getDownloadUrlFromS3 = async(objectKey)=>{
+export const getDownloadUrlFromS3 = async(objectKey, bucket = config.aws.bucket)=>{
     const command = new GetObjectCommand({
-        Bucket: config.aws.bucket,
+        Bucket: bucket,
         Key: objectKey, 
     });
     return getSignedUrl(

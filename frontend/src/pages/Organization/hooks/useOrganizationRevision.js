@@ -119,6 +119,10 @@ const useOrganizationRevision = ({
                     true
                 );
 
+                setCheckingRevision(
+                    true
+                );
+
                 setError("");
                 setMessage("");
 
@@ -130,13 +134,6 @@ const useOrganizationRevision = ({
                 const afterRevision =await fetchRevision();
                     
                     
-                setOrganizationRevision(
-                        afterRevision
-                    );
-                    
-                setLatestOrganizationRevision(
-                        afterRevision
-                    );
 
                 if (
                     beforeRevision !==
@@ -149,6 +146,10 @@ const useOrganizationRevision = ({
 
                     setError(
                         "Organization changed while refreshing. Please refresh again."
+                    );
+
+                    setCheckingRevision(
+                        false
                     );
 
                     return;
@@ -184,6 +185,10 @@ const useOrganizationRevision = ({
             finally {
 
                 setRefreshingOrganization(
+                    false
+                );
+
+                setCheckingRevision(
                     false
                 );
             }

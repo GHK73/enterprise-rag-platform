@@ -47,7 +47,7 @@ const DocumentLibrary = () => {
             setError("");
 
             const response =
-                await getDocuments();
+                await getDocuments(showDeleted);
 
             setDocuments(response || []);
         } catch (err) {
@@ -62,7 +62,7 @@ const DocumentLibrary = () => {
 
     useEffect(() => {
         loadDocuments();
-    }, []);
+    }, [showDeleted]);
 
     const filteredDocuments = useMemo(() => {
         return documents.filter(

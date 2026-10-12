@@ -15,7 +15,6 @@ export const queryDocuments = asyncHandler(
             return res.status(400).json(
                 new ApiResponse(
                     400,
-                    null,
                     "Query is required."
                 )
             );
@@ -31,7 +30,6 @@ export const queryDocuments = asyncHandler(
             return res.status(400).json(
                 new ApiResponse(
                     400,
-                    null,
                     "topK must be an integer between 1 and 20."
                 )
             );
@@ -47,6 +45,7 @@ export const queryDocuments = asyncHandler(
         return res.status(200).json(
             new ApiResponse(
                 200,
+                "Query executed successfully.",
                 {
                     query: result.query,
                     answer: result.answer,
@@ -55,8 +54,7 @@ export const queryDocuments = asyncHandler(
                     usedLLM: result.usedLLM,
                     outputGuardPassed:
                         result.outputGuardPassed,
-                },
-                "Query executed successfully."
+                }
             )
         );
     }

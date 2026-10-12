@@ -11,6 +11,7 @@ if (config.redis.enabled) {
     bullmqConnection = {
         ...redisConnection,
         maxRetriesPerRequest: null,
+        enableOfflineQueue: true,
     };
 
     connection = bullmqConnection;

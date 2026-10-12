@@ -41,6 +41,10 @@ const Organization = () => {
 
         refreshOrganization,
 
+        setOrganizationUnits,
+
+        setOrganizationMembers,
+
     } = useOrganizationData();
 
 
@@ -95,16 +99,6 @@ const Organization = () => {
             setMessage,
 
         });
-        console.log({
-            organizationRevision:
-                revision.organizationRevision,
-        
-            latestOrganizationRevision:
-                revision.latestOrganizationRevision,
-        
-            hasOrganizationUpdates:
-                revision.hasOrganizationUpdates,
-        });
 
 
 
@@ -116,7 +110,7 @@ const Organization = () => {
             selectedUnit,
 
             setOrganizationUnits:
-                () => {},
+                setOrganizationUnits,
 
             rootUnit,
 
@@ -144,7 +138,7 @@ const Organization = () => {
             organizationMembers,
 
             setOrganizationMembers:
-                () => {},
+                setOrganizationMembers,
 
             selectedUnit,
 

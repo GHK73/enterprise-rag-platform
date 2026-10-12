@@ -1,3 +1,4 @@
+# ai-service/app/services/processing/service.py
 
 from __future__ import annotations
 
@@ -8,15 +9,18 @@ from app.schemas.processing import (
     ProcessDocumentRequest,
     ProcessDocumentResponse,
 )
-from .downloader import downloader_service
-from .temp_storage import temporary_storage
 from app.services.processing.extraction import extraction_service
 from app.services.processing.normalization import normalization_service
 from app.services.processing.chunking import chunking_service
+from app.services.processing.downloader import downloader_service
+from app.services.processing.temp_storage import temporary_storage
 from app.services.embedding import embedding_service
 from app.services.vectorstore import qdrant_vector_store
 
 logger = logging.getLogger(__name__)
+
+
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 
 class DocumentProcessingService:
@@ -32,17 +36,23 @@ class DocumentProcessingService:
             request.version_id,
         )
 
+        suffix = Path(request.file_name).suffix.lower()
+
+        if not suffix:
+            raise ValueError(
+                "Document filename must contain a file extension."
+            )
+
+        if suffix not in SUPPORTED_EXTENSIONS:
+            raise ValueError(
+                f"Unsupported file extension: {suffix}. "
+                f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+            )
+
         workspace = temporary_storage.create_workspace()
 
         try:
             # 1. Download
-            suffix = Path(request.file_name).suffix.lower()
-
-            if not suffix:
-                raise ValueError(
-                    "Document filename must contain a file extension."
-                )
-
             file_path = await downloader_service.download(
                 str(request.file_url),
                 workspace / f"document{suffix}",
@@ -97,11 +107,13 @@ class DocumentProcessingService:
             # 6. Ensure Qdrant collection exists
             await qdrant_vector_store.ensure_collection()
 
-            # 7. Index this document version.
-            #
-            # Qdrant point IDs include document_id, version_id,
-            # and chunk_id. Therefore different versions are stored
-            # independently and previous versions are preserved.
+            # 7. Delete previous version points to avoid stale vectors
+            await qdrant_vector_store.delete_version(
+                document_id=request.document_id,
+                version_id=request.version_id,
+            )
+
+            # 8. Index this document version.
             await qdrant_vector_store.upsert_chunks(
                 organization_id=request.organization_id,
                 document_id=request.document_id,
@@ -117,7 +129,7 @@ class DocumentProcessingService:
                 request.version_id,
             )
 
-            # 8. Return response
+            # 9. Return response
             return ProcessDocumentResponse(
                 success=True,
                 message="Document processed successfully.",
@@ -135,7 +147,7 @@ class DocumentProcessingService:
             raise
 
         finally:
-            # 9. Cleanup temporary workspace
+            # 10. Cleanup temporary workspace
             temporary_storage.cleanup(workspace)
 
 

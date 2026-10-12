@@ -133,11 +133,13 @@ export const cleanupDraftUpload = async(tx,document,version)=>{
     });
 };
 
-export const getDocumentAccessPolicy = async(user,policyId)=>{
+export const getDocumentAccessPolicy = async(user, policyId, tx)=>{
     validateOrganizationMembership(user);
 
+    const prismaClient = tx || prisma;
+
     const policy =
-        await prisma.documentAccessPolicy.findUnique({
+        await prismaClient.documentAccessPolicy.findUnique({
             where:{id:policyId,},
             include:{
                 document:true,

@@ -2,8 +2,8 @@ const AccessHistoryRow = ({
     entry,
 }) => {
     const actor =
-        entry.actor?.name ||
         entry.actorName ||
+        entry.actor?.name ||
         "System";
 
     const subject =
@@ -16,6 +16,28 @@ const AccessHistoryRow = ({
     const reason =
         entry.reason ||
         "-";
+
+    const formatState = (state) => {
+        if (!state) {
+            return "";
+        }
+
+        if (typeof state === "object") {
+            return Object.entries(state)
+                .map(
+                    ([key, value]) =>
+                        `${key}: ${value}`
+                )
+                .join(", ");
+        }
+
+        return String(state);
+    };
+
+    const previousState = formatState(
+        entry.previousState
+    );
+    const newState = formatState(entry.newState);
 
     return (
         <tr>
@@ -55,6 +77,23 @@ const AccessHistoryRow = ({
             <td>
 
                 {reason}
+
+            </td>
+
+            <td className="history-state">
+
+                {previousState && (
+                    <small>
+                        <strong>Previous:</strong>{" "}
+                        {previousState}
+                    </small>
+                )}
+
+                {newState && (
+                    <small>
+                        <strong>New:</strong> {newState}
+                    </small>
+                )}
 
             </td>
 

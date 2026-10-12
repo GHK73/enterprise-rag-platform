@@ -73,10 +73,20 @@ const DocumentTable = ({ documents }) => {
 
                                         {expired && (
                                             <small className="document-expired">
-                                                Draft
-                                                Expired
+                                                Draft Expired
                                             </small>
                                         )}
+
+                                        {!expired &&
+                                            document.status === "DRAFT" &&
+                                            document.draftExpiresAt && (
+                                                <small className="document-expiry">
+                                                    Expires:{" "}
+                                                    {new Date(
+                                                        document.draftExpiresAt
+                                                    ).toLocaleString()}
+                                                </small>
+                                            )}
 
                                         {document.status ===
                                             "DELETED" && (

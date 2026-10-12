@@ -27,19 +27,24 @@ export const updateDocumentDraft = async (
     return response.data.data;
 };
 
-export const getDocuments = async () => {
+export const getDocuments = async (includeDeleted = false) => {
+    const params = includeDeleted ? { includeDeleted: true } : {};
     const response = await api.get(
-        "/documents"
+        "/documents",
+        { params }
     );
 
     return response.data.data;
 };
 
 export const getDocumentById = async (
-    documentId
+    documentId,
+    includeDeleted = false
 ) => {
+    const params = includeDeleted ? { includeDeleted: true } : {};
     const response = await api.get(
-        `/documents/${documentId}`
+        `/documents/${documentId}`,
+        { params }
     );
 
     return response.data.data;
@@ -229,16 +234,6 @@ export const getDocumentAccessHistory = async (
 // ==============================
 // Downloads
 // ==============================
-
-export const getDocumentDownloadUrl = async (
-    documentId
-) => {
-    const response = await api.get(
-        `/documents/${documentId}/download-url`
-    );
-
-    return response.data.data;
-};
 
 export const downloadDocument = async (
     documentId,

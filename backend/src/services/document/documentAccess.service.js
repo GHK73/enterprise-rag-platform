@@ -375,14 +375,15 @@ const validateTemporaryAccess = (
             "validUntil must be later than validFrom."
         );
     }
-    const maximumEnd = new Date(
-        start.getTime() +MAX_TEMPORARY_ACCESS_DAYS *24 *60 *60 *1000
-    );
-    if(validUntil > maximumEnd){
-        throw new ApiError(
-            400,
-        );
-    }
+    const maximumEnd = new Date(
+        start.getTime() +MAX_TEMPORARY_ACCESS_DAYS *24 *60 *60 *1000
+    );
+    if(validUntil > maximumEnd){
+        throw new ApiError(
+            400,
+            `Temporary access cannot exceed ${MAX_TEMPORARY_ACCESS_DAYS} days.`
+        );
+    }
 };
 
 export const grantDocumentAccess = async(
@@ -479,15 +480,16 @@ export const grantDocumentAccess = async(
 };
 
 export const updateDocumentAccessPolicy = async(
-    user,
-    policyId,
-    accessData
+    user,
+    policyId,
+    accessData
 )=>{
-    return prisma.$transaction(async(tx)=>{
-        const policy =await getDocumentAccessPolicy(
-            user,
-            policyId
-        );
+    return prisma.$transaction(async(tx)=>{
+        const policy =await getDocumentAccessPolicy(
+            tx,
+            user,
+            policyId
+        );
         if(!policy.isActive){
             throw new ApiError(
                 400,
@@ -586,15 +588,16 @@ export const updateDocumentAccessPolicy = async(
 };
 
 export const revokeDocumentAccess = async(
-    user,
-    policyId,
-    reason
+    user,
+    policyId,
+    reason
 )=>{
-    return prisma.$transaction(async(tx)=>{
-        const policy =await getDocumentAccessPolicy(
-            user,
-            policyId
-        );
+    return prisma.$transaction(async(tx)=>{
+        const policy =await getDocumentAccessPolicy(
+            tx,
+            user,
+            policyId
+        );
         if(!policy.isActive){
             throw new ApiError(
                 400,
@@ -663,12 +666,46 @@ export const getDocumentAccessPolicies = async(
         documentId,
         "MANAGE_ACCESS"
     );
-    return prisma.documentAccessPolicy.findMany({
+    const policies = await prisma.documentAccessPolicy.findMany({
         where:{documentId,},
         orderBy:{
             createdAt:"desc",
         },
     });
+
+    const resolvedPolicies = await Promise.all(
+        policies.map(async (policy) => {
+            const resolved = { ...policy };
+
+            if (policy.subjectUserId) {
+                const member = await prisma.user.findUnique({
+                    where:{ id: policy.subjectUserId },
+                    select:{ fullName:true, name:true, email:true },
+                });
+                resolved.subjectName = member?.fullName || member?.name || member?.email || "Unknown User";
+            } else if (policy.subjectUnitId) {
+                const unit = await prisma.organizationUnit.findUnique({
+                    where:{ id: policy.subjectUnitId },
+                    select:{ name:true },
+                });
+                resolved.subjectName = unit?.name || "Unknown Unit";
+            } else if (policy.subjectRole) {
+                resolved.subjectName = policy.subjectRole;
+            } else if (policy.subjectOrganizationId) {
+                const org = await prisma.organization.findUnique({
+                    where:{ id: policy.subjectOrganizationId },
+                    select:{ name:true },
+                });
+                resolved.subjectName = org?.name || "Organization";
+            } else {
+                resolved.subjectName = "Unknown";
+            }
+
+            return resolved;
+        })
+    );
+
+    return resolvedPolicies;
 };
 
 export const getDocumentAccessHistory = async(
@@ -680,12 +717,56 @@ export const getDocumentAccessHistory = async(
         documentId,
         "MANAGE_ACCESS"
     );
-    return prisma.documentAccessAudit.findMany({
+    const records = await prisma.documentAccessAudit.findMany({
         where:{documentId,},
         orderBy:{
             createdAt:"desc",
         },
     });
+
+    const resolvedRecords = await Promise.all(
+        records.map(async (entry) => {
+            const resolved = { ...entry };
+
+            if (entry.actorId) {
+                const actor = await prisma.user.findUnique({
+                    where:{ id: entry.actorId },
+                    select:{ fullName:true, name:true, email:true },
+                });
+                resolved.actorName = actor?.fullName || actor?.name || actor?.email || "System";
+            } else {
+                resolved.actorName = "System";
+            }
+
+            if (entry.subjectUserId) {
+                const subject = await prisma.user.findUnique({
+                    where:{ id: entry.subjectUserId },
+                    select:{ fullName:true, name:true, email:true },
+                });
+                resolved.subjectName = subject?.fullName || subject?.name || subject?.email || "Unknown";
+            } else if (entry.subjectUnitId) {
+                const unit = await prisma.organizationUnit.findUnique({
+                    where:{ id: entry.subjectUnitId },
+                    select:{ name:true },
+                });
+                resolved.subjectName = unit?.name || "Unknown Unit";
+            } else if (entry.subjectRole) {
+                resolved.subjectName = entry.subjectRole;
+            } else if (entry.subjectOrganizationId) {
+                const org = await prisma.organization.findUnique({
+                    where:{ id: entry.subjectOrganizationId },
+                    select:{ name:true },
+                });
+                resolved.subjectName = org?.name || "Organization";
+            } else {
+                resolved.subjectName = "Unknown";
+            }
+
+            return resolved;
+        })
+    );
+
+    return resolvedRecords;
 };
 
 export const getDocumentAccessPolicyById = async(

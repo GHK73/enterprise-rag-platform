@@ -1,5 +1,5 @@
 # ai-service/app/schemas/retrieval.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RetrievalRequest(BaseModel):
@@ -19,6 +19,13 @@ class RetrievalRequest(BaseModel):
         le=50,
         description="Number of authorized chunks to return",
     )
+
+    @field_validator("query")
+    @classmethod
+    def query_must_not_be_whitespace(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Query cannot be whitespace-only.")
+        return value
 
 class RetrievalResult(BaseModel):
     chunk_id: str

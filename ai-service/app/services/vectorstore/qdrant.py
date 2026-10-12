@@ -190,7 +190,7 @@ class QdrantVectorStore:
         version_id: str,
         limit: int = 100,
     ) -> list[dict]:
-           
+            
 
         if not document_id:
             raise ValueError(
@@ -207,69 +207,78 @@ class QdrantVectorStore:
                 "Limit must be greater than 0."
             )
 
-        result = await self.client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id",
-                        match=MatchValue(
-                            value=document_id,
-                        ),
-                    ),
-                    FieldCondition(
-                        key="version_id",
-                        match=MatchValue(
-                            value=version_id,
-                        ),
-                    ),
-                ],
-            ),
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-        )
-
-        points, _ = result
-
         indexed_chunks: list[dict] = []
 
-        for point in points:
-            payload = point.payload or {}
+        offset = None
 
-            indexed_chunks.append(
-                {
-                    "point_id": str(point.id),
-                    "chunk_id": payload.get(
-                        "chunk_id",
-                        "",
-                    ),
-                    "document_id": payload.get(
-                        "document_id",
-                        "",
-                    ),
-                    "version_id": payload.get(
-                        "version_id",
-                        "",
-                    ),
-                    "page_number": payload.get(
-                        "page_number",
-                        0,
-                    ),
-                    "text": payload.get(
-                        "text",
-                        "",
-                    ),
-                    "block_ids": payload.get(
-                        "block_ids",
-                        [],
-                    ),
-                    "metadata": payload.get(
-                        "metadata",
-                        {},
-                    ),
-                }
+        while True:
+            result = await self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id",
+                            match=MatchValue(
+                                value=document_id,
+                            ),
+                        ),
+                        FieldCondition(
+                            key="version_id",
+                            match=MatchValue(
+                                value=version_id,
+                            ),
+                        ),
+                    ],
+                ),
+                limit=min(limit, 100),
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
             )
+
+            points, next_page_offset = result
+
+            for point in points:
+                payload = point.payload or {}
+
+                indexed_chunks.append(
+                    {
+                        "point_id": str(point.id),
+                        "chunk_id": payload.get(
+                            "chunk_id",
+                            "",
+                        ),
+                        "document_id": payload.get(
+                            "document_id",
+                            "",
+                        ),
+                        "version_id": payload.get(
+                            "version_id",
+                            "",
+                        ),
+                        "page_number": payload.get(
+                            "page_number",
+                            0,
+                        ),
+                        "text": payload.get(
+                            "text",
+                            "",
+                        ),
+                        "block_ids": payload.get(
+                            "block_ids",
+                            [],
+                        ),
+                        "metadata": payload.get(
+                            "metadata",
+                            {},
+                        ),
+                    }
+                )
+
+            if not next_page_offset or len(indexed_chunks) >= limit:
+                break
+
+            offset = next_page_offset
 
         logger.info(
             "Retrieved indexed chunks: "
@@ -279,7 +288,7 @@ class QdrantVectorStore:
             len(indexed_chunks),
         )
 
-        return indexed_chunks
+        return indexed_chunks[:limit]
 
     async def delete_version(
         self,

@@ -6,6 +6,9 @@ import {
 } from "../services/auth.services.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asyncHandler.js";
+import {
+    recordRegistrationAttempt,
+} from "../services/authRateLimit.service.js";
 
 export const register = asyncHandler(
     async (req, res) => {
@@ -20,6 +23,10 @@ export const register = asyncHandler(
             email,
             password,
         });
+
+        recordRegistrationAttempt({
+            ip: req.ip,
+        }).catch(() => {});
 
         return res.status(201).json(
             new ApiResponse(

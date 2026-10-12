@@ -40,6 +40,10 @@ const AccessHistoryTable = ({
                             Reason
                         </th>
 
+                        <th>
+                            State Change
+                        </th>
+
                     </tr>
 
                 </thead>

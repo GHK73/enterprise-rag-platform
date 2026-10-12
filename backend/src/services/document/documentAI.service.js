@@ -4,7 +4,10 @@ import config from "../../config/config.js";
 import { getDownloadUrlFromS3 } from "../s3.service.js";
 
 async function buildProcessingPayload(document, version) {
-    const fileUrl = await getDownloadUrlFromS3(version.storageKey);
+    const fileUrl = await getDownloadUrlFromS3(
+        version.storageKey,
+        version.storageBucket
+    );
 
     return {
         document_id: document.id,

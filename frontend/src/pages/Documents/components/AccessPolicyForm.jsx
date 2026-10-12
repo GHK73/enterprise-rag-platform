@@ -41,6 +41,80 @@ const AccessPolicyForm = ({
     const [reason, setReason] =
         useState("");
 
+    const [formError, setFormError] =
+        useState("");
+
+    const utcToLocalDatetime = (utcString) => {
+        if (!utcString) return "";
+        const date = new Date(utcString);
+        const offset = date.getTimezoneOffset() * 60000;
+        const localDate = new Date(date.getTime() - offset);
+        return localDate.toISOString().slice(0, 16);
+    };
+
+    const localDatetimeToUtc = (localString) => {
+        if (!localString) return null;
+        const date = new Date(localString);
+        const offset = date.getTimezoneOffset() * 60000;
+        const utcDate = new Date(date.getTime() + offset);
+        return utcDate.toISOString();
+    };
+
+    const validateForm = () => {
+        if (
+            subjectType !==
+                "ORGANIZATION" &&
+            !subjectId
+        ) {
+            setFormError("Please select a subject.");
+            return false;
+        }
+
+        if (
+            subjectType ===
+                "ORGANIZATION" &&
+            !organization?.id
+        ) {
+            setFormError("Organization not loaded yet.");
+            return false;
+        }
+
+        if (
+            subjectType === "UNIT" &&
+            !scope
+        ) {
+            setFormError("Please select a scope for the unit.");
+            return false;
+        }
+
+        if (
+            temporary &&
+            !expiresAt
+        ) {
+            setFormError("Please select an expiry date for temporary access.");
+            return false;
+        }
+
+        if (temporary && expiresAt) {
+            const now = new Date();
+            const expiry = new Date(expiresAt);
+            const maxExpiry = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+            if (expiry <= now) {
+                setFormError("Expiry must be in the future.");
+                return false;
+            }
+
+            if (expiry > maxExpiry) {
+                setFormError("Temporary access cannot exceed 7 days.");
+                return false;
+            }
+        }
+
+        setFormError("");
+        return true;
+    };
+
     useEffect(() => {
         if (!editing || !initialValues) {
             return;
@@ -84,17 +158,13 @@ const AccessPolicyForm = ({
 
         setExpiresAt(
             initialValues.validUntil
-                ? new Date(
+                ? utcToLocalDatetime(
                       initialValues.validUntil
                   )
-                      .toISOString()
-                      .slice(0, 16)
                 : initialValues.expiresAt
-                ? new Date(
+                ? utcToLocalDatetime(
                       initialValues.expiresAt
                   )
-                      .toISOString()
-                      .slice(0, 16)
                 : ""
         );
 
@@ -106,6 +176,12 @@ const AccessPolicyForm = ({
         initialValues,
     ]);
 
+    useEffect(() => {
+        setSubjectId("");
+        setScope("UNIT_ONLY");
+        setFormError("");
+    }, [subjectType]);
+
     const resetForm = () => {
         setSubjectType("USER");
         setSubjectId("");
@@ -115,6 +191,7 @@ const AccessPolicyForm = ({
         setTemporary(false);
         setExpiresAt("");
         setReason("");
+        setFormError("");
     };
 
     const handleSubmit = async (
@@ -122,33 +199,7 @@ const AccessPolicyForm = ({
     ) => {
         event.preventDefault();
 
-        if (
-            subjectType !==
-                "ORGANIZATION" &&
-            !subjectId
-        ) {
-            return;
-        }
-
-        if (
-            subjectType ===
-                "ORGANIZATION" &&
-            !organization?.id
-        ) {
-            return;
-        }
-
-        if (
-            subjectType === "UNIT" &&
-            !scope
-        ) {
-            return;
-        }
-
-        if (
-            temporary &&
-            !expiresAt
-        ) {
+        if (!validateForm()) {
             return;
         }
 
@@ -162,9 +213,7 @@ const AccessPolicyForm = ({
                     : undefined,
             validUntil:
                 temporary
-                    ? new Date(
-                          expiresAt
-                      ).toISOString()
+                    ? localDatetimeToUtc(expiresAt)
                     : null,
             reason,
         };
@@ -199,11 +248,14 @@ const AccessPolicyForm = ({
         }
 
         await onSubmit(
-            accessData
+            accessData,
+            temporary
         );
 
-        if (!editing) {
-            resetForm();
+        resetForm();
+
+        if (editing) {
+            onCancel?.();
         }
     };
 
@@ -333,7 +385,18 @@ const AccessPolicyForm = ({
                                     .value
                             )
                         }
+                        min={new Date().toISOString().slice(0, 16)}
                     />
+
+                    <small className="form-helper">
+                        Maximum 7 days from now.
+                    </small>
+                </div>
+            )}
+
+            {formError && (
+                <div className="form-error">
+                    {formError}
                 </div>
             )}
 

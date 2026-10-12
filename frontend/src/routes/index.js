@@ -1,1 +1,1 @@
-export { default as DocumentRoutes } from "./DocumentRoutes";
+export { documentRoutes as DocumentRoutes } from "./DocumentRoutes";

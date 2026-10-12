@@ -311,6 +311,27 @@ function Dashboard(){
                         <div className="dashboard-quick-links">
                             <Link
                                 className="dashboard-quick-link"
+                                to="/documents"
+                            >
+                                <span className="dashboard-quick-icon">
+                                    D
+                                </span>
+
+                                <div>
+                                    <strong>Documents</strong>
+
+                                    <p>
+                                        Browse and manage documents
+                                    </p>
+                                </div>
+
+                                <span className="dashboard-arrow">
+                                    →
+                                </span>
+                            </Link>
+
+                            <Link
+                                className="dashboard-quick-link"
                                 to="/organization"
                             >
                                 <span className="dashboard-quick-icon">

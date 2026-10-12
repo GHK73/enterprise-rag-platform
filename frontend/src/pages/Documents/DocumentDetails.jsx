@@ -13,15 +13,8 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import DeleteDocumentDialog from "./components/DeleteDocumentDialog";
-import RestoreDocumentDialog from "./components/RestoreDocumentDialog";
-import CleanupDocumentDialog from "./components/CleanupDocumentDialog";
-import DocumentHeader from "./components/DocumentHeader";
-import StatusBadge from "./components/StatusBadge";
-import UploadCard from "./components/UploadCard";
-import DocumentAccessHistory from "./components/DocumentAccessHistory";
-import DocumentAccess from "./components/DocumentAccess.jsx";
-
-import "./DocumentDetails.css";
+import PublishConfirmationDialog from "./components/PublishConfirmationDialog.jsx";
+import { deleteDraftUpload } from "../../api/document.api";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
@@ -65,30 +58,32 @@ const DocumentDetails = () => {
 
     const [pageError, setPageError] =
         useState("");
-        const [
-            deleting,
-            setDeleting,
-        ] = useState(false);
-        
-        const [
-            showDeleteDialog,
-            setShowDeleteDialog,
-        ] = useState(false);
-        
-        const [
-            showRestoreDialog,
-            setShowRestoreDialog,
-        ] = useState(false);
-        
-        const [
-            showCleanupDialog,
-            setShowCleanupDialog,
-        ] = useState(false);
+    const [
+        deleting,
+        setDeleting,
+    ] = useState(false);
 
-    const [actionError, setActionError] =
-        useState("");
+    const [
+        showDeleteDialog,
+        setShowDeleteDialog,
+    ] = useState(false);
 
-    const loadDocument = async () => {
+    const [
+        showRestoreDialog,
+        setShowRestoreDialog,
+    ] = useState(false);
+
+    const [
+        showCleanupDialog,
+        setShowCleanupDialog,
+    ] = useState(false);
+
+    const [showPublishDialog, setShowPublishDialog] =
+        useState(false);
+
+    const [removingFile, setRemovingFile] = useState(false);
+
+    const loadDocument = async (includeDeleted = false) => {
         try {
             setLoading(true);
 
@@ -96,11 +91,16 @@ const DocumentDetails = () => {
 
             const response =
                 await getDocumentById(
-                    documentId
+                    documentId,
+                    includeDeleted
                 );
 
             setDocument(response);
         } catch (err) {
+            // If not found and not already trying with includeDeleted, retry with includeDeleted
+            if (err.response?.status === 404 && !includeDeleted) {
+                return loadDocument(true);
+            }
             setPageError(
                 err?.response?.data?.message ||
                     "Failed to load document."
@@ -135,6 +135,7 @@ const DocumentDetails = () => {
             await loadDocument();
 
             await loadVersions();
+            setShowPublishDialog(false);
         } catch (err) {
             setActionError(
                 err?.response?.data?.message ||
@@ -143,6 +144,14 @@ const DocumentDetails = () => {
         } finally {
             setPublishing(false);
         }
+    };
+
+    const handlePublishClick = () => {
+        setShowPublishDialog(true);
+    };
+
+    const handleCancelPublish = () => {
+        setShowPublishDialog(false);
     };
 
     const handleDownload = async () => {
@@ -170,27 +179,20 @@ const DocumentDetails = () => {
         }
     };
 
-    const handleVersionDownload = async (
-        versionId
-    ) => {
+    const handleRemoveDraftFile = async () => {
         try {
+            setRemovingFile(true);
             setActionError("");
-
-            const response =
-                await downloadDocument(
-                    documentId,
-                    versionId
-                );
-
-            window.open(
-                response.downloadUrl,
-                "_blank"
-            );
+            await deleteDraftUpload(documentId);
+            await loadDocument();
+            await loadVersions();
         } catch (err) {
             setActionError(
                 err?.response?.data?.message ||
-                    "Failed to download version."
+                    "Failed to remove uploaded file."
             );
+        } finally {
+            setRemovingFile(false);
         }
     };
     
@@ -208,7 +210,7 @@ const DocumentDetails = () => {
                 false
             );
 
-            await loadDocument();
+            await loadDocument(true);
 
         } catch (err) {
 
@@ -239,7 +241,7 @@ const handleRestore =
                 false
             );
 
-            await loadDocument();
+            await loadDocument(true);
 
         } catch (err) {
 
@@ -390,9 +392,33 @@ const handleCleanup =
 
     useEffect(() => {
         loadDocument();
-
         loadVersions();
+        setShowUploadSection(false);
+        setSelectedVersionFile(null);
+        setVersionUploadProgress(0);
+        setActionError("");
     }, [documentId]);
+
+    useEffect(() => {
+        if (
+            !document ||
+            document.status === "READY" ||
+            document.status === "FAILED" ||
+            document.status === "DELETED" ||
+            document.status === "EXPIRED"
+        ) {
+            return;
+        }
+
+        const interval = setInterval(() => {
+            loadDocument(true);
+            loadVersions();
+        }, 3000);
+
+        return () => {
+            clearInterval(interval);
+        };
+    }, [document]);
     if (loading) {
         return (
             <div className="document-details-page">
@@ -420,7 +446,7 @@ const handleCleanup =
                 document={document}
                 publishing={publishing}
                 downloading={downloading}
-                onPublish={handlePublish}
+                onPublish={handlePublishClick}
                 onDownload={handleDownload}
             />
             <div className="document-actions-row">
@@ -472,7 +498,56 @@ const handleCleanup =
 
                 )}
 
-                </div>
+            </div>
+            {document.status === "DRAFT" &&
+                document.currentVersionId && (
+                    <div className="document-status-banner info">
+                        <div className="draft-actions">
+                            <span>
+                                Draft has an uploaded file.
+                            </span>
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={handleRemoveDraftFile}
+                                disabled={removingFile}
+                            >
+                                {removingFile
+                                    ? "Removing..."
+                                    : "Remove File"}
+                            </button>
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => {
+                                    setShowUploadSection(true);
+                                    setSelectedVersionFile(null);
+                                    setVersionUploadProgress(0);
+                                    setActionError("");
+                                }}
+                                disabled={uploadingVersion}
+                            >
+                                Replace File
+                            </button>
+            </div>
+            <div className="document-actions-row">
+                {document.status === "DRAFT" &&
+                    !document.currentVersionId && (
+                        <button
+                            className="secondary-button"
+                            onClick={() => {
+                                navigate(
+                                    `/documents/${documentId}/upload`
+                                );
+                            }}
+                        >
+                            Upload File
+                        </button>
+                    )}
+            </div>
+                    </div>
+                )}
+
             {document.status === "QUEUED" && (
                     <div className="document-status-banner info">
                         This document has been queued for processing.
@@ -745,15 +820,12 @@ const handleCleanup =
                 }
             />
 
-            <CleanupDocumentDialog
-                open={showCleanupDialog}
-                loading={deleting}
-                onConfirm={handleCleanup}
-                onCancel={() =>
-                    setShowCleanupDialog(
-                        false
-                    )
-                }
+                <PublishConfirmationDialog
+                open={showPublishDialog}
+                document={document}
+                onCancel={handleCancelPublish}
+                onConfirm={handlePublish}
+                loading={publishing}
             />
         </div>
     );

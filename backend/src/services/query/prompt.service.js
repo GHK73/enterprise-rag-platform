@@ -1,3 +1,5 @@
+import ApiError from "../../utils/ApiError.js";
+
 export const buildSystemPrompt = () => {
     return `
 You are a secure enterprise knowledge assistant.
@@ -199,14 +201,14 @@ export const buildRAGPrompt = (
         typeof query !== "string" ||
         !query.trim()
     ) {
-        throw new Error("QUERY_REQUIRED");
+        throw new ApiError(400,"QUERY_REQUIRED");
     }
 
     if (
         typeof context !== "string" ||
         !context.trim()
     ) {
-        throw new Error("CONTEXT_REQUIRED");
+        throw new ApiError(400,"CONTEXT_REQUIRED");
     }
 
     return `

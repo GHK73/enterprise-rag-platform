@@ -149,16 +149,24 @@
 }
 
 .document-expired {
-    display: inline-block;
-    color: #b45309;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
+      display: inline-block;
+      color: #b45309;
+      font-size: 0.8rem;
+      font-weight: 600;
+  }
 
-.document-deleted {
-    display: inline-block;
-    color: #6b7280;
-    font-size: 0.8rem;
+  .document-expiry {
+      display: inline-block;
+      color: #4b5563;
+      font-size: 0.8rem;
+      font-weight: 500;
+  }
+  
+  .document-deleted {
+      display: inline-block;
+      color: #6b7280;
+      font-size: 0.8rem;
+
     font-weight: 600;
 }
 

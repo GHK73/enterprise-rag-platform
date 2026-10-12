@@ -52,6 +52,25 @@
     color: #4b5563;
 }
 
+.upload-document-info {
+    background: #ffffff;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    margin-bottom: 1.5rem;
+}
+
+.upload-existing-file {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.upload-existing-file p {
+    margin: 0 0 0.75rem 0;
+    color: #374151;
+}
+
 .upload-error {
     margin-bottom: 1rem;
     padding: 1rem;

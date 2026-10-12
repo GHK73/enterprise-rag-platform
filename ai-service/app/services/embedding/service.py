@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 import torch
 from sentence_transformers import SentenceTransformer
+from app.config.settings import settings
 from app.services.processing.chunking import Chunk
 
 logger = logging.getLogger(__name__)
@@ -32,10 +33,12 @@ class EmbeddingService:
 
     def __init__(
         self,
-        model_name: str = "all-MiniLM-L6-v2",
+        model_name: str | None = None,
         batch_size: int = 32,
         device: str | None = None,
     ) -> None:
+        model_name = model_name or settings.EMBEDDING_MODEL
+
         if not model_name.strip():
             raise ValueError(
                 "model_name cannot be empty."

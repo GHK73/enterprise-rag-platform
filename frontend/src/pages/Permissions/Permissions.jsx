@@ -111,6 +111,18 @@ const Permissions = () => {
         }
     };
 
+    const fetchPermissionGrants = async () => {
+        try {
+            const response = await api.get("/permissions/me");
+            setPermissionGrants(response.data.data || []);
+        } catch (error) {
+            setError(
+                error.response?.data?.message ||
+                "Failed to fetch permissions"
+            );
+        }
+    };
+
     const handleGrantPermission = async(e)=>{
         e.preventDefault();
 
@@ -119,7 +131,7 @@ const Permissions = () => {
             setError("");
             setMessage("");
 
-            const response = await api.post(
+            await api.post(
                 "/permissions",
                 {
                     recipientId,
@@ -130,11 +142,10 @@ const Permissions = () => {
             );
 
             if(recipientId === selectedMemberId){
-                setMemberPermissionGrants((currentGrants)=>[
-                    response.data.data,
-                    ...currentGrants
-                ]);
+                await handleMemberSelection(selectedMemberId);
             }
+
+            await fetchPermissionGrants();
 
             setRecipientId("");
             setPermission("");
@@ -179,6 +190,8 @@ const Permissions = () => {
                         : permissionGrant
                 )
             );
+
+            await fetchPermissionGrants();
 
             setMessage(
                 "Permission revoked successfully"

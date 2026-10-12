@@ -118,3 +118,11 @@ button {
 
     pointer-events: none;
 }
+
+.route-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 20vh;
+    color: var(--text-secondary);
+}

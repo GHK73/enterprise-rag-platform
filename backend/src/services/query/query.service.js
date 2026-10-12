@@ -20,6 +20,7 @@ import {
     validateGeneratedAnswer as validateOutputGuard,
 } from "./outputGuardrail.service.js";
 import prisma from "../../config/prisma.js";
+import ApiError from "../../utils/ApiError.js";
 
 const saveQueryHistory = async ({
     user,
@@ -33,7 +34,8 @@ const saveQueryHistory = async ({
     const organizationId = user?.unit?.organizationId;
 
     if (!organizationId || !user?.id) {
-        throw new Error(
+        throw new ApiError(
+            403,
             "Query history requires an authenticated organization user."
         );
     }
@@ -158,7 +160,8 @@ export const retrieveAuthorizedCandidates = async (
     const organizationId = user?.unit?.organizationId;
 
     if (!organizationId) {
-        throw new Error(
+        throw new ApiError(
+            403,
             "User organization could not be determined."
         );
     }
@@ -252,15 +255,22 @@ export const retrieveAuthorizedCandidates = async (
         const answer =
             "I couldn't find sufficient information in the authorized documents to answer this question.";
 
-        await saveQueryHistory({
-            user,
-            query: retrievalResponse.query,
-            answer,
-            sources: [],
-            evidence,
-            usedLLM: false,
-            outputGuardPassed: false,
-        });
+        try {
+            await saveQueryHistory({
+                user,
+                query: retrievalResponse.query,
+                answer,
+                sources: [],
+                evidence,
+                usedLLM: false,
+                outputGuardPassed: false,
+            });
+        } catch (historyError) {
+            console.error(
+                "QUERY HISTORY: failed to save insufficient-evidence record:",
+                historyError.message
+            );
+        }
 
         return {
             query: retrievalResponse.query,
@@ -298,15 +308,22 @@ export const retrieveAuthorizedCandidates = async (
         answerResult.answer
     );
 
-    await saveQueryHistory({
-        user,
-        query: retrievalResponse.query,
-        answer: guardedAnswer.answer,
-        sources,
-        evidence,
-        usedLLM: answerResult.usedLLM,
-        outputGuardPassed: guardedAnswer.safe,
-    });
+    try {
+        await saveQueryHistory({
+            user,
+            query: retrievalResponse.query,
+            answer: guardedAnswer.answer,
+            sources,
+            evidence,
+            usedLLM: answerResult.usedLLM,
+            outputGuardPassed: guardedAnswer.safe,
+        });
+    } catch (historyError) {
+        console.error(
+            "QUERY HISTORY: failed to save query record:",
+            historyError.message
+        );
+    }
 
     return {
         query: retrievalResponse.query,

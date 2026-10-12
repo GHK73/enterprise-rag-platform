@@ -8,6 +8,12 @@ const LOGIN_IP_MAX_ATTEMPTS = 20;
 
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 
+const REGISTRATION_RATE_LIMIT_PREFIX = "rag:registration";
+
+const REGISTRATION_IP_MAX_ATTEMPTS = 5;
+
+const REGISTRATION_WINDOW_SECONDS = 15 * 60;
+
 const normalizeEmail = (email) => {
     return email.trim().toLowerCase();
 };
@@ -207,4 +213,88 @@ export const getLoginRateLimitConfig = () => {
         windowSeconds:
             LOGIN_WINDOW_SECONDS,
     };
+};
+
+const buildRegistrationIpKey = (ip) => {
+    return `${REGISTRATION_RATE_LIMIT_PREFIX}:ip:${ip}`;
+};
+
+export const checkRegistrationRateLimit = async ({
+    ip,
+}) => {
+    if (
+        !config.redis.enabled ||
+        !redisClient
+    ) {
+        return {
+            blocked: false,
+        };
+    }
+
+    try {
+        const ipKey = buildRegistrationIpKey(ip);
+
+        const ipCount =
+            Number(await redisClient.get(ipKey) || 0);
+
+        if (
+            ipCount >=
+            REGISTRATION_IP_MAX_ATTEMPTS
+        ) {
+            const ttl =
+                await redisClient.ttl(ipKey);
+
+            return {
+                blocked: true,
+                retryAfter:
+                    ttl > 0
+                        ? ttl
+                        : REGISTRATION_WINDOW_SECONDS,
+                reason: "IP_RATE_LIMIT",
+            };
+        }
+
+        return {
+            blocked: false,
+        };
+    } catch (error) {
+        console.error(
+            "Redis registration rate-limit check failed:",
+            error.message
+        );
+
+        return {
+            blocked: false,
+        };
+    }
+};
+
+export const recordRegistrationAttempt = async ({
+    ip,
+}) => {
+    if (
+        !config.redis.enabled ||
+        !redisClient
+    ) {
+        return;
+    }
+
+    try {
+        const ipKey = buildRegistrationIpKey(ip);
+
+        const count =
+            await redisClient.incr(ipKey);
+
+        if (count === 1) {
+            await redisClient.expire(
+                ipKey,
+                REGISTRATION_WINDOW_SECONDS
+            );
+        }
+    } catch (error) {
+        console.error(
+            "Redis registration counter update failed:",
+            error.message
+        );
+    }
 };

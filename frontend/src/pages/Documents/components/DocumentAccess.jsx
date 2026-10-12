@@ -6,6 +6,7 @@ import {
 import {
     getDocumentAccessPolicies,
     grantDocumentAccess,
+    grantTemporaryDocumentAccess,
     updateDocumentAccessPolicy,
     revokeDocumentAccess,
 } from "../../../api/document.api";
@@ -40,9 +41,18 @@ const DocumentAccess = ({
         useState("");
 
     const [
-        editingPolicy,
-        setEditingPolicy,
+        showRevokeDialog,
+        setShowRevokeDialog,
+    ] = useState(false);
+
+    const [
+        policyToRevoke,
+        setPolicyToRevoke,
     ] = useState(null);
+
+    const [revokeReason, setRevokeReason] =
+        useState("");
+
 
     const loadAccessPolicies =
         async () => {
@@ -127,7 +137,7 @@ const DocumentAccess = ({
         };
 
     const handleSubmit =
-        async (accessData) => {
+        async (accessData, isTemporary) => {
             try {
                 setSaving(true);
                 setError("");
@@ -135,6 +145,11 @@ const DocumentAccess = ({
                 if (editingPolicy) {
                     await updateDocumentAccessPolicy(
                         editingPolicy.id,
+                        accessData
+                    );
+                } else if (isTemporary) {
+                    await grantTemporaryDocumentAccess(
+                        documentId,
                         accessData
                     );
                 } else {
@@ -174,42 +189,53 @@ const DocumentAccess = ({
             );
         };
 
-    const handleDelete =
-        async (policy) => {
+    const handleDelete = (policy) => {
+        setPolicyToRevoke(policy);
+        setRevokeReason("");
+        setShowRevokeDialog(true);
+    };
+
+    const handleConfirmRevoke = async () => {
+        if (!policyToRevoke) {
+            return;
+        }
+
+        try {
+            setSaving(true);
+            setError("");
+
+            await revokeDocumentAccess(
+                policyToRevoke.id,
+                revokeReason || null
+            );
+
+            await refreshData();
+
             if (
-                !window.confirm(
-                    "Delete this access policy?"
-                )
+                editingPolicy?.id ===
+                policyToRevoke.id
             ) {
-                return;
+                setEditingPolicy(null);
             }
 
-            try {
-                setError("");
+            setShowRevokeDialog(false);
+            setPolicyToRevoke(null);
+            setRevokeReason("");
+        } catch (err) {
+            setError(
+                err?.response?.data?.message ||
+                    "Failed to revoke access."
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
 
-                await revokeDocumentAccess(
-                    policy.id,
-                    "Removed from frontend"
-                );
-
-                await refreshData();
-
-                if (
-                    editingPolicy?.id ===
-                    policy.id
-                ) {
-                    setEditingPolicy(
-                        null
-                    );
-                }
-            } catch (err) {
-                setError(
-                    err?.response?.data
-                        ?.message ||
-                        "Failed to revoke access."
-                );
-            }
-        };
+    const handleCancelRevoke = () => {
+        setShowRevokeDialog(false);
+        setPolicyToRevoke(null);
+        setRevokeReason("");
+    };
 
     useEffect(() => {
         loadData();
@@ -272,12 +298,21 @@ const DocumentAccess = ({
 
             <AccessPolicyTable
                 policies={policies}
-                onEdit={
-                    handleEdit
-                }
-                onDelete={
-                    handleDelete
-                }
+                organization={organization}
+                units={units}
+                members={members}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+            />
+
+            <RevokeAccessDialog
+                open={showRevokeDialog}
+                policy={policyToRevoke}
+                reason={revokeReason}
+                onReasonChange={setRevokeReason}
+                onCancel={handleCancelRevoke}
+                onConfirm={handleConfirmRevoke}
+                loading={saving}
             />
 
         </div>
