@@ -58,8 +58,15 @@ The AI service intentionally retrieves **more** candidates than `top_k` (`CANDID
 | `page_number` | Yes | Yes | Source citation |
 | `text` | Yes | Yes | Document content passed to LLM (after authorization) |
 | `block_ids` | Yes | Yes | Source traceability |
-| `metadata` | Yes | Yes | Diagnostic context |
+| `metadata` | Yes | Yes | Diagnostic context + **chunk_type** + type-specific fields |
 | `score` | — | Yes | Reranking (score-based sort only) |
+
+**`metadata` fields by `chunk_type`:**
+- `text` — `{ chunk_index, page_number, block_count, character_count }`
+- `table` — adds `{ markdown, headers[], rows[][], chunk_type: "table" }`
+- `formula` — adds `{ latex, chunk_type: "formula" }`
+- `figure` / `image` — adds `{ caption, description, chunk_type: "figure"|"image" }`
+- `code` — adds `{ language, chunk_type: "code" }`
 
 **Authorization boundary.** Qdrant retrieval results are candidate evidence, not proof of authorization. The backend validates each `document_id` against a PostgreSQL `Document` row (organization match, `isDeleted = false`, `status = 'READY'`, `currentVersionId` not null) and then evaluates `DocumentAccessPolicy` rows for the `QUERY` action with deny-overrides-allow and deny-by-default semantics. Chunks whose `version_id` does not match the document's current version are discarded before reranking or generation. No document text from an unauthorized or stale candidate ever reaches a model.
 
@@ -87,13 +94,20 @@ min chunk:     100 characters   (MIN_CHUNK_SIZE not yet enforced)
 chunk ID:      chunk_000000, chunk_000001, ...
 ```
 
-Tables render as markdown-style text; images/figures use `caption` or `ocr_text`.
+**Chunk types preserved in `metadata.chunk_type`:**
+- `text` — plain text
+- `table` — markdown representation in `metadata.markdown`, `headers[]`, `rows[][]`
+- `formula` — LaTeX in `metadata.latex`
+- `figure` / `image` — `metadata.caption`, `metadata.description`
+- `code` — `metadata.language`
+
+Tables render as markdown-style text; images/figures use `caption` or `ocr_text`; formulas use `latex`.
 
 **Embeddings** — Sentence Transformers, `EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`, 384 dimensions), batch size 32, normalized, CUDA when available. The model loads at import, so startup can take time.
 
 **Qdrant** — `AsyncQdrantClient`. Creates the collection if missing (cosine distance) with payload indexes on `document_id`, `version_id`, `chunk_id`, `organization_id`. Point IDs are deterministic UUIDv5 hashes of `document_id:version_id:chunk_id`, so reprocessing overwrites the same points while versions stay separate. `process_document()` calls `delete_version()` before `upsert_chunks()` so same-version reprocessing leaves no stale vectors.
 
-**Retrieval service** — `retrieve_candidates(request)` ensures the collection, embeds the query, searches with `candidate_limit = min(top_k * 5, 200)` filtered by `organization_id`. Backend-side authorization is **not** performed here.
+**Retrieval service** — `retrieve_candidates(request)` ensures the collection, embeds the query, searches with `candidate_limit = min(top_k * 5, 200)` filtered by `organization_id`. Returns `chunk_type` and type-specific `metadata` for each result. Backend-side authorization is **not** performed here.
 
 ## Backend Integration
 
@@ -149,9 +163,11 @@ Main dependencies: FastAPI, httpx, PyMuPDF, python-docx, camelot-py, pdfplumber,
 
 ## Current Status
 
-Implemented: FastAPI processing and retrieval routes; PDF/DOCX/TXT extraction with Docling fallback; block normalization and chunking (tables and images indexed as text); Sentence Transformer embeddings; Qdrant collection/index management, organization filtering, version-aware deterministic point IDs, upsert/search, paginated scroll; candidate retrieval with `top_k * 5` capped at 200; backend integration for processing and authorization-safe retrieval; multi-tenant `organization_id` propagation; structured error responses (422/500); SSRF protection; graceful Qdrant shutdown.
+Implemented: FastAPI processing and retrieval routes; PDF/DOCX/TXT extraction with Docling fallback; block normalization and chunking (**chunk types preserved: text, table, formula, figure, image, code with type-specific metadata**); Sentence Transformer embeddings; Qdrant collection/index management, organization filtering, version-aware deterministic point IDs, upsert/search, paginated scroll; candidate retrieval with `top_k * 5` capped at 200 (returns `chunk_type` + metadata); backend integration for processing and authorization-safe retrieval; multi-tenant `organization_id` propagation; structured error responses (422/500); SSRF protection; graceful Qdrant shutdown.
 
 **2026-10-06 fixes:** stale vectors on same-version reprocessing; tables and images never indexed; SSRF in downloader; missing exception handlers; `/retrieve` before first upload; `get_version_points` silent truncation; `EMBEDDING_MODEL` ignored; whitespace-only queries; unsupported file downloads; Qdrant client not closing; aligned settings modules; `requirements.txt` gaps; dead code removed; missing package init; test script fixes.
+
+**2026-10-13 Phase 7:** chunking preserves `chunk_type` + type-specific metadata (markdown tables, LaTeX formulas, captions, code language); retrieval schema includes `chunk_type`; `/retrieve` returns typed chunks.
 
 ## What we are going to do
 
@@ -163,6 +179,8 @@ Implemented: FastAPI processing and retrieval routes; PDF/DOCX/TXT extraction wi
 6. Hybrid search and reranking after filtered retrieval works — reranking is score-based only; model-based reranking is deferred.
 7. Grounded LLM generation, citations, and evaluation after authorization-safe retrieval is complete — the backend calls Bedrock Converse with a system prompt and validates citations and output guardrails. Evaluation framework is not started.
 8. Consolidate the two settings modules (`config.py` and `settings.py`) — still pending.
+9. Formula extraction (LaTeX) — pdfplumber/PDFMiner extraction exists but LaTeX not yet in chunks.
+10. Code block extraction (language detection) — heuristics needed for monospace/font detection.
 
 ## Constraints for Future Changes
 

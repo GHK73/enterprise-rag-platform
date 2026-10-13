@@ -16,5 +16,6 @@ export const retrieveFromAI = async (
         { timeout: 30000 }
     );
 
+    // AI service now returns chunk_type in results
     return response.data;
 };

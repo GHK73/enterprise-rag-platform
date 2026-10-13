@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import api from "@api/axios";
+import ChunkRenderer from "./Query/components/ChunkRenderer";
 import "./Query.css";
 
 const Query = () => {
@@ -66,6 +66,23 @@ const Query = () => {
         window.scrollTo({ top: 0, behavior: "smooth" });
     };
 
+    const renderEvidence = (evidence) => {
+        if (!evidence) return null;
+        
+        return (
+            <div className="query-evidence">
+                <h3>Evidence Assessment</h3>
+                <div className="evidence-badge evidence-badge-{evidence.sufficient ? 'sufficient' : 'insufficient'}">
+                    {evidence.sufficient ? "✓ Sufficient Evidence" : "✗ Insufficient Evidence"}
+                </div>
+                <p className="evidence-reason">{evidence.reason}</p>
+                {evidence.hasStructuredEvidence && (
+                    <p className="evidence-structured">Contains structured evidence (tables, formulas, or code)</p>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="query-page">
             <header className="query-header">
@@ -119,39 +136,16 @@ const Query = () => {
                         {result.answer || "No answer generated."}
                     </p>
 
-                    {result.evidence && (
-                        <div className="query-evidence">
-                            <h3>Evidence</h3>
-                            <pre>{JSON.stringify(result.evidence, null, 2)}</pre>
-                        </div>
-                    )}
+                    {renderEvidence(result.evidence)}
 
                     {result.sources && result.sources.length > 0 && (
                         <div className="query-sources">
                             <h3>Sources</h3>
-                            <ul>
+                            <div className="sources-list">
                                 {result.sources.map((source, index) => (
-                                    <li key={index}>
-                                        {source.documentId && (
-                                            <Link
-                                                to={
-                                                    `/documents/` +
-                                                    source.documentId
-                                                }
-                                            >
-                                                {source.title ||
-                                                    source.documentId}
-                                            </Link>
-                                        )}
-                                        {source.score && (
-                                            <span className="query-score">
-                                                {" "}
-                                                (score: {source.score})
-                                            </span>
-                                        )}
-                                    </li>
+                                    <ChunkRenderer key={source.chunkId || index} source={source} index={index + 1} />
                                 ))}
-                            </ul>
+                            </div>
                         </div>
                     )}
                 </div>

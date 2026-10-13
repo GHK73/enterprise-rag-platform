@@ -205,6 +205,67 @@ class ChunkingService:
 
         return None
 
+    def _determine_chunk_type(self, blocks: list[DocumentBlock]) -> str:
+        """Determine the dominant chunk type from blocks."""
+        if not blocks:
+            return "text"
+        
+        type_counts: dict[str, int] = {}
+        for block in blocks:
+            block_type = block.block_type.value if hasattr(block.block_type, 'value') else str(block.block_type)
+            type_counts[block_type] = type_counts.get(block_type, 0) + 1
+        
+        return max(type_counts, key=type_counts.get).lower()
+
+    def _extract_type_metadata(self, blocks: list[DocumentBlock], chunk_type: str) -> dict:
+        """Extract type-specific metadata from blocks."""
+        metadata = {}
+        
+        if chunk_type == "table":
+            table_blocks = [b for b in blocks if b.block_type.value == "TABLE"]
+            if table_blocks:
+                table = table_blocks[0]
+                if table.headers:
+                    metadata["headers"] = table.headers
+                if table.rows:
+                    metadata["rows"] = table.rows
+                metadata["markdown"] = self._table_to_markdown(table)
+                
+        elif chunk_type == "formula":
+            formula_blocks = [b for b in blocks if b.block_type.value == "FORMULA"]
+            if formula_blocks:
+                formula = formula_blocks[0]
+                if hasattr(formula, 'latex') and formula.latex:
+                    metadata["latex"] = formula.latex
+                    
+        elif chunk_type in ("figure", "image"):
+            figure_blocks = [b for b in blocks if b.block_type.value in ("FIGURE", "IMAGE")]
+            if figure_blocks:
+                fig = figure_blocks[0]
+                if fig.caption:
+                    metadata["caption"] = fig.caption
+                if hasattr(fig, 'description') and fig.description:
+                    metadata["description"] = fig.description
+                    
+        elif chunk_type == "code":
+            code_blocks = [b for b in blocks if b.block_type.value == "CODE"]
+            if code_blocks:
+                code = code_blocks[0]
+                if hasattr(code, 'language') and code.language:
+                    metadata["language"] = code.language
+                    
+        return metadata
+
+    def _table_to_markdown(self, table) -> str:
+        """Convert table block to markdown."""
+        lines = []
+        if table.headers:
+            lines.append(" | ".join(table.headers))
+            lines.append(" | ".join(["---"] * len(table.headers)))
+        for row in table.rows:
+            lines.append(" | ".join(row))
+        return "\n".join(lines)
+
     def _create_chunk(
         self,
         chunk_index: int,
@@ -226,6 +287,9 @@ class ChunkingService:
             if block.block_id
         ]
 
+        chunk_type = self._determine_chunk_type(blocks)
+        type_metadata = self._extract_type_metadata(blocks, chunk_type)
+
         return Chunk(
             chunk_id=f"chunk_{chunk_index:06d}",
             page_number=page_number,
@@ -236,6 +300,8 @@ class ChunkingService:
                 "page_number": page_number,
                 "block_count": len(block_ids),
                 "character_count": len(text),
+                "chunk_type": chunk_type,
+                **type_metadata,
             },
         )
 

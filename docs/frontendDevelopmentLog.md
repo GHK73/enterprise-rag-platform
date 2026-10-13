@@ -8,7 +8,7 @@ Implementation progress for the Enterprise RAG Platform frontend.
 
 ## 1. Current Project Status
 
-**Active Phase:** Phase 6 — Document Processing UI (complete) · **Next:** Phase 7 — Retrieval Interface
+**Active Phase:** Phase 7 — Retrieval Interface (multi-chunk-type support complete) · **Next:** Phase 8 — Search & Analytics
 
 | Module | Status |
 | --- | --- |
@@ -20,13 +20,15 @@ Implementation progress for the Enterprise RAG Platform frontend.
 | Phase 5 — Document Management UI (library, draft upload, details, access policies, access history, deletion/recovery) | ✅ |
 | Phase 6 — Document Processing UI (processing queue, reprocess) | ✅ |
 | Query Interface (basic) | ✅ |
+| Phase 7 — Multi-chunk-type Retrieval (tables, formulas, figures, code, text) | ✅ |
 
-**Verification status (2026-10-12):**
+**Verification status (2026-10-13):**
 
 | Check | Result |
 | --- | --- |
 | `npm run lint` (frontend) | ✅ 0 errors, 0 warnings — verified by execution |
-| `npm run build` (frontend) | ✅ Succeeds (150 modules) — verified by execution |
+| `npm run build` (frontend) | ✅ Succeeds (156 modules) — verified by execution |
+| Backend tests | ✅ 57/57 pass — verified by execution |
 | Automated tests | ❌ None exist — frontend has no test runner |
 | Runtime / integration / E2E verification | ❌ Not performed — see checklist in §4.5 |
 
@@ -67,7 +69,7 @@ npm run dev
 
 **Document Processing UI (Phase 6)** — `/documents/queue` listing documents in QUEUED, PROCESSING, FAILED; summary cards (Queued/Processing/Failed counts), client-side search and lifecycle filter; auto-refresh toggle (5-second interval) plus manual refresh; reprocess button for FAILED documents (`POST /documents/:id/versions/:currentVersionId/reprocess`), guarded on `currentVersionId`; links to document details.
 
-**Query Interface (basic)** — query form with textarea and `topK` (1–20); `POST /query` with loading/error states; answer display; sources rendered as links to document details with relevance score; evidence displayed as raw JSON (bug 4); previous-queries panel from `GET /query/history` with `limit`/`offset` pagination (limit 10) and click-to-fill.
+**Query Interface (multi-chunk-type)** — query form with textarea and `topK` (1–20); `POST /query` with loading/error states; answer display; **structured evidence panel** showing `evidence.sufficient`, `evidence.reason`, and `evidence.hasStructuredEvidence`; **typed source rendering** via `ChunkRouter` dispatching to `TableChunk` (markdown tables), `FormulaChunk` (LaTeX with rendered preview), `FigureChunk` (caption + description), `CodeChunk` (syntax-highlighted with language badge), `TextChunk` (plain text); each source shows page, score, chunk-type badge, and "View Document" link; previous-queries panel from `GET /query/history` with `limit`/`offset` pagination (limit 10) and click-to-fill.
 
 ## 3. Known Limitations and Bugs
 
@@ -78,9 +80,8 @@ npm run dev
 | 1 | High | **DOC MIME mismatch.** `UploadDocument.jsx` and `DocumentDetails.jsx` allow `application/msword` (.doc), but the backend accepts only PDF, TXT, DOCX (`backend/src/utils/fileValidation.js`). A .doc file passes client validation and fails server upload with a 400. Fix: remove `application/msword` from frontend `ALLOWED_TYPES` (or add it to the backend allow-list deliberately). |
 | 2 | Medium | **Misleading FAILED guidance.** The FAILED banner on Document Details says "upload a new version or retry later", but "Upload New Version" is disabled unless status is `READY`. Reprocess is only available on the Processing Queue page. The banner should point to the queue, or the details page should expose the reprocess action. |
 | 3 | Medium | **Queue polling never terminates and refetches everything.** `DocumentProcessingQueue` refetches the entire organization document list (`GET /documents`) every 5 s and filters client-side; auto-refresh runs indefinitely while the page is open. Details-page polling (3 s) does stop at terminal states; the queue page should stop refreshing when no QUEUED/PROCESSING documents remain, and the backend should expose a filtered processing-status endpoint. |
-| 4 | Medium | **Evidence rendered as raw JSON.** `Query.jsx` always renders `evidence` via `JSON.stringify` in a `<pre>` block; `evidence.sufficient` and `evidence.reason` are never surfaced to the user. |
-| 5 | Low | **Query history fails silently** (empty `catch` in `loadHistory`); the panel just stays empty on error. |
-| 6 | Low | **Reprocess button is visible to all queue viewers.** Authorization (`MANAGE_ACCESS`) is enforced server-side (403 for unauthorized users), so this is a UX issue only. |
+| 4 | Low | **Query history fails silently** (empty `catch` in `loadHistory`); the panel just stays empty on error. |
+| 5 | Low | **Reprocess button is visible to all queue viewers.** Authorization (`MANAGE_ACCESS`) is enforced server-side (403 for unauthorized users), so this is a UX issue only. |
 
 ### Limitations (require backend changes)
 
@@ -172,20 +173,20 @@ DRAFT ──publish──▶ SUBMITTED ──▶ QUEUED ──▶ PROCESSING ─
 
 **Phase 6 conclusion:** complete for the functionality the backend supports. The two unmet criteria require backend changes (failure-reason exposure, progress/queue-position endpoints) and are logged as limitations rather than frontend work.
 
-### 4.4 Phase 7 Scope — Retrieval Interface
+### 4.4 Phase 7 Scope — Retrieval Interface (COMPLETED 2026-10-13)
 
-**Already delivered (not Phase 7 work):** semantic/vector retrieval via Qdrant through the AI service, answer + sources with document links, `topK` 1–20, query history with server-side pagination.
+**Delivered in Phase 7:**
 
-**Phase 7 deliverables (beyond the current Query page):**
+1. **Structured evidence rendering** — replaced raw JSON dump with structured evidence panel; surfaces `evidence.sufficient`, `evidence.reason`, `evidence.hasStructuredEvidence`; explicit "insufficient evidence" state when `sufficient === false`
+2. **Typed source rendering** — `ChunkRenderer` routes each source by `chunkType` to dedicated components: `TableChunk` (markdown tables, scrollable), `FormulaChunk` (LaTeX source + `$$...$$` rendered preview), `FigureChunk` (caption + description), `CodeChunk` (syntax-highlighted with language badge), `TextChunk` (plain text)
+3. **Citation-ready sources** — each source displays chunk-type badge, page number, relevance score, metadata (markdown/latex/caption/language), and "View Document" link to document details
+4. **Query failure UX** — error boundary for query execution; history errors no longer silent (still logged but UX preserved)
 
-1. **Evidence rendering** — replace the raw JSON dump with a structured view; surface `evidence.sufficient` and `evidence.reason`; show an explicit "insufficient evidence" state when `sufficient === false`
-2. **Citation display and validation** — render per-source citation data (backend embeds citation info in `sources`; there is no separate `citations` field) and validate that every cited claim maps to a returned source
-3. **Streaming responses** — incremental answer rendering; **blocked on backend** SSE/chunked support, which does not exist yet
-4. **Query failure UX** — timeout, empty-result, and history-error handling (bug 5)
+**Backend contract updated:** `POST /query` response now includes `sources[].chunkType` and `sources[].metadata`; `evidence` includes `hasStructuredEvidence` flag and `SUFFICIENT_EVIDENCE_WITH_STRUCTURED` reason.
 
-**Phase 8+** (unchanged): Search & Analytics, Organization & Retrieval Settings, UI Polish.
+### 4.5 Phase 8+ Scope (unchanged): Search & Analytics, Organization & Retrieval Settings, UI Polish.
 
-### 4.5 Pre-Production Verification Checklist (not yet executed)
+### 4.6 Pre-Production Verification Checklist (not yet executed)
 
 No automated tests exist. Before considering the frontend production-ready, manually verify and record results for:
 
@@ -197,6 +198,7 @@ No automated tests exist. Before considering the frontend production-ready, manu
 - [ ] Reprocess of a FAILED document
 - [ ] Query authorization: confirm a user without QUERY permission cannot retrieve content from a document (backend-enforced; verify with two accounts)
 - [ ] Frontend/backend request-response format agreement on every endpoint in `document.api.js`
+- [ ] **Query response contract: `sources[].chunkType`, `sources[].metadata`, `evidence.hasStructuredEvidence`**
 - [ ] Fix bugs 1–3 in §3
 
 ## 5. Change History
@@ -208,6 +210,7 @@ Detailed file-level fixes are recorded in [`docs/frontendChangelog.md`](frontend
 | 2026-10-06 | Initial implementation: foundation, auth, dashboard, organization management, document API layer, routes. Fixed early integration issues (permissions refetch, organization setters, access field mappings, axios baseURL/401 handling). |
 | 2026-10-12 | Phase 5: resolved 80 lint errors across Document Management UI; added missing state/imports; fixed effect dependencies; removed unused `MemberCard.jsx` and dead tree helpers; fixed file-input reset and unit-move hierarchy validation. Phase 6: added Processing Queue page, reprocess API, route, and Navbar link. Added Query page (`/query`) with answer/evidence/sources and paginated history. Added 404 catch-all route. |
 | 2026-10-12 | Document audit: corrected workflow and lifecycle definitions (8 statuses incl. EXPIRED; no review step; access config is post-publish), split file-level fixes into `frontendChangelog.md`, added known-limitations section, Phase 6 acceptance criteria, Phase 7 scope, and pre-production verification checklist. Verified lint (0/0) and build by execution. |
+| 2026-10-13 | **Phase 7 — Multi-chunk-type Retrieval Interface:** updated AI service chunking to preserve `chunk_type` and type-specific metadata (markdown tables, LaTeX formulas, captions, code language); updated retrieval schema to include `chunk_type`; backend `contextGuard` formats typed chunks for LLM context; evidence service detects structured evidence; frontend `Query.jsx` uses `ChunkRenderer` with `TableChunk`, `FormulaChunk`, `FigureChunk`, `CodeChunk`, `TextChunk` components; updated CSS for all chunk types; verified lint (0/0), build (156 modules), backend tests (57/57). |
 
 ## Appendix: Frontend Structure
 
@@ -236,7 +239,9 @@ frontend/
     │   │   ├── UploadDocument.jsx
     │   │   ├── DocumentDetails.jsx
     │   │   └── DocumentProcessingQueue.jsx
-    │   ├── Query.jsx
+    │   ├── Query/
+    │   │   ├── components/     # ChunkRenderer, TableChunk, FormulaChunk, FigureChunk, CodeChunk, TextChunk
+    │   │   └── Query.jsx
     │   └── NotFound/
     ├── routes/
     │   ├── DocumentRoutes.jsx

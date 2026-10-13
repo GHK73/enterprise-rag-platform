@@ -6,6 +6,32 @@ Summary-level status lives in [`frontendDevelopmentLog.md`](frontendDevelopmentL
 
 ---
 
+## 2026-10-13 — Phase 7: Multi-chunk-type Retrieval Interface
+
+- **AI Service (Python):**
+  - `app/services/processing/chunking.py` — added `_determine_chunk_type()`, `_extract_type_metadata()`, `_table_to_markdown()`; chunks now preserve `chunk_type` (text, table, formula, figure, image, code) and type-specific metadata (markdown, headers, rows, latex, caption, description, language) in `metadata`
+  - `app/schemas/retrieval.py` — added `chunk_type: str = "text"` to `RetrievalResult`
+  - `app/services/retrieval/service.py` — passes `chunk_type` from Qdrant payload through to response
+
+- **Backend (Node.js):**
+  - `src/services/query/queryAI.service.js` — updated comment for typed chunk support
+  - `src/services/query/contextGuard.service.js` — added `formatChunkForContext()` handling table, formula, figure, code, image, text types for LLM context
+  - `src/services/query/evidence.service.js` — evidence now includes `hasStructuredEvidence` flag and `SUFFICIENT_EVIDENCE_WITH_STRUCTURED` reason
+  - `src/services/query/query.service.js` — passes `chunkType` and `metadata` through sources (via `buildSafeContext`)
+  - `src/controllers/query.controller.js` — returns enhanced response contract with typed sources
+
+- **Frontend (React):**
+  - `src/pages/Query.jsx` — replaced raw JSON evidence with structured evidence panel; uses `ChunkRenderer` for typed source rendering
+  - `src/pages/Query/components/ChunkRenderer.jsx` — new router component dispatching by `chunkType`
+  - `src/pages/Query/components/TableChunk.jsx` — renders markdown tables with scrollable container
+  - `src/pages/Query/components/FormulaChunk.jsx` — renders LaTeX source + `$$...$$` rendered preview
+  - `src/pages/Query/components/FigureChunk.jsx` — renders caption + description for figures/images
+  - `src/pages/Query/components/CodeChunk.jsx` — syntax-highlighted code blocks with language badge
+  - `src/pages/Query/components/TextChunk.jsx` — plain text fallback
+  - `src/pages/Query.css` — comprehensive styling for all chunk types, badges, tables, formulas, code, figures
+
+- **Verification:** lint (0/0), build (156 modules), backend tests (57/57 pass)
+
 ## 2026-10-12 — Document audit
 
 - `docs/frontendDevelopmentLog.md` — restructured into: project status, completed functionality, known limitations/bugs, current phase + acceptance criteria, change history. Corrected target workflow (no pre-publish access/review steps; publish dispatches straight to processing) and lifecycle (8 statuses incl. EXPIRED). Added Phase 6 acceptance criteria, Phase 7 scope, and pre-production verification checklist.

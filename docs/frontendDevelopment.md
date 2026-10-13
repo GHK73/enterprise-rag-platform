@@ -160,7 +160,53 @@ Every data-driven interface handles loading, empty, success, validation error, p
 
 Every new page is tested for desktop, tablet, and mobile. Avoid horizontal page overflow; allow large panels to scroll within controlled boundaries; keep important actions accessible; stack layouts when horizontal space is insufficient; preserve readable text widths; avoid fixed heights unless required. Responsive behavior is designed during implementation, not postponed to final polish.
 
-## 18. Development Workflow
+## 18. Query Interface (Phase 7)
+
+The Query page (`/query`) implements the retrieval interface with multi-chunk-type support.
+
+**Query Form** — textarea input with `topK` selector (1–20); submits `POST /query` with loading/error states.
+
+**Answer Display** — renders the LLM-generated answer with syntax-preserving whitespace.
+
+**Structured Evidence Panel** — replaces raw JSON with a structured badge showing:
+- `evidence.sufficient` (✓ Sufficient / ✗ Insufficient)
+- `evidence.reason` (e.g., `SUFFICIENT_EVIDENCE_WITH_STRUCTURED`, `NO_AUTHORIZED_EVIDENCE`, `LOW_RELEVANCE`)
+- `evidence.hasStructuredEvidence` flag when tables, formulas, or code chunks are present
+
+**Typed Source Rendering** — each source in `result.sources` includes `chunkType` and `metadata`; the `ChunkRenderer` routes to type-specific components:
+- **TableChunk** — markdown table rendered as scrollable HTML table; shows headers, rows
+- **FormulaChunk** — LaTeX source display + `$$...$$` rendered preview (requires KaTeX/MathJax integration)
+- **FigureChunk** / **ImageChunk** — caption + description
+- **CodeChunk** — syntax-highlighted code block with language badge
+- **TextChunk** — plain text with preserved whitespace
+
+Each source shows: chunk-type badge, page number, relevance score, metadata preview, and "View Document" link to `/documents/:documentId`.
+
+**Query History** — paginated panel from `GET /query/history` (limit 10, offset-based); click-to-fill previous queries; loading/error/empty states.
+
+**API Response Contract** (updated for Phase 7):
+```json
+{
+  "answer": "...",
+  "sources": [
+    {
+      "index": 1,
+      "chunkId": "uuid",
+      "documentId": "uuid",
+      "versionId": "uuid",
+      "pageNumber": 3,
+      "score": 0.87,
+      "chunkType": "table",
+      "metadata": { "markdown": "...", "headers": ["A","B"], "rows": [["1","2"]] }
+    }
+  ],
+  "evidence": { "sufficient": true, "reason": "SUFFICIENT_EVIDENCE_WITH_STRUCTURED", "hasStructuredEvidence": true },
+  "usedLLM": true,
+  "outputGuardPassed": true
+}
+```
+
+## 19. Development Workflow
 
 Each step modifies only 2–3 related files or functions: Implement → Test → Fix Issues → Update Development Log → Continue. Do not skip testing, combine unrelated features, add unnecessary files, rename working variables without a reason, or restructure stable code unnecessarily; finish the current step before the next.
 
@@ -168,7 +214,7 @@ Each step modifies only 2–3 related files or functions: Implement → Test →
 
 **Coding standards:** keep components small and focused; reuse existing components when meaningful; avoid duplicate code; follow existing naming conventions; keep styles isolated; keep API logic out of reusable visual components; add abstractions only when current code requires them; test every feature before continuing.
 
-## 19. Documentation Boundaries
+## 20. Documentation Boundaries
 
 This guide defines frontend architecture, development standards, UI rules, and implementation workflow. The development log defines completed work, current progress, planned features, and the next step. `docs/DATABASE.md` defines database architecture, document models, access models, and storage relationships. The backend log defines backend progress and current phase. Avoid duplicating detailed architecture or progress across these documents.
 

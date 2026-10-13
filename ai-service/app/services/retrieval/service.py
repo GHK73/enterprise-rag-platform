@@ -58,6 +58,7 @@ class RetrievalService:
                 score=float(result.get("score", 0.0)),
                 block_ids=result.get("block_ids", []),
                 metadata=result.get("metadata", {}),
+                chunk_type=result.get("metadata", {}).get("chunk_type", "text"),
             )
             for result in candidates
         ]

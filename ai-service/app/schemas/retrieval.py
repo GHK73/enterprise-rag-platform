@@ -40,6 +40,7 @@ class RetrievalResult(BaseModel):
     metadata: dict = Field(
         default_factory=dict
     )
+    chunk_type: str = "text"
 
 class RetrievalResponse(BaseModel):
     query: str

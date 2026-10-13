@@ -23,6 +23,11 @@ export const checkEvidenceSufficiency = (
         };
     }
 
+    // Check for high-value structured evidence
+    const hasStructuredEvidence = usableCandidates.some(c => 
+        ['table', 'formula', 'code'].includes(c.chunk_type || 'text')
+    );
+
     const topScore = Number(
         usableCandidates[0].score
     );
@@ -34,8 +39,14 @@ export const checkEvidenceSufficiency = (
         };
     }
 
+    // Boost confidence if we have structured evidence
+    const reason = hasStructuredEvidence 
+        ? "SUFFICIENT_EVIDENCE_WITH_STRUCTURED" 
+        : "SUFFICIENT_EVIDENCE";
+
     return {
         sufficient: true,
-        reason: "SUFFICIENT_EVIDENCE",
+        reason,
+        hasStructuredEvidence,
     };
 };

@@ -13,7 +13,7 @@ Backend implementation log for the Enterprise RAG Platform.
 | 5 | Query Engine | Completed | Retrieval, reranking, evidence evaluation, LLM generation, citations |
 | 6 | Caching & Performance | Completed | Query cache, authorized cache, Redis integration, cache invalidation |
 | 7 | API Rate Limiting | Completed | Token bucket rate limiting, fail-open/closed policies |
-| 8 | Production Hardening | Completed | Atomic transitions, idempotency, duplicate handling, cleanup, test suite (57 tests as of 2026-10-12; 43 tests at the 2026-10-12 milestone) |
+| 8 | Production Hardening | Completed | Atomic transitions, idempotency, duplicate handling, cleanup, test suite (57 tests as of 2026-10-13; 43 tests at the 2026-10-12 milestone) |
 | 9 | Migration & Verification | In Progress | Apply pending migration, live infrastructure verification |
 | 10 | Evaluation & Monitoring | In Progress | Metrics, logging, observability, evaluation framework |
 | 11 | Deployment | Not Started | CI/CD, infrastructure as code, production deployment |
@@ -169,6 +169,7 @@ The single, shared authorization engine lives in `backend/src/services/document/
 | 2026-10-04 | Shared Redis client, document access authority, lifecycle authorization, processing state, permission revocation, invitation hardening |
 | 2026-10-05 | Email normalization, failed-processing handling, version-upload safety, delegated access management, Redis latency benchmark |
 | 2026-10-12 | Production-readiness pass (below) |
+| 2026-10-13 | **Phase 7 — Multi-chunk-type retrieval:** AI service chunking preserves `chunk_type` + type-specific metadata (tables, formulas, figures, code); retrieval schema returns `chunk_type`; backend `contextGuard` formats typed chunks for LLM; evidence service detects structured evidence; frontend renders typed sources |
 
 **2026-10-12 production-readiness pass** (a work-session name; it does **not** mean the platform is production-ready — deployment, live-infrastructure verification, and evaluation remain unfinished):
 
@@ -224,8 +225,10 @@ Computes a SHA-256 over the user's organization ID, unit ID, role, sorted unit h
 | Phase 11 — Deployment | Not started |
 | Apply migration `20261012100000_unique_active_document_access_policy` | Pending — `npx prisma migrate deploy` |
 | Live verification (real Redis, AI service, Qdrant, database) | Pending |
-| Frontend document-management polish and retrieval interface | In progress |
+| Frontend document-management polish and retrieval interface | **Phase 7 complete** |
 | Processing failure reasons (`processingError` column) | Planned |
+| AI service formula extraction (LaTeX) | Planned — extraction exists but not yet chunked separately |
+| AI service code block extraction (language detection) | Planned |
 
 ## Open issues
 
@@ -359,14 +362,36 @@ Request: `{ query, topK (1–20) }`. Response:
 {
     "query": "...",
     "answer": "...",
-    "sources": [{ "index": 1, "chunkId": "...", "documentId": "...", "versionId": "...", "pageNumber": 1, "score": 0.9 }],
-    "evidence": { "sufficient": true, "reason": "SUFFICIENT_EVIDENCE" },
+    "sources": [
+        { 
+            "index": 1, 
+            "chunkId": "...", 
+            "documentId": "...", 
+            "versionId": "...", 
+            "pageNumber": 1, 
+            "score": 0.9,
+            "chunkType": "text",
+            "metadata": {}
+        }
+    ],
+    "evidence": { 
+        "sufficient": true, 
+        "reason": "SUFFICIENT_EVIDENCE",
+        "hasStructuredEvidence": false
+    },
     "usedLLM": true,
     "outputGuardPassed": true
 }
 ```
 
-Evidence reasons: `SUFFICIENT_EVIDENCE`, `NO_AUTHORIZED_EVIDENCE`, `NO_USABLE_EVIDENCE`, `LOW_RELEVANCE`.
+Evidence reasons: `SUFFICIENT_EVIDENCE`, `SUFFICIENT_EVIDENCE_WITH_STRUCTURED`, `NO_AUTHORIZED_EVIDENCE`, `NO_USABLE_EVIDENCE`, `LOW_RELEVANCE`.
+
+**Chunk types** (`chunkType` + `metadata`):
+- `text` — plain text
+- `table` — `metadata: { markdown, headers[], rows[][] }`
+- `formula` — `metadata: { latex }`
+- `figure` / `image` — `metadata: { caption, description }`
+- `code` — `metadata: { language }`
 
 `GET /query/history` returns only the calling user's entries within their own organization, newest first; it never exposes `organizationId` or `userId`.
 
@@ -438,6 +463,7 @@ Tests run with the Node built-in test runner (`node --test backend/tests/*.test.
 - Evidence fallback and output guardrails — `queryGuards.test.js`, `queryPipeline.test.js`.
 - Document lifecycle transitions — `documentLifecycle.test.js`.
 - Response contract and input validation — `queryController.test.js`.
+- **Structured evidence detection (`SUFFICIENT_EVIDENCE_WITH_STRUCTURED`)** — `evidence.service.js`, `queryPipeline.test.js` (tests cover `NO_USABLE_EVIDENCE`, `LOW_RELEVANCE`; structured evidence reason added in Phase 7).
 
 **Missing security and reliability tests (not covered by automated tests):**
 

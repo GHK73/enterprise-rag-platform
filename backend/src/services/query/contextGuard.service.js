@@ -26,6 +26,74 @@ const sanitizeChunk = (text) => {
     );
 };
 
+const formatChunkForContext = (candidate, sourceNumber) => {
+    const chunkType = candidate.chunk_type || "text";
+    const metadata = candidate.metadata || {};
+    const pageNumber = candidate.page_number ?? "Unknown";
+
+    switch (chunkType) {
+        case "table": {
+            const markdown = metadata.markdown || candidate.text;
+            return [
+                `[Source ${sourceNumber}]`,
+                `Page: ${pageNumber}`,
+                `Type: Table`,
+                "Content:",
+                markdown,
+            ].join("\n");
+        }
+        case "formula": {
+            const latex = metadata.latex || candidate.text;
+            return [
+                `[Source ${sourceNumber}]`,
+                `Page: ${pageNumber}`,
+                `Type: Formula`,
+                "LaTeX:",
+                latex,
+            ].join("\n");
+        }
+        case "figure": {
+            const caption = metadata.caption || "";
+            const description = metadata.description || candidate.text;
+            return [
+                `[Source ${sourceNumber}]`,
+                `Page: ${pageNumber}`,
+                `Type: Figure`,
+                caption ? `Caption: ${caption}` : "",
+                "Description:",
+                description,
+            ].filter(Boolean).join("\n");
+        }
+        case "code": {
+            const language = metadata.language || "text";
+            return [
+                `[Source ${sourceNumber}]`,
+                `Page: ${pageNumber}`,
+                `Type: Code (${language})`,
+                "Content:",
+                candidate.text,
+            ].join("\n");
+        }
+        case "image": {
+            const caption = metadata.caption || candidate.text;
+            return [
+                `[Source ${sourceNumber}]`,
+                `Page: ${pageNumber}`,
+                `Type: Image`,
+                caption ? `Caption: ${caption}` : "",
+            ].filter(Boolean).join("\n");
+        }
+        default: {
+            return [
+                `[Source ${sourceNumber}]`,
+                `Page: ${pageNumber}`,
+                "Content:",
+                sanitizeChunk(candidate.text),
+            ].join("\n");
+        }
+    }
+};
+
 export const buildSafeContext = (
     candidates
 ) => {
@@ -49,27 +117,15 @@ export const buildSafeContext = (
         const candidate =
             candidates[index];
 
-        const text =
-            sanitizeChunk(
-                candidate.text
-            );
+        const text = sanitizeChunk(candidate.text);
 
         if (!text) {
             continue;
         }
 
-        const sourceNumber =
-            sources.length + 1;
+        const sourceNumber = sources.length + 1;
 
-        const block = [
-            `[Source ${sourceNumber}]`,
-            `Page: ${
-                candidate.page_number ??
-                "Unknown"
-            }`,
-            "Content:",
-            text,
-        ].join("\n");
+        const block = formatChunkForContext(candidate, sourceNumber);
 
         if (
             currentLength +
@@ -93,6 +149,10 @@ export const buildSafeContext = (
                 candidate.page_number,
             score:
                 candidate.score,
+            chunkType:
+                candidate.chunk_type || "text",
+            metadata:
+                candidate.metadata || {},
         });
 
         currentLength +=
