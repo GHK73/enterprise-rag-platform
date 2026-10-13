@@ -14,6 +14,10 @@ import {
     recordFailedLogin,
     clearEmailLoginFailures,
 } from "./authRateLimit.service.js";
+import {
+    createAuthSecurityEvent,
+    recordAuthSecurityEvent,
+} from "./metrics/metrics.service.js";
 
 export const registerUser = async ({
     fullName,
@@ -51,6 +55,12 @@ export const registerUser = async ({
         });
 
     if (existingUser) {
+        recordAuthSecurityEvent(createAuthSecurityEvent({
+            eventType: "REGISTRATION_FAILED",
+            outcome: "CONFLICT",
+            reasonCode: "EMAIL_EXISTS",
+            email: normalizedEmail,
+        }));
         throw new ApiError(
             409,
             "User already exists"
@@ -80,13 +90,25 @@ export const registerUser = async ({
             },
         });
     } catch (error) {
-        if(error.code === "P2002"){
+        if (error.code === "P2002") {
+            recordAuthSecurityEvent(createAuthSecurityEvent({
+                eventType: "REGISTRATION_FAILED",
+                outcome: "CONFLICT",
+                reasonCode: "EMAIL_EXISTS",
+                email: normalizedEmail,
+            }));
             throw new ApiError(
                 409,
                 "User already exists"
             );
         }
 
+        recordAuthSecurityEvent(createAuthSecurityEvent({
+            eventType: "REGISTRATION_FAILED",
+            outcome: "ERROR",
+            reasonCode: "DATABASE_ERROR",
+            email: normalizedEmail,
+        }));
         throw error;
     }
 
@@ -96,6 +118,14 @@ export const registerUser = async ({
         passwordHash: _,
         ...safeUser
     } = user;
+
+    recordAuthSecurityEvent(createAuthSecurityEvent({
+        eventType: "REGISTRATION_SUCCESS",
+        outcome: "SUCCESS",
+        userId: user.id,
+        organizationId: user.unitId ? null : null,
+        email: normalizedEmail,
+    }));
 
     return {
         user: safeUser,
@@ -140,6 +170,14 @@ export const loginUser = async ({
             ip,
         });
 
+        recordAuthSecurityEvent(createAuthSecurityEvent({
+            eventType: "LOGIN_FAILED",
+            outcome: "UNAUTHORIZED",
+            reasonCode: "INVALID_CREDENTIALS",
+            ip,
+            email: normalizedEmail,
+        }));
+
         throw new ApiError(
             401,
             "Invalid email or password"
@@ -158,6 +196,14 @@ export const loginUser = async ({
             ip,
         });
 
+        recordAuthSecurityEvent(createAuthSecurityEvent({
+            eventType: "LOGIN_FAILED",
+            outcome: "UNAUTHORIZED",
+            reasonCode: "INVALID_CREDENTIALS",
+            ip,
+            email: normalizedEmail,
+        }));
+
         throw new ApiError(
             401,
             "Invalid email or password"
@@ -172,6 +218,16 @@ export const loginUser = async ({
      */
 
     if (!user.isActive) {
+        recordAuthSecurityEvent(createAuthSecurityEvent({
+            eventType: "ACCOUNT_INACTIVE",
+            outcome: "FORBIDDEN",
+            reasonCode: "ACCOUNT_INACTIVE",
+            userId: user.id,
+            organizationId: user.unit?.organizationId || null,
+            ip,
+            email: normalizedEmail,
+        }));
+
         throw new ApiError(
             403,
             "Account is inactive"
@@ -199,6 +255,15 @@ export const loginUser = async ({
         passwordHash: _,
         ...safeUser
     } = user;
+
+    recordAuthSecurityEvent(createAuthSecurityEvent({
+        eventType: "LOGIN_SUCCESS",
+        outcome: "SUCCESS",
+        userId: user.id,
+        organizationId: user.unit?.organizationId || null,
+        ip,
+        email: normalizedEmail,
+    }));
 
     return {
         user: safeUser,

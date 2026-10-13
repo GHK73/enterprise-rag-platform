@@ -208,7 +208,7 @@ Permanent cleanup nulls `currentVersionId`, deletes versions, policies, audit ro
 
 ## Migrations
 
-Eleven migrations; the eleventh (`20261012100000_unique_active_document_access_policy`, added 2026-10-12) is **pending apply** — run `npx prisma migrate deploy`, then `npx prisma migrate status`.
+Eleven migrations; the eleventh (`20261012100000_unique_active_document_access_policy`, added 2026-10-12) **applied 2026-10-13** — required IMMUTABLE wrapper functions for enum casts in expression index; run `npx prisma migrate status` to verify.
 
 | Migration | Purpose |
 | --- | --- |
@@ -222,7 +222,7 @@ Eleven migrations; the eleventh (`20261012100000_unique_active_document_access_p
 | `20260927135626_add_query_history` | Query history |
 | `20261005101500_normalize_user_email` | `citext` extension, duplicate guard, lowercase backfill, `User.email` as `CITEXT` |
 | `20261005140000_seed_manage_access_role_policies` | Backfills `OWNER` and `ADMIN` `MANAGE_ACCESS` policies for published documents (idempotent `NOT EXISTS` guard) |
-| `20261012100000_unique_active_document_access_policy` | Deduplicates existing active policies, then enforces uniqueness of active policies per subject/action/effect with a partial expression index |
+| `20261012100000_unique_active_document_access_policy` | Deduplicates existing active policies, then enforces uniqueness of active policies per subject/action/effect with a partial expression index; fixed IMMUTABLE wrapper functions for enum→text casts |
 
 ## Schema Changes (2026-10-05)
 

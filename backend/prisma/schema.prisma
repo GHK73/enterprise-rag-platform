@@ -100,6 +100,48 @@ enum InvitationStatus {
   REVOKED
 }
 
+enum ApiRequestOutcome {
+  SUCCESS
+  CLIENT_ERROR
+  SERVER_ERROR
+  RATE_LIMITED
+  REJECTED
+}
+
+enum AuthEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  REGISTRATION_SUCCESS
+  REGISTRATION_FAILED
+  JWT_INVALID
+  JWT_EXPIRED
+  ACCOUNT_INACTIVE
+  UNAUTHORIZED
+  FORBIDDEN
+  PERMISSION_DENIED
+  RATE_LIMIT_REJECTED
+  DEPENDENCY_FAILURE
+}
+
+enum CacheOutcome {
+  HIT
+  MISS
+  BYPASS
+  ERROR
+}
+
+enum JobOutcome {
+  SUCCESS
+  FAILURE
+  RETRY
+}
+
+enum BenchmarkStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model Organization {
   id          String  @id @default(cuid())
   name        String
@@ -112,6 +154,8 @@ model Organization {
   documents            Document[]
   documentAccessAudits DocumentAccessAudit[]
   queryHistories       QueryHistory[]
+  defaultAccessPolicies OrganizationDefaultAccessPolicy[]
+  defaultAccessSubjectPolicies OrganizationDefaultAccessPolicy[] @relation("DefaultAccessSubjectOrganization")
 
   createdAt                     DateTime               @default(now())
   updatedAt                     DateTime               @updatedAt
@@ -131,6 +175,7 @@ model OrganizationUnit {
   parent                 OrganizationUnit?      @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
   children               OrganizationUnit[]     @relation("OrganizationHierarchy")
   documentAccessPolicies DocumentAccessPolicy[] @relation("DocumentAccessSubjectUnit")
+  defaultAccessSubjectPolicies OrganizationDefaultAccessPolicy[] @relation("DefaultAccessSubjectUnit")
 
   allocatedCapacity Int?
 
@@ -169,6 +214,9 @@ model User {
   documentAccessPolicies        DocumentAccessPolicy[] @relation("DocumentAccessSubjectUser")
   grantedDocumentAccessPolicies DocumentAccessPolicy[] @relation("GrantedDocumentAccessPolicies")
   revokedDocumentAccessPolicies DocumentAccessPolicy[] @relation("RevokedDocumentAccessPolicies")
+  grantedDefaultAccessPolicies  OrganizationDefaultAccessPolicy[] @relation("GrantedDefaultAccessPolicies")
+  revokedDefaultAccessPolicies  OrganizationDefaultAccessPolicy[] @relation("RevokedDefaultAccessPolicies")
+  defaultAccessSubjectPolicies  OrganizationDefaultAccessPolicy[] @relation("DefaultAccessSubjectUser")
 
   sentInvitations            Invitation[]          @relation("SentInvitations")
   documentAccessAuditActions DocumentAccessAudit[] @relation("DocumentAccessAuditActor")
@@ -300,6 +348,7 @@ model DocumentVersion {
   checksum         String
 
   processingStatus DocumentProcessingStatus @default(PENDING)
+  processingError  String?
 
   createdById String
   createdBy   User   @relation("CreatedDocumentVersions", fields: [createdById], references: [id], onDelete: Restrict)
@@ -410,6 +459,54 @@ model DocumentAccessAudit {
   @@index([createdAt])
 }
 
+model OrganizationDefaultAccessPolicy {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  subjectType DocumentAccessSubjectType
+
+  subjectOrganizationId String?
+  subjectOrganization   Organization? @relation("DefaultAccessSubjectOrganization", fields: [subjectOrganizationId], references: [id], onDelete: Cascade)
+
+  subjectUnitId String?
+  subjectUnit   OrganizationUnit? @relation("DefaultAccessSubjectUnit", fields: [subjectUnitId], references: [id], onDelete: Cascade)
+
+  subjectRole Role?
+
+  subjectUserId String?
+  subjectUser   User? @relation("DefaultAccessSubjectUser", fields: [subjectUserId], references: [id], onDelete: Cascade)
+
+  action DocumentAccessAction
+  effect DocumentAccessEffect @default(ALLOW)
+  scope  DocumentAccessScope?
+
+  validFrom  DateTime  @default(now())
+  validUntil DateTime?
+
+  grantedById String
+  grantedBy   User   @relation("GrantedDefaultAccessPolicies", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  isActive    Boolean   @default(true)
+  revokedAt   DateTime?
+  revokedById String?
+  revokedBy   User?     @relation("RevokedDefaultAccessPolicies", fields: [revokedById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([subjectType])
+  @@index([subjectOrganizationId])
+  @@index([subjectUnitId])
+  @@index([subjectRole])
+  @@index([subjectUserId])
+  @@index([action])
+  @@index([isActive])
+  @@index([validUntil])
+}
+
 model QueryHistory {
   id String @id @default(cuid())
 
@@ -433,4 +530,205 @@ model QueryHistory {
   @@index([organizationId])
   @@index([userId])
   @@index([createdAt])
+}
+
+model ApiRequestMetric {
+  id String @id @default(cuid())
+
+  timestamp DateTime @default(now())
+  requestId String @db.VarChar(64)
+
+  method String
+  route String
+  statusCode Int
+  durationMs Int
+
+  outcome ApiRequestOutcome
+
+  authenticated Boolean @default(false)
+  userId String?
+  organizationId String?
+
+  responseSizeBytes Int?
+
+  environment String?
+  benchmarkRunId String?
+
+  @@index([timestamp])
+  @@index([route])
+  @@index([statusCode])
+  @@index([outcome])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([benchmarkRunId])
+}
+
+model AuthSecurityEvent {
+  id String @id @default(cuid())
+
+  timestamp DateTime @default(now())
+  eventType AuthEventType
+
+  outcome String
+  reasonCode String?
+
+  userId String?
+  organizationId String?
+
+  ipHash String?
+  emailHash String?
+
+  metadata Json?
+
+  @@index([timestamp])
+  @@index([eventType])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([ipHash])
+  @@index([emailHash])
+}
+
+model QueryPerformanceMetric {
+  id String @id @default(cuid())
+
+  timestamp DateTime @default(now())
+  requestId String @db.VarChar(64)
+
+  organizationId String
+  userId String?
+
+  totalDurationMs Int
+
+  rawCacheOutcome CacheOutcome
+  rawCacheLookupMs Int?
+
+  authorizedCacheOutcome CacheOutcome
+  authorizedCacheLookupMs Int?
+  authorizedCacheValidationMs Int?
+
+  aiRetrievalMs Int?
+  authorizationMs Int?
+  rerankingMs Int?
+  evidenceEvaluationMs Int?
+  contextPreparationMs Int?
+  llmGenerationMs Int?
+  citationValidationMs Int?
+  outputGuardrailMs Int?
+  historyPersistenceMs Int?
+
+  usedLLM Boolean @default(false)
+  insufficientEvidenceFallback Boolean @default(false)
+
+  finalOutcome String
+  errorCategory String?
+
+  @@index([timestamp])
+  @@index([requestId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([rawCacheOutcome])
+  @@index([authorizedCacheOutcome])
+}
+
+model RateLimitMetric {
+  id String @id @default(cuid())
+
+  timestamp DateTime @default(now())
+
+  route String
+  category String
+
+  outcome String
+  limitConfig Json?
+
+  rejectionReason String?
+  statusCode Int?
+
+  redisAvailable Boolean
+  redisError String?
+
+  userId String?
+  organizationId String?
+
+  @@index([timestamp])
+  @@index([route])
+  @@index([category])
+  @@index([outcome])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+model BackgroundJobMetric {
+  id String @id @default(cuid())
+
+  timestamp DateTime @default(now())
+  jobId String @db.VarChar(64)
+
+  jobType String
+  correlationId String?
+
+  enqueueTimestamp DateTime
+  enqueueOutcome String
+
+  queueWaitMs Int?
+  processingStartTimestamp DateTime?
+  processingEndTimestamp DateTime?
+  totalProcessingMs Int?
+
+  attempt Int @default(1)
+  outcome JobOutcome
+  failureCategory String?
+
+  organizationId String?
+
+  @@index([timestamp])
+  @@index([jobId])
+  @@index([jobType])
+  @@index([outcome])
+  @@index([organizationId])
+  @@index([correlationId])
+}
+
+model DependencyMetric {
+  id String @id @default(cuid())
+
+  timestamp DateTime @default(now())
+
+  dependency String
+  operation String
+
+  durationMs Int
+  outcome String
+  errorCategory String?
+
+  requestId String?
+  correlationId String?
+
+  @@index([timestamp])
+  @@index([dependency])
+  @@index([operation])
+  @@index([outcome])
+  @@index([requestId])
+  @@index([correlationId])
+}
+
+model BenchmarkRun {
+  id String @id @default(cuid())
+
+  runId String @unique
+  status BenchmarkStatus @default(RUNNING)
+
+  config Json
+
+  startTime DateTime @default(now())
+  endTime DateTime?
+
+  requestCount Int @default(0)
+  errorCount Int @default(0)
+
+  summary Json?
+
+  @@index([runId])
+  @@index([status])
+  @@index([startTime])
 }

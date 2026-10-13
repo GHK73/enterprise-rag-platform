@@ -70,14 +70,14 @@ const makeDeps = (overrides = {}) => {
         },
         getCachedQuery: async (organizationId, query, topK) => {
             calls.getCachedQuery.push({ organizationId, query, topK });
-            return null;
+            return { data: null, outcome: "MISS", lookupMs: 0 };
         },
         setCachedQuery: async (organizationId, query, topK, results) => {
             calls.setCachedQuery.push({ organizationId, query, topK, results });
         },
         getCachedAuthorizedQuery: async (organizationId, hash, query, topK) => {
             calls.getCachedAuthorizedQuery.push({ organizationId, hash, query, topK });
-            return null;
+            return { data: null, outcome: "MISS", lookupMs: 0 };
         },
         setCachedAuthorizedQuery: async (organizationId, hash, query, topK, results) => {
             calls.setCachedAuthorizedQuery.push({ organizationId, hash, query, topK, results });
@@ -325,11 +325,11 @@ test("authorized cache hits are revalidated against the current document version
          * Raw candidate cache hit: the AI service
          * is not called at all.
          */
-        getCachedQuery: async () => [cachedCandidate],
+        getCachedQuery: async () => ({ data: [cachedCandidate], outcome: "HIT", lookupMs: 0 }),
         /*
          * Authorized cache hit for this access scope.
          */
-        getCachedAuthorizedQuery: async () => [cachedCandidate],
+        getCachedAuthorizedQuery: async () => ({ data: [cachedCandidate], outcome: "HIT", lookupMs: 0 }),
         /*
          * The document's current version moved to
          * v2 while the cache entry lived, so the

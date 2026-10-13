@@ -5,18 +5,130 @@ import prisma from "../../config/prisma.js";
 import ApiError from "../../utils/ApiError.js";
 
 import {
-    getDocument,
-    getActiveDocument,
-    getDocumentAccessPolicy,
+    getDocument,
+    getActiveDocument,
+    getDocumentAccessPolicy,
 } from "./documentHelpers.js";
 
 import crypto from "crypto";
 
 import {
-    invalidateOrganizationAuthorizedQueryCache,
+    invalidateOrganizationAuthorizedQueryCache,
 } from "../query/queryAccessCache.service.js";
 
+import config from "../../config/config.js";
+import { redisClient } from "../../config/redis.js";
+
 const MAX_TEMPORARY_ACCESS_DAYS = 7;
+
+const FINGERPRINT_CACHE_TTL = 300; // 5 minutes
+const FINGERPRINT_CACHE_PREFIX = "rag:fingerprint";
+
+const getCachedFingerprint = async (organizationId, userId) => {
+    if (!config.redis.enabled || !redisClient) {
+        return null;
+    }
+    const key = `${FINGERPRINT_CACHE_PREFIX}:${organizationId}:${userId}`;
+    try {
+        const cached = await redisClient.get(key);
+        if (cached) {
+            return JSON.parse(cached);
+        }
+    } catch (error) {
+        console.error("Redis fingerprint cache read failed:", error.message);
+    }
+    return null;
+};
+
+const setCachedFingerprint = async (organizationId, userId, fingerprint) => {
+    if (!config.redis.enabled || !redisClient) {
+        return;
+    }
+    const key = `${FINGERPRINT_CACHE_PREFIX}:${organizationId}:${userId}`;
+    try {
+        await redisClient.set(key, JSON.stringify(fingerprint), "EX", FINGERPRINT_CACHE_TTL);
+    } catch (error) {
+        console.error("Redis fingerprint cache write failed:", error.message);
+    }
+};
+
+const invalidateFingerprintCache = async (organizationId, userId = null) => {
+    if (!config.redis.enabled || !redisClient) {
+        return;
+    }
+    try {
+        if (userId) {
+            const key = `${FINGERPRINT_CACHE_PREFIX}:${organizationId}:${userId}`;
+            await redisClient.del(key);
+        } else {
+            const pattern = `${FINGERPRINT_CACHE_PREFIX}:${organizationId}:*`;
+            let cursor = "0";
+            do {
+                const result = await redisClient.scan(cursor, "MATCH", pattern, "COUNT", 100);
+                cursor = result[0];
+                const keys = result[1];
+                if (keys.length > 0) {
+                    await redisClient.del(...keys);
+                }
+            } while (cursor !== "0");
+        }
+    } catch (error) {
+        console.error("Redis fingerprint cache invalidation failed:", error.message);
+    }
+};
+
+const getCachedUserUnitHierarchy = async (organizationId, userUnitId) => {
+    if (!config.redis.enabled || !redisClient) {
+        return null;
+    }
+    const key = `rag:unit-hierarchy:${organizationId}:${userUnitId}`;
+    try {
+        const cached = await redisClient.get(key);
+        if (cached) {
+            return new Set(JSON.parse(cached));
+        }
+    } catch (error) {
+        console.error("Redis unit hierarchy cache read failed:", error.message);
+    }
+    return null;
+};
+
+const setCachedUserUnitHierarchy = async (organizationId, userUnitId, hierarchy) => {
+    if (!config.redis.enabled || !redisClient) {
+        return;
+    }
+    const key = `rag:unit-hierarchy:${organizationId}:${userUnitId}`;
+    try {
+        await redisClient.set(key, JSON.stringify([...hierarchy]), "EX", 600); // 10 minutes
+    } catch (error) {
+        console.error("Redis unit hierarchy cache write failed:", error.message);
+    }
+};
+
+const invalidateUserUnitHierarchyCache = async (organizationId, userUnitId = null) => {
+    if (!config.redis.enabled || !redisClient) {
+        return;
+    }
+    try {
+        if (userUnitId) {
+            const key = `rag:unit-hierarchy:${organizationId}:${userUnitId}`;
+            await redisClient.del(key);
+        } else {
+            const pattern = `rag:unit-hierarchy:${organizationId}:*`;
+            let cursor = "0";
+            do {
+                const result = await redisClient.scan(cursor, "MATCH", pattern, "COUNT", 100);
+                cursor = result[0];
+                const keys = result[1];
+                if (keys.length > 0) {
+                    await redisClient.del(...keys);
+                }
+            } while (cursor !== "0");
+        }
+    } catch (error) {
+        console.error("Redis unit hierarchy cache invalidation failed:", error.message);
+    }
+};
 
 const resolveAccessSubject = async(tx,organizationId,accessData)=>{
     const {
@@ -543,6 +655,8 @@ export const grantDocumentAccess = async(
             await invalidateOrganizationAuthorizedQueryCache(
                 policy.organizationId
             );
+            await invalidateFingerprintCache(policy.organizationId);
+            await invalidateUserUnitHierarchyCache(policy.organizationId);
             return policy;
         });
     } catch (error) {
@@ -667,6 +781,8 @@ export const updateDocumentAccessPolicy = async(
             await invalidateOrganizationAuthorizedQueryCache(
                 updatedPolicy.organizationId
             );
+            await invalidateFingerprintCache(updatedPolicy.organizationId);
+            await invalidateUserUnitHierarchyCache(updatedPolicy.organizationId);
             return updatedPolicy;
         });
     } catch (error) {
@@ -746,13 +862,15 @@ export const revokeDocumentAccess = async(
                 reason:reason ?? null,
             },
         });
-        return revokedPolicy;
-    }).then(async (revokedPolicy) => {
-        await invalidateOrganizationAuthorizedQueryCache(
-            revokedPolicy.organizationId
-        );
-        return revokedPolicy;
-    });
+return revokedPolicy;
+    }).then(async (revokedPolicy) => {
+        await invalidateOrganizationAuthorizedQueryCache(
+            revokedPolicy.organizationId
+        );
+        await invalidateFingerprintCache(revokedPolicy.organizationId);
+        await invalidateUserUnitHierarchyCache(revokedPolicy.organizationId);
+        return revokedPolicy;
+    });
 };
 
 export const getDocumentAccessPolicies = async(
@@ -895,12 +1013,12 @@ export const grantTemporaryDocumentAccess = async(user,documentId,accessData)=>{
     );
 };
 
-export const authorizeDocumentAction = async(user,documentId,action)=>{
+export const authorizeDocumentAction = async (user, documentId, action) => {
     const document = await getActiveDocument(
         user,
         documentId
     );
-    if(!user.unitId || !user.unit){
+    if (!user.unitId || !user.unit) {
         throw new ApiError(
             403,
             "User does not belong to an organization"
@@ -908,24 +1026,27 @@ export const authorizeDocumentAction = async(user,documentId,action)=>{
     }
     const policies =
         await prisma.documentAccessPolicy.findMany({
-            where:{
+            where: {
                 documentId,
                 action,
-                organizationId:user.unit.organizationId,
-                isActive:true,
+                organizationId: user.unit.organizationId,
+                isActive: true,
             },
         });
-    const userUnitHierarchy =
-        await getUserUnitHierarchy(
-            user.unit.organizationId,
-            user.unitId
-        );
+
+    // Get user unit hierarchy with caching
+    let userUnitHierarchy = await getCachedUserUnitHierarchy(user.unit.organizationId, user.unitId);
+    if (!userUnitHierarchy) {
+        userUnitHierarchy = await getUserUnitHierarchy(user.unit.organizationId, user.unitId);
+        await setCachedUserUnitHierarchy(user.unit.organizationId, user.unitId, userUnitHierarchy);
+    }
+
     const matches = evaluatePolicyMatches(
         policies,
         user,
         userUnitHierarchy
     );
-    if(resolvePolicyDecision(matches) === "denied"){
+    if (resolvePolicyDecision(matches) === "denied") {
         throw new ApiError(
             403,
             "Access denied."
@@ -933,7 +1054,7 @@ export const authorizeDocumentAction = async(user,documentId,action)=>{
     }
     return {
         document,
-        authorized:true,
+        authorized: true,
     };
 };
 
@@ -973,11 +1094,14 @@ export const authorizeDocumentsForAction = async(
                 isActive:true,
             },
         });
-    const userUnitHierarchy =
-        await getUserUnitHierarchy(
-            user.unit.organizationId,
-            user.unitId
-        );
+
+    // Get user unit hierarchy with caching
+    let userUnitHierarchy = await getCachedUserUnitHierarchy(user.unit.organizationId, user.unitId);
+    if (!userUnitHierarchy) {
+        userUnitHierarchy = await getUserUnitHierarchy(user.unit.organizationId, user.unitId);
+        await setCachedUserUnitHierarchy(user.unit.organizationId, user.unitId, userUnitHierarchy);
+    }
+
     const policiesByDocument = new Map();
     for(const policy of policies){
         const documentPolicies =
@@ -1028,41 +1152,52 @@ const getUserUnitHierarchy = async (organizationId, userUnitId) => {
 };
 
 export const getQueryAccessScopeFingerprint = async (user) => {
-    if (!user.unitId || !user.unit) {
-        throw new ApiError(
-            403,
-            "User does not belong to an organization"
-        );
-    }
-    const organizationId = user.unit.organizationId;
-    const policies =
-        await prisma.documentAccessPolicy.findMany({
-            where: {
-                organizationId,
-                action: "QUERY",
-                isActive: true,
-            },
-            select: {
-                id: true,
-                documentId: true,
-                subjectType: true,
-                subjectOrganizationId: true,
-                subjectUnitId: true,
-                subjectRole: true,
-                subjectUserId: true,
-                action: true,
-                effect: true,
-                scope: true,
-                validFrom: true,
-                validUntil: true,
-                updatedAt: true,
-            },
-        });
-    const userUnitHierarchy =
-        await getUserUnitHierarchy(
-            organizationId,
-            user.unitId
+    if (!user.unitId || !user.unit) {
+        throw new ApiError(
+            403,
+            "User does not belong to an organization"
         );
+    }
+    const organizationId = user.unit.organizationId;
+    const userId = user.id;
+
+    // Check cache first
+    const cached = await getCachedFingerprint(organizationId, userId);
+    if (cached) {
+        return cached;
+    }
+
+    const policies =
+        await prisma.documentAccessPolicy.findMany({
+            where: {
+                organizationId,
+                action: "QUERY",
+                isActive: true,
+            },
+            select: {
+                id: true,
+                documentId: true,
+                subjectType: true,
+                subjectOrganizationId: true,
+                subjectUnitId: true,
+                subjectRole: true,
+                subjectUserId: true,
+                action: true,
+                effect: true,
+                scope: true,
+                validFrom: true,
+                validUntil: true,
+                updatedAt: true,
+            },
+        });
+
+    // Get user unit hierarchy with caching
+    let userUnitHierarchy = await getCachedUserUnitHierarchy(organizationId, user.unitId);
+    if (!userUnitHierarchy) {
+        userUnitHierarchy = await getUserUnitHierarchy(organizationId, user.unitId);
+        await setCachedUserUnitHierarchy(organizationId, user.unitId, userUnitHierarchy);
+    }
+
     const matchedPolicies = policies
         .filter(isDocumentAccessPolicyActive)
         .filter((policy) =>
@@ -1072,90 +1207,99 @@ export const getQueryAccessScopeFingerprint = async (user) => {
                 userUnitHierarchy
             )
         )
-        .map((policy) => ({
-            id: policy.id,
-            documentId: policy.documentId,
-            subjectType: policy.subjectType,
-            subjectOrganizationId:
-                policy.subjectOrganizationId,
-            subjectUnitId: policy.subjectUnitId,
-            subjectRole: policy.subjectRole,
-            subjectUserId: policy.subjectUserId,
-            action: policy.action,
-            effect: policy.effect,
-            scope: policy.scope,
-            validFrom: policy.validFrom,
-            validUntil: policy.validUntil,
-            updatedAt: policy.updatedAt,
-        }))
-        .sort((a, b) =>
-            a.id.localeCompare(b.id)
-        );
-    return crypto
-        .createHash("sha256")
-        .update(
-            JSON.stringify({
-                organizationId,
-                unitId: user.unitId,
-                role: user.role,
-                unitHierarchy: [...userUnitHierarchy].sort(),
-                policies: matchedPolicies,
-            })
-        )
-        .digest("hex");
+        .map((policy) => ({
+            id: policy.id,
+            documentId: policy.documentId,
+            subjectType: policy.subjectType,
+            subjectOrganizationId:
+                policy.subjectOrganizationId,
+            subjectUnitId: policy.subjectUnitId,
+            subjectRole: policy.subjectRole,
+            subjectUserId: policy.subjectUserId,
+            action: policy.action,
+            effect: policy.effect,
+            scope: policy.scope,
+            validFrom: policy.validFrom,
+            validUntil: policy.validUntil,
+            updatedAt: policy.updatedAt,
+        }))
+        .sort((a, b) =>
+            a.id.localeCompare(b.id)
+        );
+
+    const fingerprint = crypto
+        .createHash("sha256")
+        .update(
+            JSON.stringify({
+                organizationId,
+                unitId: user.unitId,
+                role: user.role,
+                unitHierarchy: [...userUnitHierarchy].sort(),
+                policies: matchedPolicies,
+            })
+        )
+        .digest("hex");
+
+    // Cache the fingerprint
+    await setCachedFingerprint(organizationId, userId, fingerprint);
+
+    return fingerprint;
 };
 
 export const authorizeQueryDocuments = async (
-    user,
-    documentIds
+    user,
+    documentIds
 ) => {
-    if (!user.unitId || !user.unit) {
-        throw new ApiError(
-            403,
-            "User does not belong to an organization"
-        );
-    }
-    if (!documentIds?.length) {
-        return [];
-    }
-    const documents = await prisma.document.findMany({
-        where: {
-            id: {
-                in: documentIds,
-            },
-            organizationId: user.unit.organizationId,
-            isDeleted: false,
-            status: "READY",
-            currentVersionId: {
-                not: null,
-            },
-        },
-        select: {
-            id: true,
-            currentVersionId: true,
-        },
-    });
-    if (!documents.length) {
-        return [];
-    }
-    const policies =
-        await prisma.documentAccessPolicy.findMany({
-            where: {
-                documentId: {
-                    in: documents.map(
-                        (document) => document.id
-                    ),
-                },
-                action: "QUERY",
-                organizationId: user.unit.organizationId,
-                isActive: true,
-            },
-        });
-    const userUnitHierarchy =
-        await getUserUnitHierarchy(
-            user.unit.organizationId,
-            user.unitId
-        );
+    if (!user.unitId || !user.unit) {
+        throw new ApiError(
+            403,
+            "User does not belong to an organization"
+        );
+    }
+    if (!documentIds?.length) {
+        return [];
+    }
+    const documents = await prisma.document.findMany({
+        where: {
+            id: {
+                in: documentIds,
+            },
+            organizationId: user.unit.organizationId,
+            isDeleted: false,
+            status: "READY",
+            currentVersionId: {
+                not: null,
+            },
+        },
+        select: {
+            id: true,
+            currentVersionId: true,
+        },
+    });
+    if (!documents.length) {
+        return [];
+    }
+    const policies =
+        await prisma.documentAccessPolicy.findMany({
+            where: {
+                documentId: {
+                    in: documents.map(
+                        (document) => document.id
+                    ),
+                },
+                action: "QUERY",
+                organizationId: user.unit.organizationId,
+                isActive: true,
+            },
+        });
+
+    // Get user unit hierarchy with caching
+    let userUnitHierarchy = await getCachedUserUnitHierarchy(user.unit.organizationId, user.unitId);
+    if (!userUnitHierarchy) {
+        userUnitHierarchy = await getUserUnitHierarchy(user.unit.organizationId, user.unitId);
+        await setCachedUserUnitHierarchy(user.unit.organizationId, user.unitId, userUnitHierarchy);
+    }
+
     const authorizedDocumentIds = [];
     for (const document of documents) {
         const documentPolicies =

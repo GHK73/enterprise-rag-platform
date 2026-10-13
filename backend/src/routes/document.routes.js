@@ -31,7 +31,7 @@ import {
 } from "../controllers/document.controllers.js";
 
 import authenticate from "../middleware/auth.middleware.js";
-import upload from "../middleware/upload.middleware.js";
+import upload, { handleMulterError } from "../middleware/upload.middleware.js";
 import {
     documentUploadRateLimiter,
 } from "../middleware/rateLimit.middleware.js";
@@ -49,6 +49,7 @@ router.post(
     authenticate,
     documentUploadRateLimiter,
     upload.single("file"),
+    handleMulterError,
     uploadDraft
 );
 
@@ -130,6 +131,7 @@ router.post(
     authenticate,
     documentUploadRateLimiter,
     upload.single("file"),
+    handleMulterError,
     uploadDocumentVersion
 );
 

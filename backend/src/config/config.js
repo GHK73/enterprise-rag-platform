@@ -6,6 +6,12 @@ export default {
     app: {
         port: process.env.PORT,
         env: process.env.NODE_ENV,
+        cors: {
+            origin: process.env.CORS_ORIGIN
+                ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+                : "*",
+            credentials: process.env.CORS_CREDENTIALS === "true",
+        },
     },
 
     database: {
@@ -30,6 +36,7 @@ export default {
         port: Number(process.env.REDIS_PORT || 6379),
         username: process.env.REDIS_USERNAME,
         password: process.env.REDIS_PASSWORD,
+        tls: process.env.REDIS_TLS === "true",
     },
 
     ai: {
@@ -116,5 +123,10 @@ export default {
                 process.env.REGISTRATION_RATE_LIMIT_WINDOW_SECONDS || 15 * 60
             ),
         },
+    },
+
+    queryHistory: {
+        retentionDays: Number(process.env.QUERY_HISTORY_RETENTION_DAYS || 90),
+        cleanupIntervalHours: Number(process.env.QUERY_HISTORY_CLEANUP_INTERVAL_HOURS || 24),
     },
 };

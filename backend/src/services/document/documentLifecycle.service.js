@@ -4,17 +4,16 @@ import { randomUUID } from "crypto";
 
 import prisma from "../../config/prisma.js";
 
-import {dispatchDocumentProcessing,} from "./documentProcessingDispatcher.service.js";
+import { dispatchDocumentProcessing } from "./documentProcessingDispatcher.service.js";
 
 import ApiError from "../../utils/ApiError.js";
 
 import { validateFile } from "../../utils/fileValidation.js";
 
-import {
-    uploadFileToS3,
-    deleteFileFromS3,
-    getDownloadUrlFromS3,
-} from "../s3.service.js";
+import { uploadFileToS3, deleteFileFromS3, getDownloadUrlFromS3 } from "../s3.service.js";
+import { deleteDocumentVectors } from "../../config/ai.js";
+
+import { redisClient } from "../../config/redis.js";
 
 import {
     DRAFT_EXPIRY_HOURS,
@@ -547,6 +546,8 @@ export const restoreDocument = async(user,documentId)=>{
  * write in processDocument makes a redundant dispatch a
  * 409 no-op, so reconciling a document that another
  * instance is already dispatching is harmless.
+ * 
+ * Redis lock prevents duplicate re-dispatches across multiple instances.
  */
 export const recoverStrandedPublications = async () => {
     const stranded = await prisma.document.findMany({
@@ -566,6 +567,26 @@ export const recoverStrandedPublications = async () => {
         if (!document.currentVersionId) {
             continue;
         }
+
+        // Try to acquire lock for this document to prevent duplicate re-dispatches
+        const lockKey = `recovery:lock:${document.id}`;
+        let lockAcquired = false;
+
+        if (redisClient) {
+            try {
+                lockAcquired = await redisClient.set(lockKey, "1", "NX", "EX", 300); // 5 min TTL
+            } catch (error) {
+                console.error(`RECOVERY LOCK: Failed to acquire lock for ${document.id}:`, error.message);
+            }
+        } else {
+            lockAcquired = true; // No Redis, proceed without lock
+        }
+
+        if (!lockAcquired) {
+            console.log(`DOCUMENT RECOVERY: Skipping ${document.id} - already being recovered by another instance`);
+            continue;
+        }
+
         try {
             await dispatchDocumentProcessing({
                 documentId: document.id,
@@ -580,6 +601,14 @@ export const recoverStrandedPublications = async () => {
                 `DOCUMENT RECOVERY: failed to re-dispatch stranded publication ${document.id}:`,
                 error.message
             );
+        } finally {
+            if (redisClient) {
+                try {
+                    await redisClient.del(lockKey);
+                } catch (error) {
+                    console.error(`RECOVERY LOCK: Failed to release lock for ${document.id}:`, error.message);
+                }
+            }
         }
     }
 
@@ -589,31 +618,46 @@ export const recoverStrandedPublications = async () => {
     };
 };
 
-export const cleanupDeletedDocument = async(user,documentId)=>{
-    const document = await getDocumentWithVersions(user,documentId);
-    if(!document.isDeleted) throw new ApiError(400,"Document must be deleted before cleanup.");
-    if(document.uploadedById!==user.id) throw new ApiError(403,"You do not have permission to permanently delete this document.");
-    for(const version of document.versions){
-        try{
+export const cleanupDeletedDocument = async (user, documentId) => {
+    const document = await getDocumentWithVersions(user, documentId);
+    if (!document.isDeleted) throw new ApiError(400, "Document must be deleted before cleanup.");
+    if (document.uploadedById !== user.id) throw new ApiError(403, "You do not have permission to permanently delete this document.");
+
+    const organizationId = document.organizationId;
+
+    for (const version of document.versions) {
+        try {
             await deleteFileFromS3(
                 version.storageKey,
                 version.storageBucket
             );
-        }catch(error){
+        } catch (error) {
             console.error(
                 `DOCUMENT CLEANUP: Failed to delete S3 object ${version.storageKey}`,
                 error.message
             );
         }
     }
-    await prisma.$transaction(async(tx)=>{
-        await tx.documentAccessAudit.deleteMany({where:{documentId,},});
-        await tx.documentAccessPolicy.deleteMany({where:{documentId,},});
-        await tx.document.update({where:{id:documentId,},data:{currentVersionId:null,},});
-        await tx.documentVersion.deleteMany({where:{documentId,},});
-        await tx.document.delete({where:{id:documentId,},});
+
+    // Delete vectors from Qdrant via AI service
+    try {
+        await deleteDocumentVectors(organizationId, documentId);
+    } catch (error) {
+        console.error(
+            `DOCUMENT CLEANUP: Failed to delete Qdrant vectors for document ${documentId}`,
+            error.message
+        );
+    }
+
+    await prisma.$transaction(async (tx) => {
+        await tx.documentAccessAudit.deleteMany({ where: { documentId } });
+        await tx.documentAccessPolicy.deleteMany({ where: { documentId } });
+        await tx.document.update({ where: { id: documentId }, data: { currentVersionId: null } });
+        await tx.documentVersion.deleteMany({ where: { documentId } });
+        await tx.document.delete({ where: { id: documentId } });
     });
-    return {message:"Document cleanup completed successfully.",};
+
+    return { message: "Document cleanup completed successfully." };
 };
 
 export const cleanupExpiredDrafts = async(

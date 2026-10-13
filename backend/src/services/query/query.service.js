@@ -199,21 +199,21 @@ export const retrieveAuthorizedCandidates = async (
         );
     }
 
-    const cachedCandidates = await dependencies.getCachedQuery(
+    const rawCacheResult = await dependencies.getCachedQuery(
         organizationId,
         query,
         topK
     );
 
-    const rawCacheHit = Array.isArray(
-        cachedCandidates
-    );
+    const rawCacheHit =
+        rawCacheResult?.outcome === "HIT" &&
+        Array.isArray(rawCacheResult.data);
 
     let candidates;
     let retrievalResponse;
 
     if (rawCacheHit) {
-        candidates = cachedCandidates;
+        candidates = rawCacheResult.data;
 
         retrievalResponse = {
             query,
@@ -242,7 +242,7 @@ export const retrieveAuthorizedCandidates = async (
     let authorizedCandidates = null;
 
     if (rawCacheHit) {
-        authorizedCandidates =
+        const authCacheResult =
             await dependencies.getCachedAuthorizedQuery(
                 organizationId,
                 accessScopeHash,
@@ -250,11 +250,14 @@ export const retrieveAuthorizedCandidates = async (
                 topK
             );
 
-        if (Array.isArray(authorizedCandidates)) {
+        if (
+            authCacheResult?.outcome === "HIT" &&
+            Array.isArray(authCacheResult.data)
+        ) {
             authorizedCandidates =
                 await validateCurrentCandidates(
                     organizationId,
-                    authorizedCandidates,
+                    authCacheResult.data,
                     dependencies.prisma
                 );
         }

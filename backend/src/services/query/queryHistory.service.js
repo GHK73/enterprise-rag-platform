@@ -1,6 +1,7 @@
 // backend/src/services/query/queryHistory.service.js
 import prisma from "../../config/prisma.js";
 import ApiError from "../../utils/ApiError.js";
+import config from "../../config/config.js";
 
 export const getQueryHistory = async (
     user,
@@ -37,4 +38,24 @@ export const getQueryHistory = async (
             createdAt: true,
         },
     });
+};
+
+export const cleanupQueryHistory = async (organizationId, retentionDays = null) => {
+    const days = retentionDays ?? config.queryHistory?.retentionDays ?? 90;
+    const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const result = await prisma.queryHistory.deleteMany({
+        where: {
+            organizationId,
+            createdAt: {
+                lt: cutoffDate,
+            },
+        },
+    });
+
+    return {
+        deletedCount: result.count,
+        cutoffDate,
+        retentionDays: days,
+    };
 };

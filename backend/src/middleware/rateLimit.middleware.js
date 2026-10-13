@@ -3,6 +3,10 @@ import {
     redisClient,
 } from "../config/redis.js";
 import ApiError from "../utils/ApiError.js";
+import {
+    createRateLimitMetric,
+    recordRateLimit,
+} from "../services/metrics/metrics.service.js";
 
 const tokenBucketScript = `
 local key = KEYS[1]
@@ -105,6 +109,15 @@ const createRateLimiter = ({
             !config.redis.enabled ||
             !redisClient
         ) {
+            recordRateLimit(createRateLimitMetric({
+                route: req.originalUrl || req.url,
+                category: keyPrefix,
+                outcome: "BYPASS",
+                redisAvailable: false,
+                redisError: "Redis disabled or unavailable",
+                userId: req.user?.id || null,
+                organizationId: req.user?.unit?.organizationId || null,
+            }));
             return next();
         }
 
@@ -140,6 +153,18 @@ const createRateLimiter = ({
             if (
                 Number(allowed) !== 1
             ) {
+                recordRateLimit(createRateLimitMetric({
+                    route: req.originalUrl || req.url,
+                    category: keyPrefix,
+                    outcome: "REJECTED",
+                    limitConfig: { capacity, refillRate, refillIntervalSeconds },
+                    rejectionReason: "TOKEN_BUCKET_EXHAUSTED",
+                    statusCode: 429,
+                    redisAvailable: true,
+                    userId,
+                    organizationId: req.user?.unit?.organizationId || null,
+                }));
+
                 const error =
                     new ApiError(
                         429,
@@ -151,6 +176,15 @@ const createRateLimiter = ({
 
                 throw error;
             }
+
+            recordRateLimit(createRateLimitMetric({
+                route: req.originalUrl || req.url,
+                category: keyPrefix,
+                outcome: "ALLOWED",
+                redisAvailable: true,
+                userId,
+                organizationId: req.user?.unit?.organizationId || null,
+            }));
 
             return next();
         } catch (error) {
@@ -166,21 +200,16 @@ const createRateLimiter = ({
                 error.message
             );
 
-            /*
-             * Documented outage policy
-             * (config.rateLimit.unavailablePolicy):
-             *
-             * "open" (default) — a Redis outage must
-             * not take the API down, so the request
-             * is allowed through. This is an explicit
-             * availability decision.
-             *
-             * "closed" — protection-first: reject the
-             * request with 503 so an outage cannot be
-             * used to bypass the query and upload
-             * buckets (LLM cost and processing load
-             * stay bounded).
-             */
+            recordRateLimit(createRateLimitMetric({
+                route: req.originalUrl || req.url,
+                category: keyPrefix,
+                outcome: "ERROR",
+                redisAvailable: false,
+                redisError: error.message,
+                userId,
+                organizationId: req.user?.unit?.organizationId || null,
+            }));
+
             if (
                 config.rateLimit.unavailablePolicy ===
                 "closed"

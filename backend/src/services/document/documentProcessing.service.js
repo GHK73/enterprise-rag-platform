@@ -69,6 +69,7 @@ async function markProcessingReady(documentId, versionId) {
 }
 
 async function markProcessingFailed(documentId, versionId, error) {
+    const errorMessage = error?.message || String(error);
     return await prisma.$transaction(async (tx) => {
         const documentResult = await tx.document.updateMany({
             where: {
@@ -88,6 +89,7 @@ async function markProcessingFailed(documentId, versionId, error) {
                 },
                 data: {
                     processingStatus: "FAILED",
+                    processingError: errorMessage,
                 },
             });
         }

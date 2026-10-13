@@ -5,14 +5,24 @@ import config from "./src/config/config.js";
 import prisma from "./src/config/prisma.js";
 import { initializeDocumentQueue } from "./src/services/document/documentQueue.service.js";
 import { recoverStrandedPublications } from "./src/services/document/documentLifecycle.service.js";
+import { metricsBuffer } from "./src/services/metrics/metricsBuffer.service.js";
+import { startScheduledJobs, stopScheduledJobs } from "./src/services/scheduledJobs.service.js";
 import "./src/workers/document.worker.js";
+
+// Validate required environment variables at startup
+const requiredEnvVars = ["JWT_SECRET", "DATABASE_URL"];
+const missingEnvVars = requiredEnvVars.filter((v) => !process.env[v]);
+if (missingEnvVars.length > 0) {
+    console.error("Missing required environment variables:", missingEnvVars.join(", "));
+    process.exit(1);
+}
 
 const startServer = async () => {
     try {
         await prisma.$connect();
         console.log("Connected to Neon Database");
 
-        app.listen(config.app.port, async () => {
+        const server = app.listen(config.app.port, async () => {
             console.log(
                 `Server running on http://localhost:${config.app.port}`
             );
@@ -33,7 +43,40 @@ const startServer = async () => {
                     `Publication recovery: ${recovery.recoveredDocuments} of ${recovery.strandedDocuments} stranded publications re-dispatched.`
                 );
             }
+
+            // Start scheduled cleanup jobs
+            startScheduledJobs();
         });
+
+        const gracefulShutdown = async (signal) => {
+            console.log(`Received ${signal}, starting graceful shutdown...`);
+            
+            // Stop scheduled jobs first
+            stopScheduledJobs();
+            
+            server.close(async () => {
+                console.log("HTTP server closed");
+                try {
+                    await metricsBuffer.shutdown();
+                    console.log("Metrics buffer flushed");
+                    await prisma.$disconnect();
+                    console.log("Database disconnected");
+                    process.exit(0);
+                } catch (error) {
+                    console.error("Error during graceful shutdown:", error);
+                    process.exit(1);
+                }
+            });
+
+            // Force exit after 10 seconds if graceful shutdown hangs
+            setTimeout(() => {
+                console.error("Graceful shutdown timed out, forcing exit");
+                process.exit(1);
+            }, 10000);
+        };
+
+        process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+        process.on("SIGINT", () => gracefulShutdown("SIGINT"));
     } catch (error) {
         console.error("Failed to connect to database");
         console.error(error);

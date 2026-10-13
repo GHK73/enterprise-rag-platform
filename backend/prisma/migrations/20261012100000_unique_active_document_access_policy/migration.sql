@@ -15,6 +15,21 @@
 --   2. subjectRole and scope are enums; an empty-string
 --      literal is not a valid enum value, so they are
 --      cast to text before the COALESCE.
+--
+-- Workaround: Create IMMUTABLE wrapper functions for enum->text casts
+-- because PostgreSQL requires index expression functions to be IMMUTABLE.
+
+CREATE OR REPLACE FUNCTION immutable_enum_role_to_text(role_val "Role")
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$ SELECT role_val::text $$;
+
+CREATE OR REPLACE FUNCTION immutable_enum_scope_to_text(scope_val "DocumentAccessScope")
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$ SELECT scope_val::text $$;
 
 -- Deduplicate existing active policies first: keep the
 -- earliest row per subject/action/effect combination.
@@ -32,9 +47,9 @@ WHERE id IN (
                     "subjectType",
                     COALESCE("subjectOrganizationId", ''),
                     COALESCE("subjectUnitId", ''),
-                    COALESCE("subjectRole"::text, ''),
+                    COALESCE(immutable_enum_role_to_text("subjectRole"), ''),
                     COALESCE("subjectUserId", ''),
-                    COALESCE("scope"::text, '')
+                    COALESCE(immutable_enum_scope_to_text("scope"), '')
                 ORDER BY "createdAt" ASC, "id" ASC
             ) AS row_number
         FROM "DocumentAccessPolicy"
@@ -51,8 +66,8 @@ ON "DocumentAccessPolicy" (
     "subjectType",
     COALESCE("subjectOrganizationId", ''),
     COALESCE("subjectUnitId", ''),
-    COALESCE("subjectRole"::text, ''),
+    COALESCE(immutable_enum_role_to_text("subjectRole"), ''),
     COALESCE("subjectUserId", ''),
-    COALESCE("scope"::text, '')
+    COALESCE(immutable_enum_scope_to_text("scope"), '')
 )
 WHERE "isActive" = true;

@@ -3,6 +3,10 @@ import ApiError from "../utils/ApiError.js";
 import {
     checkLoginRateLimit,
 } from "../services/authRateLimit.service.js";
+import {
+    createRateLimitMetric,
+    recordRateLimit,
+} from "../services/metrics/metrics.service.js";
 
 export const loginRateLimiter = async (
     req,
@@ -19,13 +23,6 @@ export const loginRateLimiter = async (
 
         const ip = req.ip;
 
-        /*
-         * If email is missing, normal request validation
-         * inside the authentication flow should handle it.
-         *
-         * IP-based protection is still performed.
-         */
-
         if (!ip) {
             return next();
         }
@@ -37,11 +34,31 @@ export const loginRateLimiter = async (
             });
 
         if (!result?.blocked) {
+            recordRateLimit(createRateLimitMetric({
+                route: req.originalUrl || req.url,
+                category: "login",
+                outcome: "ALLOWED",
+                redisAvailable: true,
+                userId: null,
+                organizationId: null,
+            }));
             return next();
         }
 
         const retryAfter =
             Number(result.retryAfter) || 1;
+
+        recordRateLimit(createRateLimitMetric({
+            route: req.originalUrl || req.url,
+            category: "login",
+            outcome: "REJECTED",
+            limitConfig: { emailMaxAttempts: 5, ipMaxAttempts: 20, windowSeconds: 900 },
+            rejectionReason: result.reason || "RATE_LIMIT_EXCEEDED",
+            statusCode: 429,
+            redisAvailable: true,
+            userId: null,
+            organizationId: null,
+        }));
 
         const error = new ApiError(
             429,
@@ -57,6 +74,15 @@ export const loginRateLimiter = async (
 
         return next(error);
     } catch (error) {
+        recordRateLimit(createRateLimitMetric({
+            route: req.originalUrl || req.url,
+            category: "login",
+            outcome: "ERROR",
+            redisAvailable: false,
+            redisError: error.message,
+            userId: null,
+            organizationId: null,
+        }));
         return next(error);
     }
 };

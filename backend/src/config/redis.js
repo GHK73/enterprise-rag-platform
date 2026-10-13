@@ -7,13 +7,12 @@ const redisConnection = {
     username: config.redis.username,
     password: config.redis.password,
 
-    tls:
-        config.redis.username || config.redis.password
-            ? {
-                  rejectUnauthorized: false,
-                  servername: config.redis.host,
-              }
-            : undefined,
+    tls: config.redis.tls
+        ? {
+              rejectUnauthorized: false,
+              servername: config.redis.host,
+          }
+        : undefined,
 
     maxRetriesPerRequest: 10,
     enableReadyCheck: true,

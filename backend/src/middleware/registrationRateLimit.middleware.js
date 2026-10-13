@@ -4,6 +4,10 @@ import {
     checkRegistrationRateLimit,
     recordRegistrationAttempt,
 } from "../services/authRateLimit.service.js";
+import {
+    createRateLimitMetric,
+    recordRateLimit,
+} from "../services/metrics/metrics.service.js";
 
 export const registrationRateLimiter = async (
     req,
@@ -23,11 +27,31 @@ export const registrationRateLimiter = async (
             });
 
         if (!result?.blocked) {
+            recordRateLimit(createRateLimitMetric({
+                route: req.originalUrl || req.url,
+                category: "registration",
+                outcome: "ALLOWED",
+                redisAvailable: true,
+                userId: null,
+                organizationId: null,
+            }));
             return next();
         }
 
         const retryAfter =
             Number(result.retryAfter) || 1;
+
+        recordRateLimit(createRateLimitMetric({
+            route: req.originalUrl || req.url,
+            category: "registration",
+            outcome: "REJECTED",
+            limitConfig: { ipMaxAttempts: 5, windowSeconds: 900 },
+            rejectionReason: result.reason || "RATE_LIMIT_EXCEEDED",
+            statusCode: 429,
+            redisAvailable: true,
+            userId: null,
+            organizationId: null,
+        }));
 
         const error = new ApiError(
             429,
@@ -43,6 +67,15 @@ export const registrationRateLimiter = async (
 
         return next(error);
     } catch (error) {
+        recordRateLimit(createRateLimitMetric({
+            route: req.originalUrl || req.url,
+            category: "registration",
+            outcome: "ERROR",
+            redisAvailable: false,
+            redisError: error.message,
+            userId: null,
+            organizationId: null,
+        }));
         return next(error);
     }
 };

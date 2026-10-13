@@ -14,9 +14,26 @@ Backend implementation log for the Enterprise RAG Platform.
 | 6 | Caching & Performance | Completed | Query cache, authorized cache, Redis integration, cache invalidation |
 | 7 | API Rate Limiting | Completed | Token bucket rate limiting, fail-open/closed policies |
 | 8 | Production Hardening | Completed | Atomic transitions, idempotency, duplicate handling, cleanup, test suite (57 tests as of 2026-10-13; 43 tests at the 2026-10-12 milestone) |
-| 9 | Migration & Verification | In Progress | Apply pending migration, live infrastructure verification |
+| 9 | Migration & Verification | In Progress | Migration applied (20261012100000_unique_active_document_access_policy); live infrastructure verification pending |
 | 10 | Evaluation & Monitoring | In Progress | Metrics, logging, observability, evaluation framework |
 | 11 | Deployment | Not Started | CI/CD, infrastructure as code, production deployment |
+
+### Known Backend Issues
+
+The following issues are tracked in the **Open Issues** section below and should be addressed before production deployment:
+
+- **Critical**: Redis TLS configuration breaks local development (`src/config/redis.js`) — **Fixed 2026-10-13**
+- **Critical**: Missing `processingError` column for failure diagnostics — **Fixed 2026-10-13**
+- **Critical**: Metrics buffer never flushed on graceful shutdown — **Fixed 2026-10-13**
+- **Critical**: CORS wide open with no origin restrictions — **Fixed 2026-10-13**
+- **High**: Redis single point of failure
+- **High**: QueryHistory unbounded growth — **Fixed 2026-10-13**
+- **High**: Qdrant vector orphans on permanent cleanup — **Fixed 2026-10-13** (AI service `deleteDocumentVectors` added)
+- **Medium**: Access-scope fingerprint performance overhead
+- **Medium**: No tenant-wide default MANAGE_ACCESS policies — **Fixed 2026-10-13** (OrganizationDefaultAccessPolicy model added)
+- **Medium**: Cleanup ordering not schema-enforced — **Fixed 2026-10-13** (DB triggers for cleanup ordering)
+- **Medium**: Dual revocation representation (isActive + revokedAt) — **Fixed 2026-10-13** (Prisma middleware sync)
+- **Medium**: BullMQ vs Redis client offline queue mismatch — **Fixed 2026-10-13**
 
 - Database design: `docs/DATABASE.md`
 - AI service: `docs/ai-service.md`
@@ -72,17 +89,19 @@ PostgreSQL (source of truth)    BullMQ worker
 - **Cleanup ordering.** Permanent cleanup nulls `currentVersionId` before deleting versions (the `onDelete: Restrict` relation requires it), then deletes policies, audit rows, S3 objects, and the document. Expired drafts are cleaned via `POST /documents/cleanup/expired-drafts`.
 - **Known gap:** permanent cleanup deletes S3 objects and DB records but leaves orphaned Qdrant vectors; the AI service has no cleanup endpoint.
 
-### Rate-limiter outage policies
+### Rate-Limiter Outage Policies
 
 - The token-bucket rate limiter (`rateLimit.middleware.js`) uses a Lua script. On Redis outage, behavior follows `RATE_LIMIT_UNAVAILABLE_POLICY`: `open` (default) allows the request through; `closed` rejects with 503.
 - Login and registration rate limits (`authRateLimit.service.js`) fail open on Redis errors so authentication remains available.
+- **Known Issue**: Redis TLS configuration (`src/config/redis.js:10-16`) enables TLS unconditionally when username/password is set, breaking local Redis without TLS. See **Open Issues** → Critical #1.
 
-### Error handling and query-history persistence
+### Error Handling and Query-History Persistence
 
 - Query history is persisted after the output guardrail, with the guarded answer. A history-write failure is logged and does not fail the response.
 - Every query attempt is recorded, including LLM failures and guardrail blocks.
+- **Known Issue**: Metrics buffer (`src/services/metrics/metricsBuffer.service.js`) has a `shutdown()` function but it's never called on process exit; metrics are lost on graceful shutdown. See **Open Issues** → Critical #3.
 
-### Verified reliability mechanisms
+### Verified Reliability Mechanisms
 
 - Atomic publication transaction with post-commit dispatch and dispatch-failure recovery to `FAILED`.
 - Idempotent publish retries and duplicate-job no-ops.
@@ -93,6 +112,14 @@ PostgreSQL (source of truth)    BullMQ worker
 - Rate-limiter outage policies (open/closed).
 
 **Unverified behavior:** no automated test exercises BullMQ worker dispatch under concurrent load, Redis connection/TLS configuration, or end-to-end query flow against live Qdrant/AI service.
+
+**Known Gaps (see Open Issues):**
+- ~~Redis TLS configuration breaks local development~~ — **Fixed**
+- ~~Missing `processingError` column for failure diagnostics~~ — **Fixed**
+- ~~Metrics buffer never flushed on graceful shutdown~~ — **Fixed**
+- ~~CORS wide open with no origin restrictions~~ — **Fixed**
+- Qdrant vector orphans on permanent cleanup — **Fixed** (AI service endpoint added, backend integration complete)
+- QueryHistory unbounded growth — **Fixed** (cleanup job scheduled)
 
 ## How it works
 
@@ -217,31 +244,174 @@ Computes a SHA-256 over the user's organization ID, unit ID, role, sorted unit h
 
 **Verified implementation:** the authorized cache key includes the access-scope fingerprint, and cached candidates are re-validated against current versions before reuse. **Unverified behavior:** no automated test exercises the Redis SCAN/DEL invalidation path or the authorized-cache fingerprint collision resistance against live Redis.
 
-## What we are going to do
+## What We Are Going to Do
 
 | Item | Status |
 | --- | --- |
 | Phase 10 — Evaluation & Monitoring | In progress |
 | Phase 11 — Deployment | Not started |
-| Apply migration `20261012100000_unique_active_document_access_policy` | Pending — `npx prisma migrate deploy` |
+| Apply migration `20261012100000_unique_active_document_access_policy` | **Completed 2026-10-13** — `npx prisma migrate deploy` (fixed IMMUTABLE function requirement) |
 | Live verification (real Redis, AI service, Qdrant, database) | Pending |
 | Frontend document-management polish and retrieval interface | **Phase 7 complete** |
-| Processing failure reasons (`processingError` column) | Planned |
+| Processing failure reasons (`processingError` column) | **Completed 2026-10-13** |
 | AI service formula extraction (LaTeX) | Planned — extraction exists but not yet chunked separately |
 | AI service code block extraction (language detection) | Planned |
+| **Fix Redis TLS configuration for local development** | **Completed 2026-10-13** |
+| **Add `processingError` column to DocumentVersion** | **Completed 2026-10-13** |
+| **Call metricsBuffer.shutdown() on graceful exit** | **Completed 2026-10-13** |
+| **Configure CORS with explicit origins** | **Completed 2026-10-13** |
+| Add QueryHistory retention policy / cleanup job | **Completed 2026-10-13** |
+| Add Qdrant vector cleanup endpoint to AI service | **Completed 2026-10-13** |
+| Add tenant-wide default MANAGE_ACCESS policies | **Completed 2026-10-13** |
+| Schema-enforced cleanup ordering | **Completed 2026-10-13** |
+| Consolidate dual revocation representation | **Completed 2026-10-13** |
+| Align BullMQ/Redis offline queue settings | **Completed 2026-10-13** |
+| Add Helmet CSP/HSTS configuration | **Completed 2026-10-13** |
+| Validate JWT_SECRET at startup | **Completed 2026-10-13** |
+| Standardize ApiError with reasonCode | **Completed 2026-10-13** |
+| Add request ID propagation for tracing | **Completed 2026-10-13** |
+| Add rate limiting to all auth mutation endpoints | **Completed 2026-10-13** |
+| Conditional Prisma logging by NODE_ENV | **Completed 2026-10-13** |
+| Add dependency health checks to /health | **Completed 2026-10-13** |
+| Document API versioning strategy | Low |
+| Deduplicate startup re-dispatch | **Completed 2026-10-13** |
+| Custom multer file size error message | **Completed 2026-10-13** |
+| S3 orphan cleanup job / lifecycle policies | **Completed 2026-10-13** (daily reminder + S3 lifecycle docs) |
+| Implement password reset / email verification | Enhancement |
 
-## Open issues
+## Open Issues
 
-- No `processingError` column — failure detail is log-only; the UI needs a persisted reason.
-- Redis is a single dependency; outage behavior follows the configured fail-open/closed policy (`RATE_LIMIT_UNAVAILABLE_POLICY`).
-- The access-scope fingerprint runs a full policy scan per query — correct, but a per-request cost.
-- Re-dispatch is not deduplicated; the guarded `PROCESSING` write makes duplicates harmless no-ops.
-- `QueryHistory` grows without bound; no retention policy.
-- `MANAGE_ACCESS` policies are per-document; no tenant-wide default.
-- Cleanup ordering (null `currentVersionId` before deleting versions) is conventional, not schema-enforced.
-- Revocation is represented twice (`isActive` + `revokedAt`); both are kept in agreement.
-- `redisConnection` sets TLS unconditionally — a problem for a plain local Redis.
-- Permanent cleanup deletes S3 objects and DB records but leaves orphaned Qdrant vectors; the AI service has no cleanup endpoint. Backend gap, not a frontend issue.
+### Critical / High Priority
+
+1. **Redis TLS Configuration Breaks Local Development** (`src/config/redis.js:10-16`)
+   - TLS is enabled unconditionally when `REDIS_USERNAME` or `REDIS_PASSWORD` is set
+   - Local Redis instances typically don't support TLS, causing connection failures
+   - **Fix**: Make TLS configurable via `REDIS_TLS` env var; only enable when explicitly set to `true`
+   - **Files to change**: `src/config/redis.js`, `src/config/config.js` (add REDIS_TLS), `.env.example`
+
+2. **Missing `processingError` Column in `DocumentVersion`** (Prisma schema)
+   - Processing failures only logged, not persisted; UI cannot display failure reasons
+   - **Fix**: Add `processingError String?` field to `DocumentVersion` model; populate in `markProcessingFailed`
+   - **Files to change**: `prisma/schema.prisma`, `src/services/document/documentProcessing.service.js` (markProcessingFailed), create migration
+
+3. **Metrics Buffer Never Flushed on Graceful Shutdown** (`src/services/metrics/metricsBuffer.service.js`)
+   - `shutdown()` function exists but never called; metrics lost on process exit
+   - **Fix**: Add signal handlers in `server.js` to call `metricsBuffer.shutdown()` before exit
+   - **Files to change**: `server.js`, `src/services/metrics/metricsBuffer.service.js`
+
+4. **CORS Wide Open** (`src/app.js:13`)
+   - `app.use(cors())` allows all origins; security risk in production
+   - **Fix**: Configure explicit `origin`, `credentials`, and `methods` from env
+   - **Files to change**: `src/app.js`, `src/config/config.js` (add CORS_ORIGIN, CORS_CREDENTIALS)
+
+### Medium Priority
+
+5. **Redis Single Point of Failure**
+   - All rate limiting, caching, and queueing depend on single Redis instance
+   - Outage behavior controlled by `RATE_LIMIT_UNAVAILABLE_POLICY` (open/closed)
+   - **Mitigation**: Document failover strategy; consider Redis Sentinel/Cluster
+
+6. **Access-Scope Fingerprint Performance** (`src/services/document/documentAccess.service.js:1030-1106`)
+   - Full policy scan + unit hierarchy walk per query (~50-100ms overhead)
+   - **Optimization**: Consider caching hierarchy; incremental fingerprint updates
+
+7. **QueryHistory Unbounded Growth** (Prisma schema `QueryHistory`)
+   - No retention policy; table grows indefinitely
+   - **Fix**: Add scheduled cleanup job; `createdAt` index exists for efficient deletion
+
+8. **No Tenant-Wide Default `MANAGE_ACCESS` Policies**
+   - Currently per-document only; admins must grant per document
+   - **Enhancement**: Add organization-level default access policies
+
+9. **Cleanup Ordering Not Schema-Enforced** (`src/services/document/documentHelpers.js:144-160`)
+   - `currentVersionId` must be nulled before version deletion (onDelete: Restrict)
+   - Convention only; race conditions possible
+   - **Fix**: Add DB-level check constraint or use transaction ordering guarantees
+
+10. **Dual Revocation Representation** (`DocumentAccessPolicy` model)
+    - Both `isActive` and `revokedAt` track revocation; must stay in sync
+    - **Fix**: Use single source of truth; derive `isActive` from `revokedAt` null check
+
+11. **Qdrant Vector Orphans on Permanent Cleanup** (`src/services/document/documentLifecycle.service.js:592-617`)
+    - `cleanupDeletedDocument` deletes S3 + DB but leaves vectors in Qdrant
+    - AI service has no cleanup endpoint
+    - **Fix**: Add `DELETE /api/v1/documents/{id}/vectors` to AI service; call from backend
+
+12. **BullMQ vs Redis Client Offline Queue Mismatch** (`src/config/bullmq.js:13` vs `src/config/redis.js:27`)
+    - Main Redis: `enableOfflineQueue: false`; BullMQ: `enableOfflineQueue: true`
+    - Inconsistent behavior during Redis outages
+    - **Fix**: Align settings; document rationale
+
+### Low Priority / Enhancements
+
+13. **Missing Helmet Configuration** (`src/app.js`)
+    - Helmet imported but not configured with CSP, HSTS, etc.
+    - **Fix**: Add `app.use(helmet({ contentSecurityPolicy: ... }))`
+
+14. **No JWT Secret Validation at Startup** (`src/config/config.js:16`)
+    - Missing `JWT_SECRET` causes runtime failures only when first used
+    - **Fix**: Validate required env vars in `config.js` or `server.js` startup
+
+15. **Inconsistent `reasonCode` in ApiError** (`src/middleware/error.middleware.js:32`)
+    - Error handler reads `err.reasonCode` but not all `ApiError` throws set it
+    - **Fix**: Add `reasonCode` parameter to `ApiError` constructor; update all throw sites
+
+16. **No Request ID Propagation for Distributed Tracing**
+    - `generateRequestId()` exists but not attached to request/response headers
+    - **Fix**: Add middleware to generate/propagate `X-Request-ID`
+
+17. **Missing Rate Limiting on Sensitive Auth Endpoints**
+    - Only `/login` and `/register` rate limited; no protection for password reset, email change
+    - **Fix**: Add rate limiters to all auth mutation endpoints
+
+18. **Prisma Verbose Logging in Production** (`src/config/prisma.js:4`)
+    - Logs all queries, info, warn, error; impacts performance
+    - **Fix**: Conditional logging based on `NODE_ENV`
+
+19. **Health Check Endpoint Lacks Dependency Status** (`src/controllers/health.controller.js`)
+    - Returns basic status only; no DB/Redis/AI service connectivity checks
+    - **Fix**: Add dependency health checks with timeout
+
+20. **No API Versioning Strategy Beyond URL Prefix**
+    - Routes mounted at `/api/v1` but no deprecation/versioning policy
+    - **Enhancement**: Document versioning strategy; add `Accept` header versioning
+
+21. **Inconsistent Error Handling Patterns**
+    - Some services throw `ApiError`, others throw raw `Error`
+    - **Fix**: Standardize on `ApiError` with consistent status codes
+
+22. **Re-dispatch Not Deduplicated** (`src/services/document/documentLifecycle.service.js:551-590`)
+    - Startup recovery re-dispatches all `SUBMITTED` documents
+    - Guarded `PROCESSING` write makes duplicates harmless but wastes resources
+    - **Optimization**: Track dispatched jobs in Redis to avoid duplicate queue adds
+
+23. **Missing File Size Error Message in Multer** (`src/middleware/upload.middleware.js:11`)
+    - `LIMIT_FILE_SIZE` handled in error middleware but no custom message
+    - **Fix**: Add `fileFilter` or custom error handling for size limits
+
+24. **Potential Race in Document Version Upload** (`src/services/document/documentLifecycle.service.js:689-742`)
+    - Gap between S3 upload and DB transaction; orphaned S3 objects on crash
+    - Current cleanup only handles transaction failures, not process crashes
+    - **Fix**: Implement S3 lifecycle policies; periodic orphan cleanup job
+
+25. **No Password Reset / Email Verification Flow**
+    - Auth flow incomplete; users cannot reset passwords or verify emails
+    - **Enhancement**: Implement secure password reset tokens; email verification on registration
+
+### Test Coverage Gaps (from DEVELOPMENT.md)
+
+- Rate limiting under load
+- BullMQ worker dispatch under concurrent load
+- Redis connection/TLS configuration
+- End-to-end query flow against live Qdrant/AI service
+- Authorized-cache fingerprint collision resistance and Redis SCAN/DEL invalidation path
+- Permission revocation propagation to the authorized cache
+- Policy expiry between requests
+- Revocation during a query
+- Invalidation racing with cache reads
+- Processing-failure diagnostics (`processingError` column is planned, not implemented)
+- Query-history retention policy
+- Qdrant vector cleanup after permanent document deletion
 
 ## Setup
 
@@ -273,6 +443,7 @@ API base path: `/api/v1`
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_USERNAME` | — | Redis username |
 | `REDIS_PASSWORD` | — | Redis password |
+| `REDIS_TLS` | `false` | Enable TLS for Redis (set `true` for managed Redis with TLS) |
 | `AI_SERVICE_URL` | — | FastAPI AI service endpoint |
 | `LLM_PROVIDER` | — | LLM provider |
 | `LLM_MODEL_ID` | — | Bedrock model ID |
@@ -286,6 +457,8 @@ API base path: `/api/v1`
 | `DOCUMENT_UPLOAD_RATE_LIMIT_REFILL_RATE` | `1` | Upload tokens per interval |
 | `DOCUMENT_UPLOAD_RATE_LIMIT_REFILL_INTERVAL` | `60` | Upload refill interval (seconds) |
 | `RATE_LIMIT_UNAVAILABLE_POLICY` | `open` | Rate limiting during a Redis outage: `open` (allow) or `closed` (503) |
+| `CORS_ORIGIN` | `*` | Allowed CORS origin(s); comma-separated for multiple |
+| `CORS_CREDENTIALS` | `true` | Allow credentials in CORS requests |
 
 ## API Endpoints
 
@@ -404,7 +577,7 @@ Evidence reasons: `SUFFICIENT_EVIDENCE`, `SUFFICIENT_EVIDENCE_WITH_STRUCTURED`, 
 | **Verified against live database** | Executed against the development database (rolled back or backed up) |
 | **Production-verified** | Exercised with real users and live Redis/AI/Qdrant — nothing yet |
 
-Current state: query contract, lifecycle, authorization, queue/Redis hardening — implemented and integration tested. Migration `20261012100000_unique_active_document_access_policy` written but **not applied**. Live-infrastructure verification pending.
+Current state: query contract, lifecycle, authorization, queue/Redis hardening — implemented and integration tested. Migration `20261012100000_unique_active_document_access_policy` **applied 2026-10-13** (fixed IMMUTABLE function requirement for expression index). Live-infrastructure verification pending.
 
 ## Backend Structure
 
@@ -412,7 +585,7 @@ Current state: query contract, lifecycle, authorization, queue/Redis hardening �
 backend/
 ├── prisma/
 ├── scripts/bench-redis.mjs
-├── server.js                  # startup: recovery, queue init, routes
+├── server.js                  # startup: recovery, queue init, routes, graceful shutdown
 └── src/
     ├── app.js
     ├── config/                # config, prisma, redis, bullmq, s3, ai
@@ -479,7 +652,13 @@ Tests run with the Node built-in test runner (`node --test backend/tests/*.test.
 - Processing-failure diagnostics (`processingError` column is planned, not implemented).
 - Query-history retention policy.
 - Qdrant vector cleanup after permanent document deletion.
+- **Redis TLS configuration for local development**.
+- **Graceful shutdown metrics flush**.
+- **CORS origin restriction validation**.
+- **JWT_SECRET validation at startup**.
+- **Request ID propagation for distributed tracing**.
+- **Health check dependency status verification**.
 
 **Test methodology:** all automated tests use injected stubs for AI, Redis, Prisma, and S3. No live infrastructure (PostgreSQL, Redis, Qdrant, AI service, or LLM provider) is exercised by the test suite. Distinguish automated stub-based tests from verification against live infrastructure, which is pending.
 
-Names, purposes, and schema changes: `docs/DATABASE.md` — Migrations. Eleven are recorded; the eleventh (`20261012100000_unique_active_document_access_policy`) is pending application with `npx prisma migrate deploy`.
+Names, purposes, and schema changes: `docs/DATABASE.md` — Migrations. Eleven are recorded; the eleventh (`20261012100000_unique_active_document_access_policy`) **applied 2026-10-13** — required IMMUTABLE wrapper functions for enum casts in expression index.

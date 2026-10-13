@@ -29,6 +29,7 @@ Implementation progress for the Enterprise RAG Platform frontend.
 | `npm run lint` (frontend) | ✅ 0 errors, 0 warnings — verified by execution |
 | `npm run build` (frontend) | ✅ Succeeds (156 modules) — verified by execution |
 | Backend tests | ✅ 57/57 pass — verified by execution |
+| Backend migration `20261012100000_unique_active_document_access_policy` | ✅ Applied 2026-10-13 (fixed IMMUTABLE function requirement) |
 | Automated tests | ❌ None exist — frontend has no test runner |
 | Runtime / integration / E2E verification | ❌ Not performed — see checklist in §4.5 |
 
