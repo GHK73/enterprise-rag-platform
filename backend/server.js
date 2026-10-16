@@ -4,7 +4,10 @@ import app from "./src/app.js";
 import config from "./src/config/config.js";
 import prisma from "./src/config/prisma.js";
 import { initializeDocumentQueue } from "./src/services/document/documentQueue.service.js";
-import { recoverStrandedPublications } from "./src/services/document/documentLifecycle.service.js";
+import {
+    recoverStaleProcessingDocuments,
+    recoverStrandedPublications,
+} from "./src/services/document/documentLifecycle.service.js";
 import { metricsBuffer } from "./src/services/metrics/metricsBuffer.service.js";
 import { startScheduledJobs, stopScheduledJobs } from "./src/services/scheduledJobs.service.js";
 import "./src/workers/document.worker.js";
@@ -41,6 +44,14 @@ const startServer = async () => {
             if (recovery.strandedDocuments > 0) {
                 console.log(
                     `Publication recovery: ${recovery.recoveredDocuments} of ${recovery.strandedDocuments} stranded publications re-dispatched.`
+                );
+            }
+
+            const processingRecovery =
+                await recoverStaleProcessingDocuments();
+            if (processingRecovery.staleDocuments > 0) {
+                console.log(
+                    `Processing recovery: ${processingRecovery.recoveredDocuments} of ${processingRecovery.staleDocuments} stale documents re-dispatched.`
                 );
             }
 

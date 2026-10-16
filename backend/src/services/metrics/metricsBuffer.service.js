@@ -18,7 +18,7 @@ const buffers = {
 };
 
 let flushTimer = null;
-let isFlushing = false;
+let flushPromise = null;
 
 function getPrismaClient() {
     return prisma;
@@ -53,10 +53,12 @@ async function flushBuffer(bufferName, createFn) {
 }
 
 async function flushAll() {
-    if (isFlushing) return;
-    isFlushing = true;
+    // A shutdown flush must wait for any timer-triggered flush already in
+    // progress. Returning early here could let the caller disconnect Prisma
+    // while that flush is still writing metrics.
+    if (flushPromise) return flushPromise;
 
-    try {
+    flushPromise = (async () => {
         await Promise.all([
             flushBuffer("apiRequest", async (client, metrics) => {
                 await client.apiRequestMetric.createMany({ data: metrics, skipDuplicates: true });
@@ -86,8 +88,12 @@ async function flushAll() {
                 }
             }),
         ]);
+    })();
+
+    try {
+        await flushPromise;
     } finally {
-        isFlushing = false;
+        flushPromise = null;
     }
 }
 

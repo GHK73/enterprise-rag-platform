@@ -5,6 +5,7 @@ import { generateRequestId, createApiRequestMetric, recordApiRequest } from "../
 export const requestMetricsMiddleware = (req, res, next) => {
     const startTime = process.hrtime.bigint();
     const requestId = generateRequestId();
+    let responseSizeBytes = null;
 
     // Attach requestId to request and response for tracing
     req.requestId = requestId;
@@ -17,14 +18,6 @@ export const requestMetricsMiddleware = (req, res, next) => {
 
     const originalSend = res.send;
     res.send = function (body) {
-        const endTime = process.hrtime.bigint();
-        const durationMs = Number(endTime - startTime) / 1_000_000;
-
-        const authenticated = !!req.user?.id;
-        const userId = req.user?.id || null;
-        const organizationId = req.user?.unit?.organizationId || null;
-
-        let responseSizeBytes = null;
         if (body && typeof body === "string") {
             responseSizeBytes = Buffer.byteLength(body, "utf8");
         } else if (body && typeof body === "object") {
@@ -34,6 +27,18 @@ export const requestMetricsMiddleware = (req, res, next) => {
                 responseSizeBytes = null;
             }
         }
+
+        return originalSend.call(this, body);
+    };
+
+    // `finish` covers send(), end(), HEAD responses, and other completed
+    // response paths. Recording before send() also missed the final status
+    // code when downstream middleware changed it while ending the response.
+    res.once("finish", () => {
+        const durationMs = Number(process.hrtime.bigint() - startTime) / 1_000_000;
+        const authenticated = !!req.user?.id;
+        const userId = req.user?.id || null;
+        const organizationId = req.user?.unit?.organizationId || null;
 
         const metric = createApiRequestMetric({
             requestId,
@@ -47,10 +52,12 @@ export const requestMetricsMiddleware = (req, res, next) => {
             responseSizeBytes,
         });
 
-        recordApiRequest(metric);
-
-        return originalSend.call(this, body);
-    };
+        try {
+            recordApiRequest(metric);
+        } catch (error) {
+            console.error("METRICS: Failed to record API request:", error.message);
+        }
+    });
 
     next();
 };

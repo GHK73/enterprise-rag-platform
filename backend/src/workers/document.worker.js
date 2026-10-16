@@ -33,6 +33,7 @@ if (config.redis.enabled) {
         {
             connection: bullmqConnection,
             concurrency: 1,
+            maxStalledCount: 3,
         }
     );
 
@@ -58,8 +59,7 @@ if (config.redis.enabled) {
         "failed",
         (job, error) => {
             console.error(
-                `DOCUMENT WORKER JOB FAILED: ${job?.id}`,
-                error
+                `DOCUMENT WORKER JOB FAILED: ${job?.id}; code=${error.code ?? "unknown"}, message=${error.message}`
             );
         }
     );

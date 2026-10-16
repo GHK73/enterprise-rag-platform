@@ -48,7 +48,7 @@ Organization
     └── DocumentAccessAudit
 ```
 
-**Query history** (migration `20260927135626_add_query_history`): per-user query/answer log with `query`, `answer`, `sources`, `evidence`, `usedLLM`, `outputGuardPassed`. Indexed on `organizationId`, `userId`, `createdAt`. The API never exposes `organizationId` or `userId`.
+**Query history** (migrations `20260927135626_add_query_history`, `20261016170000_simplify_query_history`): per-user conversation turns containing only `query`, `answer`, and `createdAt` plus ownership keys. Indexed for organization/user/time pagination. The API never exposes `organizationId` or `userId`; it returns a page of turns and a `hasMore` flag. Query responses are only successful after the query and answer are persisted.
 
 ## Document Lifecycle
 
@@ -80,7 +80,7 @@ Allowed transitions (single authoritative table in `backend/src/services/documen
 | `DRAFT` | Staging; max 24 hours before expiry |
 | `SUBMITTED` | Awaiting dispatch; transient — stranded publications are re-dispatched at startup |
 | `QUEUED` | Processing job prepared |
-| `PROCESSING` | Extraction, chunking, embedding in progress |
+| `PROCESSING` | Extraction, chunking, embedding in progress; if unchanged for 10 minutes with no active queue job, backend recovery requeues it |
 | `READY` | Available for authorized retrieval and download |
 | `FAILED` | Processing failed; recoverable via reprocess or worker retry |
 | `EXPIRED` | Unpublished draft exceeded staging; access blocked (404) |
@@ -220,6 +220,7 @@ Eleven migrations; the eleventh (`20261012100000_unique_active_document_access_p
 | `20260709023350_add_organization_revision` | Organization revision tracking |
 | `20260710095413_add_document_management` | Documents, versions, access policies, access audit |
 | `20260927135626_add_query_history` | Query history |
+| `20261016170000_simplify_query_history` | Store only query and answer; add user-scoped pagination index |
 | `20261005101500_normalize_user_email` | `citext` extension, duplicate guard, lowercase backfill, `User.email` as `CITEXT` |
 | `20261005140000_seed_manage_access_role_policies` | Backfills `OWNER` and `ADMIN` `MANAGE_ACCESS` policies for published documents (idempotent `NOT EXISTS` guard) |
 | `20261012100000_unique_active_document_access_policy` | Deduplicates existing active policies, then enforces uniqueness of active policies per subject/action/effect with a partial expression index; fixed IMMUTABLE wrapper functions for enum→text casts |

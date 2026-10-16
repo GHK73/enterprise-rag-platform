@@ -60,7 +60,7 @@ npm run dev
 
 **Draft Upload Flow** — draft creation via `POST /documents/drafts` (title, description, classification) → navigate to upload route; reusable `UploadCard`/`SelectedFileCard` components; client-side validation (25 MB maximum; PDF/TXT/DOC/DOCX by MIME — **see bug 1: DOC is rejected by the backend**); Axios upload progress; remove/replace uploaded file (`DELETE /documents/drafts/:id/upload`); draft status and expiry shown on the upload page.
 
-**Document Details** — metadata, lifecycle status badge, current version, version history with per-version download; publish with confirmation dialog (button rendered only for DRAFT); download latest version (blocked for DRAFT, PROCESSING, DELETED, EXPIRED); upload new version only when READY; delete (soft), restore, and permanent-cleanup workflows with confirmation dialogs; access management panel and read-only access-history panel; processing status polling at 3-second intervals that **stops** at terminal states (READY, FAILED, DELETED, EXPIRED) with effect cleanup on unmount/route change; derived action guards.
+**Document Details** — metadata, lifecycle status badge, current version, version history with per-version download; publish with confirmation dialog (button rendered only for DRAFT); download latest version (blocked for DRAFT, PROCESSING, DELETED, EXPIRED); upload new version only when READY; delete (soft), restore, and permanent-cleanup workflows with confirmation dialogs; access management panel and read-only access-history panel; processing status is loaded on page entry and can be refreshed by reloading the page; derived action guards.
 
 **Access Management** — policy table with subject, subject type, action, effect, scope, temporary expiry; grant/edit/revoke (revoke requires a user-supplied reason); subject selection (`ORGANIZATION`, `UNIT`, `ROLE`, `USER`; roles `ADMIN`, `OWNER`, `MANAGER`, `MEMBER`); actions `QUERY`, `VIEW`, `DOWNLOAD`, `MANAGE_ACCESS` (immutable while editing); effects `ALLOW`/`DENY`; unit scope `UNIT_ONLY`/`UNIT_AND_DESCENDANTS`; temporary access with ISO `validUntil` (client enforces max 7 days, matching backend `MAX_TEMPORARY_ACCESS_DAYS = 7`); validation blocks submit for unresolved ORGANIZATION subjects, UNIT subjects without scope, and temporary access without expiry. The payload matches the backend access-policy model exactly.
 
@@ -68,9 +68,9 @@ npm run dev
 
 **Deletion & Recovery** — soft delete (`DELETE /documents/:id`), restore (`PATCH /documents/:id/restore`), permanent cleanup (`DELETE /documents/:id/cleanup`); deleted documents visible via show-deleted toggle. Backend semantics: soft delete preserves versions and policies; permanent cleanup deletes all S3 objects, versions, access policies, audit records, and the document — but does **not** remove Qdrant vectors (backend gap, §3).
 
-**Document Processing UI (Phase 6)** — `/documents/queue` listing documents in QUEUED, PROCESSING, FAILED; summary cards (Queued/Processing/Failed counts), client-side search and lifecycle filter; auto-refresh toggle (5-second interval) plus manual refresh; reprocess button for FAILED documents (`POST /documents/:id/versions/:currentVersionId/reprocess`), guarded on `currentVersionId`; links to document details.
+**Document Processing UI (Phase 6)** — `/documents/queue` listing documents in QUEUED, PROCESSING, FAILED; summary cards (Queued/Processing/Failed counts), client-side search and lifecycle filter; manual refresh; reprocess button for FAILED documents (`POST /documents/:id/versions/:currentVersionId/reprocess`), guarded on `currentVersionId`; links to document details.
 
-**Query Interface (multi-chunk-type)** — query form with textarea and `topK` (1–20); `POST /query` with loading/error states; answer display; **structured evidence panel** showing `evidence.sufficient`, `evidence.reason`, and `evidence.hasStructuredEvidence`; **typed source rendering** via `ChunkRouter` dispatching to `TableChunk` (markdown tables), `FormulaChunk` (LaTeX with rendered preview), `FigureChunk` (caption + description), `CodeChunk` (syntax-highlighted with language badge), `TextChunk` (plain text); each source shows page, score, chunk-type badge, and "View Document" link; previous-queries panel from `GET /query/history` with `limit`/`offset` pagination (limit 10) and click-to-fill.
+**Query Interface (multi-chunk-type)** — query form with textarea and `topK` (1–20); `POST /query` with loading/error states; answer display; **structured evidence panel** showing `evidence.sufficient`, `evidence.reason`, and `evidence.hasStructuredEvidence`; **typed source rendering** via `ChunkRouter` dispatching to `TableChunk` (markdown tables), `FormulaChunk` (LaTeX with rendered preview), `FigureChunk` (caption + description), `CodeChunk` (syntax-highlighted with language badge), `TextChunk` (plain text); each source shows page, score, chunk-type badge, and "View Document" link; query history displays query/answer pairs and loads the latest page on entry and after each query; older turns are prepended on demand from `GET /query/history` with `limit`/`offset` pagination.
 
 ## 3. Known Limitations and Bugs
 
@@ -80,9 +80,8 @@ npm run dev
 | --- | --- | --- |
 | 1 | High | **DOC MIME mismatch.** `UploadDocument.jsx` and `DocumentDetails.jsx` allow `application/msword` (.doc), but the backend accepts only PDF, TXT, DOCX (`backend/src/utils/fileValidation.js`). A .doc file passes client validation and fails server upload with a 400. Fix: remove `application/msword` from frontend `ALLOWED_TYPES` (or add it to the backend allow-list deliberately). |
 | 2 | Medium | **Misleading FAILED guidance.** The FAILED banner on Document Details says "upload a new version or retry later", but "Upload New Version" is disabled unless status is `READY`. Reprocess is only available on the Processing Queue page. The banner should point to the queue, or the details page should expose the reprocess action. |
-| 3 | Medium | **Queue polling never terminates and refetches everything.** `DocumentProcessingQueue` refetches the entire organization document list (`GET /documents`) every 5 s and filters client-side; auto-refresh runs indefinitely while the page is open. Details-page polling (3 s) does stop at terminal states; the queue page should stop refreshing when no QUEUED/PROCESSING documents remain, and the backend should expose a filtered processing-status endpoint. |
-| 4 | Low | **Query history fails silently** (empty `catch` in `loadHistory`); the panel just stays empty on error. |
-| 5 | Low | **Reprocess button is visible to all queue viewers.** Authorization (`MANAGE_ACCESS`) is enforced server-side (403 for unauthorized users), so this is a UX issue only. |
+| 3 | Low | **Query-history persistence failures do not fail the query response.** Backend logs failures with user and organization IDs; the answer is still returned if history storage is unavailable. |
+| 4 | Low | **Reprocess button is visible to all queue viewers.** Authorization (`MANAGE_ACCESS`) is enforced server-side (403 for unauthorized users), so this is a UX issue only. |
 
 ### Limitations (require backend changes)
 
@@ -166,7 +165,7 @@ DRAFT ──publish──▶ SUBMITTED ──▶ QUEUED ──▶ PROCESSING ─
 | --- | --- | --- |
 | Processing states displayed (QUEUED/PROCESSING/FAILED) | ✅ Met | Queue page filters, summary cards, status badges |
 | Retry behavior for failed processing | ✅ Met | Reprocess for FAILED current version; server enforces `MANAGE_ACCESS` |
-| Polling termination at terminal states | ✅ Met (details) / ⚠️ Partial (queue) | Details: 3 s interval stops at READY/FAILED/DELETED/EXPIRED. Queue: 5 s refresh never stops (bug 3) |
+| Processing status visibility | ✅ Met | Status is shown on page load; users can refresh manually. Automatic polling is intentionally not used. |
 | Failure messages | ⚠️ Partial | Generic "Processing failed" banner; backend exposes no `failureReason` field |
 | Progress indicators (stage, percent, queue position) | ❌ Not met | Not implementable without backend support (§3 limitations) |
 | Navigation back to document details | ✅ Met | Queue rows link to `/documents/:id` |

@@ -1,7 +1,17 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "@api/axios";
 import ChunkRenderer from "./Query/components/ChunkRenderer";
 import "./Query.css";
+
+const HISTORY_LIMIT = 10;
+
+const fetchQueryHistoryPage = async (offset) => {
+    const response = await api.get("/query/history", {
+        params: { limit: HISTORY_LIMIT, offset },
+    });
+
+    return response.data.data;
+};
 
 const Query = () => {
     const [query, setQuery] = useState("");
@@ -11,25 +21,66 @@ const Query = () => {
     const [result, setResult] = useState(null);
 
     const [history, setHistory] = useState([]);
-    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyLoading, setHistoryLoading] = useState(true);
+    const [historyError, setHistoryError] = useState("");
     const [historyOffset, setHistoryOffset] = useState(0);
-    const HISTORY_LIMIT = 10;
+    const [hasMoreHistory, setHasMoreHistory] = useState(false);
 
-    const loadHistory = async (offset = 0) => {
+    const loadHistory = useCallback(async (offset = 0, prepend = false) => {
         try {
             setHistoryLoading(true);
-            const response = await api.get("/query/history", {
-                params: { limit: HISTORY_LIMIT, offset },
-            });
-            const data = response.data.data;
-            setHistory(data.history || []);
+            setHistoryError("");
+            const data = await fetchQueryHistoryPage(offset);
+            const loadedHistory = [...(data.history || [])].reverse();
+            setHistoryError("");
+            setHistory((currentHistory) =>
+                prepend
+                    ? [...loadedHistory, ...currentHistory]
+                    : loadedHistory
+            );
             setHistoryOffset(data.offset);
-        } catch {
-            // silent fail for history
+            setHasMoreHistory(data.hasMore);
+        } catch (err) {
+            setHistoryError(
+                err?.response?.data?.message ||
+                    "Failed to load query history."
+            );
         } finally {
             setHistoryLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const initializeHistory = async () => {
+            try {
+                const data = await fetchQueryHistoryPage(0);
+                if (cancelled) return;
+
+                const loadedHistory = [...(data.history || [])].reverse();
+                setHistory(loadedHistory);
+                setHistoryOffset(data.offset);
+                setHasMoreHistory(data.hasMore);
+            } catch (err) {
+                if (!cancelled) {
+                    setHistoryError(
+                        err?.response?.data?.message ||
+                            "Failed to load query history."
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setHistoryLoading(false);
+                }
+            }
+        };
+
+        initializeHistory();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const handleSubmit = async (event) => {
         event.preventDefault();
@@ -46,6 +97,7 @@ const Query = () => {
                 topK,
             });
             setResult(response.data.data);
+            await loadHistory();
         } catch (err) {
             setError(
                 err?.response?.data?.message ||
@@ -55,10 +107,6 @@ const Query = () => {
         } finally {
             setLoading(false);
         }
-    };
-
-    const loadMoreHistory = () => {
-        loadHistory(historyOffset + HISTORY_LIMIT);
     };
 
     const handleHistoryClick = (item) => {
@@ -153,45 +201,75 @@ const Query = () => {
 
             <section className="query-history">
                 <h2>Previous Queries</h2>
+                {historyError && (
+                    <div className="query-error" role="alert">
+                        <p>{historyError}</p>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => loadHistory()}
+                            disabled={historyLoading}
+                        >
+                            Retry
+                        </button>
+                    </div>
+                )}
                 {historyLoading && history.length === 0 ? (
                     <p>Loading history...</p>
                 ) : history.length === 0 ? (
-                    <p>No previous queries.</p>
+                    <p>No previous conversations.</p>
                 ) : (
                     <>
+                        {hasMoreHistory && (
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() =>
+                                    loadHistory(
+                                        historyOffset + HISTORY_LIMIT,
+                                        true
+                                    )
+                                }
+                                disabled={historyLoading}
+                            >
+                                {historyLoading
+                                    ? "Loading..."
+                                    : "Load Older Messages"}
+                            </button>
+                        )}
                         <ul className="query-history-list">
                             {history.map((item) => (
                                 <li key={item.id}>
-                                    <button
-                                        type="button"
-                                        className="query-history-item"
-                                        onClick={() =>
-                                            handleHistoryClick(item)
-                                        }
-                                    >
-                                        <strong>{item.query}</strong>
+                                    <div className="query-history-turn">
+                                        <button
+                                            type="button"
+                                            className="query-history-message query-history-question"
+                                            onClick={() =>
+                                                handleHistoryClick(item)
+                                            }
+                                        >
+                                            <span className="query-history-label">
+                                                You
+                                            </span>
+                                            {item.query}
+                                        </button>
+                                        <div className="query-history-message query-history-answer">
+                                            <span className="query-history-label">
+                                                Assistant
+                                            </span>
+                                            {item.answer || "No answer was saved."}
+                                        </div>
                                         {item.createdAt && (
-                                            <small>
-                                                {" "}
+                                            <small className="query-history-timestamp">
                                                 {new Date(
                                                     item.createdAt
                                                 ).toLocaleString()}
                                             </small>
                                         )}
-                                    </button>
+                                    </div>
                                 </li>
                             ))}
                         </ul>
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={loadMoreHistory}
-                            disabled={historyLoading}
-                        >
-                            {historyLoading
-                                ? "Loading..."
-                                : "Load More"}
-                        </button>
                     </>
                 )}
             </section>

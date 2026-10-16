@@ -519,17 +519,12 @@ model QueryHistory {
   query  String
   answer String?
 
-  sources  Json?
-  evidence Json?
-
-  usedLLM           Boolean @default(false)
-  outputGuardPassed Boolean @default(false)
-
   createdAt DateTime @default(now())
 
   @@index([organizationId])
   @@index([userId])
   @@index([createdAt])
+  @@index([organizationId, userId, createdAt])
 }
 
 model ApiRequestMetric {

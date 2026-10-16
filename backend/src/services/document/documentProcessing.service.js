@@ -8,32 +8,11 @@ import {
 import { invalidateOrganizationQueryCache } from "../query/queryCache.service.js";
 import { dispatchDocumentProcessing } from "./documentProcessingDispatcher.service.js";
 import { authorizeDocumentAction } from "./documentAccess.service.js";
-
-/*
- * States from which the worker may enter PROCESSING:
- * SUBMITTED (initial publication dispatch), QUEUED
- * (version upload or manual reprocess dispatch), and
- * FAILED (BullMQ retry of a failed job). PROCESSING is
- * deliberately absent: a duplicate job for a document
- * that is already being processed must not re-enter.
- */
-const PROCESSING_SOURCE_STATUSES = [
-    "SUBMITTED",
-    "QUEUED",
-    "FAILED",
-];
+import { buildProcessingClaimWhere } from "./documentHelpers.js";
 
 async function updateProcessingStatus(documentId, versionId, status) {
     return await prisma.document.updateMany({
-        where: {
-            id: documentId,
-            currentVersionId: versionId,
-            ...(status === "PROCESSING" && {
-                status: {
-                    in: PROCESSING_SOURCE_STATUSES,
-                },
-            }),
-        },
+        where: buildProcessingClaimWhere(documentId, versionId),
         data: {
             status,
         },
@@ -59,7 +38,7 @@ async function markProcessingReady(documentId, versionId) {
                     id: versionId,
                 },
                 data: {
-                    processingStatus: "READY",
+                    processingStatus: "COMPLETED",
                 },
             });
         }
@@ -99,6 +78,8 @@ async function markProcessingFailed(documentId, versionId, error) {
 }
 
 async function processDocument({ documentId, versionId }) {
+    let claimedForProcessing = false;
+
     try {
         const processingResult = await updateProcessingStatus(
             documentId,
@@ -112,6 +93,7 @@ async function processDocument({ documentId, versionId }) {
                 "Document is not available for processing."
             );
         }
+        claimedForProcessing = true;
 
         await prisma.documentVersion.updateMany({
             where: {
@@ -138,7 +120,10 @@ async function processDocument({ documentId, versionId }) {
         const payload = await buildProcessingPayload(document, version);
         const response = await processDocumentWithAI(payload);
 
-        await handleProcessingSuccess(response);
+        await handleProcessingSuccess(response, {
+            documentId,
+            versionId,
+        });
 
         const readyResult = await markProcessingReady(
             documentId,
@@ -151,17 +136,19 @@ async function processDocument({ documentId, versionId }) {
             );
         }
     } catch (error) {
-        try {
-            await markProcessingFailed(
-                documentId,
-                versionId,
-                error
-            );
-        } catch (markFailureError) {
-            console.error(
-                `DOCUMENT PROCESSING: Failed to mark ${documentId} version ${versionId} as FAILED`,
-                markFailureError
-            );
+        if (claimedForProcessing) {
+            try {
+                await markProcessingFailed(
+                    documentId,
+                    versionId,
+                    error
+                );
+            } catch (markFailureError) {
+                console.error(
+                    `DOCUMENT PROCESSING: Failed to mark ${documentId} version ${versionId} as FAILED`,
+                    markFailureError
+                );
+            }
         }
 
         throw error;

@@ -176,8 +176,10 @@ test("query pipeline returns the documented response contract on a normal answer
         calls.saveQueryHistory[0].answer,
         "The target is 4.2 million [Source 1]."
     );
-    assert.equal(calls.saveQueryHistory[0].outputGuardPassed, true);
-    assert.equal(calls.saveQueryHistory[0].usedLLM, true);
+    assert.deepEqual(
+        Object.keys(calls.saveQueryHistory[0]).sort(),
+        ["answer", "query", "user"]
+    );
 
     /*
      * A cache miss populates both caches: the raw
@@ -226,14 +228,19 @@ test("query pipeline falls back safely when no authorized evidence exists", asyn
     assert.equal(calls.generateQueryAnswer.length, 0);
 
     /*
-     * The fallback is still persisted, marked as
-     * guard-failed and LLM-free.
+     * The fallback answer is persisted with the
+     * query and user, without document metadata.
      */
     assert.equal(calls.saveQueryHistory.length, 1);
     assert.equal(calls.saveQueryHistory[0].answer, FALLBACK_ANSWER);
-    assert.equal(calls.saveQueryHistory[0].usedLLM, false);
-    assert.equal(calls.saveQueryHistory[0].outputGuardPassed, false);
-    assert.deepEqual(calls.saveQueryHistory[0].sources, []);
+    assert.equal(
+        calls.saveQueryHistory[0].query,
+        "What is the revenue target?"
+    );
+    assert.deepEqual(
+        Object.keys(calls.saveQueryHistory[0]).sort(),
+        ["answer", "query", "user"]
+    );
 });
 
 test("unauthorized candidates never reach the LLM prompt or sources", async () => {
@@ -419,7 +426,6 @@ test("the output guardrail blocks unsafe answers and the blocked answer is persi
     assert.equal(result.usedLLM, true);
 
     assert.equal(calls.saveQueryHistory.length, 1);
-    assert.equal(calls.saveQueryHistory[0].outputGuardPassed, false);
     assert.equal(
         calls.saveQueryHistory[0].answer,
         "I could not provide that information."
@@ -459,7 +465,7 @@ test("only the top-K reranked candidates reach generation", async () => {
     assert.equal(llmInput.sources.length, 2);
 });
 
-test("a query-history write failure does not fail the response", async () => {
+test("a query-history write failure fails the query response", async () => {
     const candidate = makeCandidate();
     const { deps } = makeDeps({
         retrieveFromAI: async () => ({
@@ -474,16 +480,15 @@ test("a query-history write failure does not fail the response", async () => {
         },
     });
 
-    const result = await retrieveAuthorizedCandidates(
-        makeUser(),
-        "What is the revenue target?",
-        5,
-        deps
+    await assert.rejects(
+        retrieveAuthorizedCandidates(
+            makeUser(),
+            "What is the revenue target?",
+            5,
+            deps
+        ),
+        /history store unavailable/
     );
-
-    assert.equal(result.usedLLM, true);
-    assert.equal(result.outputGuardPassed, true);
-    assert.equal(result.sources.length, 1);
 });
 
 test("insufficient usable evidence produces NO_USABLE_EVIDENCE", async () => {
@@ -509,11 +514,11 @@ test("insufficient usable evidence produces NO_USABLE_EVIDENCE", async () => {
     assert.equal(calls.generateQueryAnswer.length, 0);
 });
 
-test("zero-relevance evidence produces LOW_RELEVANCE", async () => {
-    const { deps } = makeDeps({
+test("low-relevance evidence produces LOW_RELEVANCE without invoking the LLM", async () => {
+    const { deps, calls } = makeDeps({
         retrieveFromAI: async () => ({
             query: "What is the revenue target?",
-            results: [makeCandidate({ score: 0 })],
+            results: [makeCandidate({ score: 0.16 })],
         }),
         authorizeQueryDocuments: async () => [
             { documentId: "doc-1", currentVersionId: "v1" },
@@ -528,5 +533,7 @@ test("zero-relevance evidence produces LOW_RELEVANCE", async () => {
     );
 
     assert.equal(result.evidence.reason, "LOW_RELEVANCE");
+    assert.equal(result.evidence.sufficient, false);
     assert.equal(result.answer, FALLBACK_ANSWER);
+    assert.equal(calls.generateQueryAnswer.length, 0);
 });

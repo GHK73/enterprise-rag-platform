@@ -11,11 +11,9 @@ import {
  * without live infrastructure. Production
  * uses the real retrieveAuthorizedCandidates.
  */
-export const queryDocumentsHandler = async (
-    req,
-    res,
+export const createQueryDocumentsHandler = (
     orchestrate = retrieveAuthorizedCandidates
-) => {
+) => async (req, res) => {
     const {
         query,
         topK = 5,
@@ -68,6 +66,9 @@ export const queryDocumentsHandler = async (
         )
     );
 };
+
+export const queryDocumentsHandler =
+    createQueryDocumentsHandler();
 
 export const queryDocuments = asyncHandler(
     queryDocumentsHandler

@@ -10,8 +10,7 @@ if (config.redis.enabled) {
     bullmqConnection = {
         ...redisConnection,
         maxRetriesPerRequest: null,
-        // Align with main Redis client: disable offline queue for consistent behavior
-        enableOfflineQueue: false,
+        enableOfflineQueue: true,
     };
 
     documentProcessingQueue = new Queue(

@@ -27,8 +27,6 @@ const DocumentProcessingQueue = () => {
 
     const [lifecycle, setLifecycle] = useState("ALL");
 
-    const [autoRefresh, setAutoRefresh] = useState(true);
-
     const [reprocessing, setReprocessing] = useState(null);
 
     const loadDocuments = useCallback(async () => {
@@ -79,16 +77,6 @@ const DocumentProcessingQueue = () => {
         }
         initialize();
     }, [loadDocuments]);
-
-    useEffect(() => {
-        if (!autoRefresh) return;
-
-        const interval = setInterval(async () => {
-            await loadDocuments();
-        }, 5000);
-
-        return () => clearInterval(interval);
-    }, [autoRefresh, loadDocuments]);
 
     const filteredDocuments = useMemo(() => {
         return documents.filter((document) => {
@@ -157,14 +145,6 @@ const DocumentProcessingQueue = () => {
                     </p>
                 </div>
                 <div className="processing-queue-actions">
-                    <label className="checkbox-label">
-                        <input
-                            type="checkbox"
-                            checked={autoRefresh}
-                            onChange={(e) => setAutoRefresh(e.target.checked)}
-                        />
-                        Auto-refresh (5s)
-                    </label>
                     <button className="secondary-button" onClick={loadDocuments}>
                         Refresh Now
                     </button>

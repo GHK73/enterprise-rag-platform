@@ -22,14 +22,10 @@ import {
 import prisma from "../../config/prisma.js";
 import ApiError from "../../utils/ApiError.js";
 
-const saveQueryHistory = async ({
+export const saveQueryHistory = async ({
     user,
     query,
     answer,
-    sources,
-    evidence,
-    usedLLM,
-    outputGuardPassed,
 }, prismaClient = prisma) => {
     const organizationId = user?.unit?.organizationId;
 
@@ -46,10 +42,6 @@ const saveQueryHistory = async ({
             userId: user.id,
             query,
             answer,
-            sources: sources ?? null,
-            evidence: evidence ?? null,
-            usedLLM,
-            outputGuardPassed,
         },
     });
 };
@@ -293,22 +285,11 @@ export const retrieveAuthorizedCandidates = async (
         const answer =
             "I couldn't find sufficient information in the authorized documents to answer this question.";
 
-        try {
-            await dependencies.saveQueryHistory({
-                user,
-                query: retrievalResponse.query,
-                answer,
-                sources: [],
-                evidence,
-                usedLLM: false,
-                outputGuardPassed: false,
-            }, dependencies.prisma);
-        } catch (historyError) {
-            console.error(
-                "QUERY HISTORY: failed to save insufficient-evidence record:",
-                historyError.message
-            );
-        }
+        await dependencies.saveQueryHistory({
+            user,
+            query: retrievalResponse.query,
+            answer,
+        }, dependencies.prisma);
 
         return {
             query: retrievalResponse.query,
@@ -346,22 +327,11 @@ export const retrieveAuthorizedCandidates = async (
         answerResult.answer
     );
 
-    try {
-        await dependencies.saveQueryHistory({
-            user,
-            query: retrievalResponse.query,
-            answer: guardedAnswer.answer,
-            sources,
-            evidence,
-            usedLLM: answerResult.usedLLM,
-            outputGuardPassed: guardedAnswer.safe,
-        }, dependencies.prisma);
-    } catch (historyError) {
-        console.error(
-            "QUERY HISTORY: failed to save query record:",
-            historyError.message
-        );
-    }
+    await dependencies.saveQueryHistory({
+        user,
+        query: retrievalResponse.query,
+        answer: guardedAnswer.answer,
+    }, dependencies.prisma);
 
     return {
         query: retrievalResponse.query,

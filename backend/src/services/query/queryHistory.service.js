@@ -6,7 +6,8 @@ import config from "../../config/config.js";
 export const getQueryHistory = async (
     user,
     limit = 20,
-    offset = 0
+    offset = 0,
+    prismaClient = prisma
 ) => {
     const organizationId = user?.unit?.organizationId;
 
@@ -17,7 +18,7 @@ export const getQueryHistory = async (
         );
     }
 
-    return await prisma.queryHistory.findMany({
+    const rows = await prismaClient.queryHistory.findMany({
         where: {
             organizationId,
             userId: user.id,
@@ -25,19 +26,20 @@ export const getQueryHistory = async (
         orderBy: {
             createdAt: "desc",
         },
-        take: limit,
+        take: limit + 1,
         skip: offset,
         select: {
             id: true,
             query: true,
             answer: true,
-            sources: true,
-            evidence: true,
-            usedLLM: true,
-            outputGuardPassed: true,
             createdAt: true,
         },
     });
+
+    return {
+        history: rows.slice(0, limit),
+        hasMore: rows.length > limit,
+    };
 };
 
 export const cleanupQueryHistory = async (organizationId, retentionDays = null) => {

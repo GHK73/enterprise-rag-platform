@@ -6,6 +6,12 @@ Summary-level status lives in [`frontendDevelopmentLog.md`](frontendDevelopmentL
 
 ---
 
+## 2026-10-16 — Remove automatic document-status polling
+
+- **DocumentDetails.jsx** — removed periodic status polling; status is refreshed on page load and after user actions.
+- **DocumentProcessingQueue.jsx** — removed the five-second auto-refresh; kept manual refresh.
+- **Backend document-status endpoint** — removed the endpoint that was only used by details-page polling.
+
 ## 2026-10-13 — Phase 7: Multi-chunk-type Retrieval Interface
 
 - **AI Service (Python):**

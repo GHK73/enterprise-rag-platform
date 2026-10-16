@@ -82,8 +82,9 @@ PostgreSQL (source of truth)    BullMQ worker
 
 - **Atomic lifecycle transitions.** All state changes are validated against the single authoritative table in `documentHelpers.js` (`validDocumentTransitions`). API-initiated transitions use `validateDocumentTransition`; worker-initiated transitions use guarded conditional `updateMany` writes that only match allowed source states.
 - **Idempotent publishing.** `publishDraft` retries after a successful publication return the already-published document instead of an error. The guarded `updateMany` (where `status = 'DRAFT'`) ensures only one concurrent publication creates the initial policies and audit records.
-- **Duplicate-job handling.** `processDocument` enters `PROCESSING` only from `SUBMITTED`, `QUEUED`, or `FAILED`. A duplicate job for a document already in `PROCESSING` receives a 409 no-op.
+- **Duplicate-job handling.** `processDocument` enters `PROCESSING` from `SUBMITTED`, `QUEUED`, or `FAILED`; a `PROCESSING` document can only be reclaimed if its status has been unchanged for at least 10 minutes. This supports BullMQ stalled-job retries without allowing a second worker to take over a recently claimed document.
 - **Recovery of stranded publications.** `recoverStrandedPublications` runs at startup and re-dispatches any document left in `SUBMITTED`. The guarded `PROCESSING` write makes redundant dispatches harmless.
+- **Recovery of stranded processing.** `recoverStaleProcessingDocuments` requeues documents left in `PROCESSING` without an active BullMQ job after 10 minutes. It runs at startup and every five minutes when Redis is enabled; per-document Redis locks and guarded database updates prevent duplicate recovery.
 - **Processing-state guards.** `uploadDocumentVersion` requires the document to be `READY` before transitioning to `QUEUED`; `restoreDocument` restores to `READY` only when the current version's `processingStatus` is `READY`, otherwise to `FAILED`.
 - **Dispatch-failure recovery.** If dispatch fails after publication or version upload, the document/version is moved to `FAILED` in a guarded transaction so it is recoverable via `reprocessDocument`.
 - **Cleanup ordering.** Permanent cleanup nulls `currentVersionId` before deleting versions (the `onDelete: Restrict` relation requires it), then deletes policies, audit rows, S3 objects, and the document. Expired drafts are cleaned via `POST /documents/cleanup/expired-drafts`.
@@ -97,8 +98,8 @@ PostgreSQL (source of truth)    BullMQ worker
 
 ### Error Handling and Query-History Persistence
 
-- Query history is persisted after the output guardrail, with the guarded answer. A history-write failure is logged and does not fail the response.
-- Every query attempt is recorded, including LLM failures and guardrail blocks.
+- Query history stores only each authenticated user's query and guarded answer. `GET /query/history` filters by both the user's organization and user ID and returns pages for incremental conversation loading. A history-write failure fails the query request rather than returning an unpersisted answer as success.
+- Successful generated answers and insufficient-evidence fallback answers are recorded. Requests that fail before producing an answer are not stored.
 - **Known Issue**: Metrics buffer (`src/services/metrics/metricsBuffer.service.js`) has a `shutdown()` function but it's never called on process exit; metrics are lost on graceful shutdown. See **Open Issues** → Critical #3.
 
 ### Verified Reliability Mechanisms
@@ -106,6 +107,7 @@ PostgreSQL (source of truth)    BullMQ worker
 - Atomic publication transaction with post-commit dispatch and dispatch-failure recovery to `FAILED`.
 - Idempotent publish retries and duplicate-job no-ops.
 - Startup recovery of stranded `SUBMITTED` publications.
+- Startup and periodic recovery of stale `PROCESSING` documents when no matching active worker job exists.
 - Guarded `PROCESSING` writes preventing duplicate processing.
 - Version-aware restore on `restoreDocument`.
 - Query-history write failure tolerance.
@@ -337,10 +339,10 @@ Computes a SHA-256 over the user's organization ID, unit ID, role, sorted unit h
     - AI service has no cleanup endpoint
     - **Fix**: Add `DELETE /api/v1/documents/{id}/vectors` to AI service; call from backend
 
-12. **BullMQ vs Redis Client Offline Queue Mismatch** (`src/config/bullmq.js:13` vs `src/config/redis.js:27`)
-    - Main Redis: `enableOfflineQueue: false`; BullMQ: `enableOfflineQueue: true`
-    - Inconsistent behavior during Redis outages
-    - **Fix**: Align settings; document rationale
+12. **Redis URL and BullMQ Reconnection** — **Resolved 2026-10-16**
+    - `REDIS_URL` is parsed into Redis connection options; URL TLS and database selection are honored.
+    - The application Redis client fails fast while BullMQ queues workers' commands during a reconnect.
+    - Both clients retry transient connection failures.
 
 ### Low Priority / Enhancements
 
@@ -439,6 +441,7 @@ API base path: `/api/v1`
 | `AWS_SECRET_ACCESS_KEY` | — | AWS secret key |
 | `AWS_S3_BUCKET` | — | Document storage bucket |
 | `REDIS_ENABLED` | — | Enable or disable Redis |
+| `REDIS_URL` | — | Redis connection URL (`redis://` or `rediss://`); overrides host, port, and URL credentials |
 | `REDIS_HOST` | — | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_USERNAME` | — | Redis username |

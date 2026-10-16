@@ -896,9 +896,9 @@ export const getDocumentAccessPolicies = async(
             if (policy.subjectUserId) {
                 const member = await prisma.user.findUnique({
                     where:{ id: policy.subjectUserId },
-                    select:{ fullName:true, name:true, email:true },
+                    select:{ fullName:true, email:true },
                 });
-                resolved.subjectName = member?.fullName || member?.name || member?.email || "Unknown User";
+                resolved.subjectName = member?.fullName || member?.email || "Unknown User";
             } else if (policy.subjectUnitId) {
                 const unit = await prisma.organizationUnit.findUnique({
                     where:{ id: policy.subjectUnitId },
@@ -947,9 +947,9 @@ export const getDocumentAccessHistory = async(
             if (entry.actorId) {
                 const actor = await prisma.user.findUnique({
                     where:{ id: entry.actorId },
-                    select:{ fullName:true, name:true, email:true },
+                    select:{ fullName:true, email:true },
                 });
-                resolved.actorName = actor?.fullName || actor?.name || actor?.email || "System";
+                resolved.actorName = actor?.fullName || actor?.email || "System";
             } else {
                 resolved.actorName = "System";
             }
@@ -957,9 +957,9 @@ export const getDocumentAccessHistory = async(
             if (entry.subjectUserId) {
                 const subject = await prisma.user.findUnique({
                     where:{ id: entry.subjectUserId },
-                    select:{ fullName:true, name:true, email:true },
+                    select:{ fullName:true, email:true },
                 });
-                resolved.subjectName = subject?.fullName || subject?.name || subject?.email || "Unknown";
+                resolved.subjectName = subject?.fullName || subject?.email || "Unknown";
             } else if (entry.subjectUnitId) {
                 const unit = await prisma.organizationUnit.findUnique({
                     where:{ id: entry.subjectUnitId },

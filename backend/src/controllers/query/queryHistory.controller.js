@@ -40,7 +40,10 @@ export const getUserQueryHistory = asyncHandler(
             );
         }
 
-        const history = await getQueryHistory(
+        const {
+            history,
+            hasMore,
+        } = await getQueryHistory(
             req.user,
             parsedLimit,
             parsedOffset
@@ -52,6 +55,7 @@ export const getUserQueryHistory = asyncHandler(
                 "Query history fetched successfully.",
                 {
                     history,
+                    hasMore,
                     limit: parsedLimit,
                     offset: parsedOffset,
                 }

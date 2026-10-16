@@ -2,9 +2,11 @@
 
 import { randomUUID } from "crypto";
 
+import config from "../../config/config.js";
 import prisma from "../../config/prisma.js";
 
 import { dispatchDocumentProcessing } from "./documentProcessingDispatcher.service.js";
+import { documentProcessingQueue } from "../../config/bullmq.js";
 
 import ApiError from "../../utils/ApiError.js";
 
@@ -17,6 +19,7 @@ import { redisClient } from "../../config/redis.js";
 
 import {
     DRAFT_EXPIRY_HOURS,
+    STALE_PROCESSING_DOCUMENT_MS,
     validClassifications,
     validateDocumentTransition,
     validateOrganizationMembership,
@@ -40,6 +43,173 @@ const authorizeDraftOwner = (user,document)=>{
         throw new ApiError(403,"You do not have permission to modify this document draft.");
     }
     return document;
+};
+
+export const recoverStaleProcessingDocuments = async () => {
+    const staleBefore = new Date(
+        Date.now() - STALE_PROCESSING_DOCUMENT_MS
+    );
+    const staleDocuments = await prisma.document.findMany({
+        where: {
+            status: "PROCESSING",
+            isDeleted: false,
+            updatedAt: {
+                lte: staleBefore,
+            },
+            currentVersionId: {
+                not: null,
+            },
+        },
+        select: {
+            id: true,
+            currentVersionId: true,
+        },
+    });
+
+    if (staleDocuments.length === 0) {
+        return { staleDocuments: 0, recoveredDocuments: 0 };
+    }
+
+    const activeJobs = config.redis.enabled
+        ? await documentProcessingQueue.getJobs(["active"], 0, -1)
+        : [];
+
+    let recoveredDocuments = 0;
+
+    for (const document of staleDocuments) {
+        const lockKey = `processing-recovery:lock:${document.id}`;
+        let lockAcquired = false;
+
+        if (redisClient) {
+            try {
+                lockAcquired = await redisClient.set(
+                    lockKey,
+                    "1",
+                    "NX",
+                    "EX",
+                    300
+                );
+            } catch (error) {
+                console.error(
+                    `PROCESSING RECOVERY: Failed to acquire lock for ${document.id}:`,
+                    error.message
+                );
+                continue;
+            }
+        } else {
+            lockAcquired = true;
+        }
+
+        if (!lockAcquired) {
+            continue;
+        }
+
+        try {
+            const hasActiveJob = activeJobs.some(
+                (job) =>
+                    job.data.documentId === document.id &&
+                    job.data.versionId === document.currentVersionId
+            );
+
+            if (hasActiveJob) {
+                continue;
+            }
+
+            const transition = await prisma.$transaction(async (tx) => {
+                const documentResult = await tx.document.updateMany({
+                    where: {
+                        id: document.id,
+                        currentVersionId: document.currentVersionId,
+                        status: "PROCESSING",
+                        updatedAt: {
+                            lte: staleBefore,
+                        },
+                    },
+                    data: {
+                        status: "QUEUED",
+                        updatedAt: new Date(),
+                    },
+                });
+
+                if (documentResult.count === 1) {
+                    await tx.documentVersion.updateMany({
+                        where: {
+                            id: document.currentVersionId,
+                            documentId: document.id,
+                        },
+                        data: {
+                            processingStatus: "QUEUED",
+                            processingError: null,
+                        },
+                    });
+                }
+
+                return documentResult;
+            });
+
+            if (transition.count !== 1) {
+                continue;
+            }
+
+            try {
+                await dispatchDocumentProcessing({
+                    documentId: document.id,
+                    versionId: document.currentVersionId,
+                });
+                recoveredDocuments += 1;
+                console.warn(
+                    `PROCESSING RECOVERY: Re-dispatched stale document ${document.id}`
+                );
+            } catch (error) {
+                await prisma.$transaction(async (tx) => {
+                    const failed = await tx.document.updateMany({
+                        where: {
+                            id: document.id,
+                            currentVersionId: document.currentVersionId,
+                            status: "QUEUED",
+                        },
+                        data: {
+                            status: "FAILED",
+                        },
+                    });
+
+                    if (failed.count === 1) {
+                        await tx.documentVersion.updateMany({
+                            where: {
+                                id: document.currentVersionId,
+                                documentId: document.id,
+                            },
+                            data: {
+                                processingStatus: "FAILED",
+                                processingError: error.message,
+                            },
+                        });
+                    }
+                });
+
+                console.error(
+                    `PROCESSING RECOVERY: Failed to dispatch document ${document.id}:`,
+                    error.message
+                );
+            }
+        } finally {
+            if (redisClient) {
+                try {
+                    await redisClient.del(lockKey);
+                } catch (error) {
+                    console.error(
+                        `PROCESSING RECOVERY: Failed to release lock for ${document.id}:`,
+                        error.message
+                    );
+                }
+            }
+        }
+    }
+
+    return {
+        staleDocuments: staleDocuments.length,
+        recoveredDocuments,
+    };
 };
 
 const validateDraftForPublication = async(user,documentId)=>{
@@ -518,7 +688,7 @@ export const restoreDocument = async(user,documentId)=>{
      * document becomes retrievable again.
      */
     const restoreStatus =
-        currentVersion.processingStatus === "READY"
+        currentVersion.processingStatus === "COMPLETED"
             ? "READY"
             : "FAILED";
 

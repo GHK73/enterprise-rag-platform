@@ -2,6 +2,35 @@ import prisma from "../../config/prisma.js";
 import ApiError from "../../utils/ApiError.js";
 
 export const DRAFT_EXPIRY_HOURS = 24;
+export const STALE_PROCESSING_DOCUMENT_MS = 10 * 60 * 1000;
+
+const PROCESSING_SOURCE_STATUSES = [
+    "SUBMITTED",
+    "QUEUED",
+    "FAILED",
+];
+
+export const buildProcessingClaimWhere = (
+    documentId,
+    versionId,
+    staleBefore = new Date(Date.now() - STALE_PROCESSING_DOCUMENT_MS)
+) => ({
+    id: documentId,
+    currentVersionId: versionId,
+    OR: [
+        {
+            status: {
+                in: PROCESSING_SOURCE_STATUSES,
+            },
+        },
+        {
+            status: "PROCESSING",
+            updatedAt: {
+                lte: staleBefore,
+            },
+        },
+    ],
+});
 
 export const validClassifications = [
     "GENERAL",
@@ -20,10 +49,9 @@ export const validClassifications = [
  *
  * API-initiated transitions are validated with
  * validateDocumentTransition. Worker-initiated transitions
- * (QUEUED/SUBMITTED/FAILED -> PROCESSING, PROCESSING ->
- * READY/FAILED) are enforced by guarded conditional writes
- * in documentProcessing.service.js, which only match when
- * the document is in an allowed source state.
+ * (QUEUED/SUBMITTED/FAILED -> PROCESSING, stale PROCESSING ->
+ * PROCESSING, PROCESSING -> READY/FAILED) are enforced by
+ * guarded conditional writes in documentProcessing.service.js.
  *
  * Terminal states: EXPIRED (physical cleanup only) and DELETED
  * (restore or physical cleanup only).

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 import asyncHandler from "../src/utils/asyncHandler.js";
 import {
-    queryDocumentsHandler,
+    createQueryDocumentsHandler,
     queryDocuments,
 } from "../src/controllers/query.controller.js";
 
@@ -58,12 +58,15 @@ const makeRes = () => {
 const okOrchestrator = async () =>
     orchestrationResult();
 
+const makeQueryDocumentsHandler = (
+    orchestrator = okOrchestrator
+) => createQueryDocumentsHandler(orchestrator);
+
 test("POST /query returns exactly the documented response fields", async () => {
     const res = makeRes();
-    await queryDocumentsHandler(
+    await makeQueryDocumentsHandler()(
         { body: { query: "What is the revenue target?", topK: 5 }, user: { id: "user-1" } },
-        res,
-        okOrchestrator
+        res
     );
 
     assert.equal(res.statusCode, 200);
@@ -110,10 +113,9 @@ test("POST /query maps the insufficient-evidence fallback identically", async ()
         outputGuardPassed: false,
     });
 
-    await queryDocumentsHandler(
+    await makeQueryDocumentsHandler(fallbackOrchestrator)(
         { body: { query: "What is the revenue target?" }, user: { id: "user-1" } },
-        res,
-        fallbackOrchestrator
+        res
     );
 
     assert.equal(res.statusCode, 200);
@@ -125,10 +127,9 @@ test("POST /query maps the insufficient-evidence fallback identically", async ()
 
 test("POST /query rejects a missing query with 400", async () => {
     const res = makeRes();
-    await queryDocumentsHandler(
+    await makeQueryDocumentsHandler()(
         { body: {}, user: { id: "user-1" } },
-        res,
-        okOrchestrator
+        res
     );
 
     assert.equal(res.statusCode, 400);
@@ -137,10 +138,9 @@ test("POST /query rejects a missing query with 400", async () => {
 
 test("POST /query rejects a whitespace-only query with 400", async () => {
     const res = makeRes();
-    await queryDocumentsHandler(
+    await makeQueryDocumentsHandler()(
         { body: { query: "   " }, user: { id: "user-1" } },
-        res,
-        okOrchestrator
+        res
     );
 
     assert.equal(res.statusCode, 400);
@@ -149,10 +149,9 @@ test("POST /query rejects a whitespace-only query with 400", async () => {
 test("POST /query rejects topK outside 1-20 with 400", async () => {
     for (const topK of [0, 21, -1]) {
         const res = makeRes();
-        await queryDocumentsHandler(
+        await makeQueryDocumentsHandler()(
             { body: { query: "q", topK }, user: { id: "user-1" } },
-            res,
-            okOrchestrator
+            res
         );
         assert.equal(res.statusCode, 400);
         assert.equal(res.body.message, "topK must be an integer between 1 and 20.");
@@ -161,13 +160,33 @@ test("POST /query rejects topK outside 1-20 with 400", async () => {
 
 test("POST /query rejects a non-integer topK with 400", async () => {
     const res = makeRes();
-    await queryDocumentsHandler(
+    await makeQueryDocumentsHandler()(
         { body: { query: "q", topK: "five" }, user: { id: "user-1" } },
-        res,
-        okOrchestrator
+        res
     );
 
     assert.equal(res.statusCode, 400);
+});
+
+test("Express next is not passed to the query orchestrator", async () => {
+    const res = makeRes();
+    let capturedError;
+
+    const next = (error) => {
+        capturedError = error;
+    };
+
+    await queryDocuments(
+        {
+            body: { query: "What is the revenue target?" },
+            user: {},
+        },
+        res,
+        next
+    );
+
+    assert.equal(capturedError?.statusCode, 403);
+    assert.equal(capturedError?.message, "User organization could not be determined.");
 });
 
 test("asyncHandler forwards handler errors to next", async () => {

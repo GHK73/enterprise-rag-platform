@@ -1,3 +1,5 @@
+const MIN_RELEVANCE_SCORE = 0.25;
+
 export const checkEvidenceSufficiency = (
     candidates
 ) => {
@@ -32,7 +34,7 @@ export const checkEvidenceSufficiency = (
         usableCandidates[0].score
     );
 
-    if (topScore <= 0) {
+    if (topScore < MIN_RELEVANCE_SCORE) {
         return {
             sufficient: false,
             reason: "LOW_RELEVANCE",

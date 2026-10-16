@@ -1,51 +1,59 @@
 import Redis from "ioredis";
 import config from "./config.js";
 
-const redisConnection = {
-    host: config.redis.host,
-    port: config.redis.port,
-    username: config.redis.username,
-    password: config.redis.password,
+const redisUrl = process.env.REDIS_URL;
+const parsedRedisUrl = redisUrl ? new URL(redisUrl) : null;
 
-    tls: config.redis.tls
+if (
+    parsedRedisUrl &&
+    !["redis:", "rediss:"].includes(parsedRedisUrl.protocol)
+) {
+    throw new Error("REDIS_URL must use the redis:// or rediss:// protocol");
+}
+
+if (parsedRedisUrl && !parsedRedisUrl.hostname) {
+    throw new Error("REDIS_URL must include a Redis host");
+}
+
+const redisHost = parsedRedisUrl?.hostname || config.redis.host;
+const redisTlsEnabled =
+    config.redis.tls || parsedRedisUrl?.protocol === "rediss:";
+const redisDatabase = parsedRedisUrl?.pathname.slice(1);
+
+if (redisDatabase && !/^\d+$/.test(redisDatabase)) {
+    throw new Error("REDIS_URL database path must be a non-negative integer");
+}
+
+const redisConnection = {
+    host: redisHost,
+    port: Number(
+        parsedRedisUrl
+            ? parsedRedisUrl.port || 6379
+            : config.redis.port
+    ),
+    username: parsedRedisUrl
+        ? decodeURIComponent(parsedRedisUrl.username)
+        : config.redis.username,
+    password: parsedRedisUrl
+        ? decodeURIComponent(parsedRedisUrl.password)
+        : config.redis.password,
+    db: redisDatabase ? Number(redisDatabase) : undefined,
+    tls: redisTlsEnabled
         ? {
               rejectUnauthorized: false,
-              servername: config.redis.host,
+              servername: redisHost,
           }
         : undefined,
-
     maxRetriesPerRequest: 10,
     enableReadyCheck: true,
     lazyConnect: false,
-
-    connectTimeout: 10000,
-    commandTimeout: 10000,
-
-    keepAlive: 10000,
-
+    connectTimeout: 30000,
+    keepAlive: 30000,
     enableOfflineQueue: false,
-
-    retryStrategy: (times) => {
-        return Math.min(times * 500, 5000);
-    },
-
-    reconnectOnError: (err) => {
-        const targetErrors = [
-            "ECONNRESET",
-            "ETIMEDOUT",
-            "ECONNREFUSED",
-            "EHOSTUNREACH",
-        ];
-
-        return targetErrors.some((errorCode) =>
-            err.message.includes(errorCode)
-        );
-    },
+    retryStrategy: (times) => Math.min(times * 500, 3000),
 };
 
-const redisClient = config.redis.enabled
-    ? new Redis(redisConnection)
-    : null;
+const redisClient = config.redis.enabled ? new Redis(redisConnection) : null;
 
 if (redisClient) {
     redisClient.on("connect", () => {
@@ -57,10 +65,7 @@ if (redisClient) {
     });
 
     redisClient.on("error", (error) => {
-        console.error(
-            "Redis client error:",
-            error.message
-        );
+        console.error("Redis client error:", error.message);
     });
 
     redisClient.on("close", () => {
@@ -68,9 +73,5 @@ if (redisClient) {
     });
 }
 
-export {
-    redisConnection,
-    redisClient,
-};
-
+export { redisConnection, redisClient };
 export default redisConnection;

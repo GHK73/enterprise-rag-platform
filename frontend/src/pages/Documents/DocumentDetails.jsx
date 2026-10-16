@@ -21,6 +21,7 @@ import UploadCard from "./components/UploadCard";
 import DocumentAccess from "./components/DocumentAccess";
 import DocumentAccessHistory from "./components/DocumentAccessHistory";
 import RestoreDocumentDialog from "./components/RestoreDocumentDialog";
+import "./DocumentDetails.css";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
@@ -102,7 +103,9 @@ const DocumentDetails = () => {
         } catch (err) {
             // If not found and not already trying with includeDeleted, retry with includeDeleted
             if (err.response?.status === 404 && !includeDeleted) {
-                return getDocumentById(documentId, true).then(setDocument).finally(() => setLoading(false));
+                return getDocumentById(documentId, true)
+                    .then(setDocument)
+                    .finally(() => setLoading(false));
             }
             setPageError(
                 err?.response?.data?.message ||
@@ -125,6 +128,7 @@ const DocumentDetails = () => {
             setVersions([]);
         }
     }, [documentId]);
+
     const handlePublish = async () => {
         try {
             setPublishing(true);
@@ -415,26 +419,6 @@ const handleRestore =
         return () => { mounted = false; };
     }, [documentId, loadDocument, loadVersions]);
 
-    useEffect(() => {
-        if (
-            !document ||
-            document.status === "READY" ||
-            document.status === "FAILED" ||
-            document.status === "DELETED" ||
-            document.status === "EXPIRED"
-        ) {
-            return;
-        }
-
-        const interval = setInterval(async () => {
-            await loadDocument(true);
-            await loadVersions();
-        }, 3000);
-
-        return () => {
-            clearInterval(interval);
-        };
-    }, [document, loadDocument, loadVersions]);
     if (loading) {
         return (
             <div className="document-details-page">

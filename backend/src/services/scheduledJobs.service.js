@@ -3,7 +3,10 @@
 import config from "../config/config.js";
 import prisma from "../config/prisma.js";
 import { cleanupQueryHistory } from "./query/queryHistory.service.js";
-import { cleanupExpiredDrafts } from "./document/documentLifecycle.service.js";
+import {
+    cleanupExpiredDrafts,
+    recoverStaleProcessingDocuments,
+} from "./document/documentLifecycle.service.js";
 
 let cleanupTimers = [];
 
@@ -71,6 +74,27 @@ export const startScheduledJobs = () => {
 
     draftsTimer.unref();
     cleanupTimers.push(draftsTimer);
+
+    if (config.redis.enabled) {
+        const processingRecoveryTimer = setInterval(async () => {
+            try {
+                const result = await recoverStaleProcessingDocuments();
+                if (result.recoveredDocuments > 0) {
+                    console.warn(
+                        `PROCESSING RECOVERY: Re-dispatched ${result.recoveredDocuments} stale document(s).`
+                    );
+                }
+            } catch (error) {
+                console.error(
+                    "PROCESSING RECOVERY: Failed to scan stale documents:",
+                    error.message
+                );
+            }
+        }, 5 * 60 * 1000);
+
+        processingRecoveryTimer.unref();
+        cleanupTimers.push(processingRecoveryTimer);
+    }
 
     // S3 orphan cleanup reminder (runs daily)
     // Note: Full S3 orphan cleanup requires S3 ListObjects which is slow.
