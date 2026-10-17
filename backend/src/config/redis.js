@@ -1,7 +1,9 @@
 import Redis from "ioredis";
 import config from "./config.js";
 
-const redisUrl = process.env.REDIS_URL;
+const redisUrl = config.redis.enabled
+    ? process.env.REDIS_URL
+    : undefined;
 const parsedRedisUrl = redisUrl ? new URL(redisUrl) : null;
 
 if (
@@ -56,6 +58,8 @@ const redisConnection = {
 const redisClient = config.redis.enabled ? new Redis(redisConnection) : null;
 
 if (redisClient) {
+    console.log("Redis is enabled; connecting to the configured Redis server");
+
     redisClient.on("connect", () => {
         console.log("Redis client connected");
     });
@@ -71,6 +75,8 @@ if (redisClient) {
     redisClient.on("close", () => {
         console.warn("Redis client connection closed");
     });
+} else {
+    console.log("Redis is disabled; Redis-backed caches and queues will be bypassed");
 }
 
 export { redisConnection, redisClient };

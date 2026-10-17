@@ -53,6 +53,8 @@ export const checkLoginRateLimit = async ({
     ) {
         return {
             blocked: false,
+            bypassed: true,
+            redisAvailable: false,
         };
     }
 
@@ -83,6 +85,7 @@ export const checkLoginRateLimit = async ({
 
             return {
                 blocked: true,
+                redisAvailable: true,
                 retryAfter,
                 reason: "EMAIL_RATE_LIMIT",
             };
@@ -99,6 +102,7 @@ export const checkLoginRateLimit = async ({
 
             return {
                 blocked: true,
+                redisAvailable: true,
                 retryAfter,
                 reason: "IP_RATE_LIMIT",
             };
@@ -106,6 +110,7 @@ export const checkLoginRateLimit = async ({
 
         return {
             blocked: false,
+            redisAvailable: true,
         };
     } catch (error) {
         /*
@@ -121,6 +126,7 @@ export const checkLoginRateLimit = async ({
 
         return {
             blocked: false,
+            redisAvailable: false,
         };
     }
 };
@@ -133,7 +139,10 @@ export const recordFailedLogin = async ({
         !config.redis.enabled ||
         !redisClient
     ) {
-        return;
+        return {
+            bypassed: true,
+            redisAvailable: false,
+        };
     }
 
     try {
@@ -179,7 +188,16 @@ export const recordFailedLogin = async ({
             "Redis failed-login counter update failed:",
             error.message
         );
+        return {
+            bypassed: false,
+            redisAvailable: false,
+        };
     }
+
+    return {
+        bypassed: false,
+        redisAvailable: true,
+    };
 };
 
 export const clearEmailLoginFailures = async (
@@ -189,7 +207,10 @@ export const clearEmailLoginFailures = async (
         !config.redis.enabled ||
         !redisClient
     ) {
-        return;
+        return {
+            bypassed: true,
+            redisAvailable: false,
+        };
     }
 
     try {
@@ -204,7 +225,16 @@ export const clearEmailLoginFailures = async (
             "Redis login failure-counter reset failed:",
             error.message
         );
+        return {
+            bypassed: false,
+            redisAvailable: false,
+        };
     }
+
+    return {
+        bypassed: false,
+        redisAvailable: true,
+    };
 };
 
 export const getLoginRateLimitConfig = () => {
@@ -233,6 +263,8 @@ export const checkRegistrationRateLimit = async ({
     ) {
         return {
             blocked: false,
+            bypassed: true,
+            redisAvailable: false,
         };
     }
 
@@ -251,6 +283,7 @@ export const checkRegistrationRateLimit = async ({
 
             return {
                 blocked: true,
+                redisAvailable: true,
                 retryAfter:
                     ttl > 0
                         ? ttl
@@ -261,6 +294,7 @@ export const checkRegistrationRateLimit = async ({
 
         return {
             blocked: false,
+            redisAvailable: true,
         };
     } catch (error) {
         console.error(
@@ -270,6 +304,7 @@ export const checkRegistrationRateLimit = async ({
 
         return {
             blocked: false,
+            redisAvailable: false,
         };
     }
 };
@@ -281,7 +316,10 @@ export const recordRegistrationAttempt = async ({
         !config.redis.enabled ||
         !redisClient
     ) {
-        return;
+        return {
+            bypassed: true,
+            redisAvailable: false,
+        };
     }
 
     try {
@@ -301,5 +339,14 @@ export const recordRegistrationAttempt = async ({
             "Redis registration counter update failed:",
             error.message
         );
+        return {
+            bypassed: false,
+            redisAvailable: false,
+        };
     }
+
+    return {
+        bypassed: false,
+        redisAvailable: true,
+    };
 };

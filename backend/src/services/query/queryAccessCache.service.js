@@ -148,11 +148,11 @@ export const setCachedAuthorizedQuery = async (
 export const invalidateOrganizationAuthorizedQueryCache = async (
     organizationId
 ) => {
-    if (
-        !config.redis.enabled ||
-        !connection ||
-        !organizationId
-    ) {
+    if (!organizationId) {
+        return;
+    }
+
+    if (!config.redis.enabled || !connection) {
         return;
     }
 

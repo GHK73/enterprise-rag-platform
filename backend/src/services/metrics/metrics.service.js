@@ -19,16 +19,17 @@ function normalizeRoute(path) {
     if (!path) return "unknown";
 
     return path
-        .replace(/\/documents\/[a-f0-9-]{24,}/g, "/documents/:documentId")
-        .replace(/\/documents\/drafts\/[a-f0-9-]{24,}/g, "/documents/drafts/:documentId")
-        .replace(/\/documents\/versions\/[a-f0-9-]{24,}/g, "/documents/versions/:versionId")
-        .replace(/\/organizations\/[a-f0-9-]{24,}/g, "/organizations/:organizationId")
-        .replace(/\/units\/[a-f0-9-]{24,}/g, "/units/:unitId")
-        .replace(/\/permissions\/[a-f0-9-]{24,}/g, "/permissions/:permissionId")
-        .replace(/\/invitations\/[a-f0-9-]{24,}/g, "/invitations/:invitationId")
-        .replace(/\/access\/[a-f0-9-]{24,}/g, "/access/:policyId")
-        .replace(/\/query\/history\/[a-f0-9-]{24,}/g, "/query/history/:historyId")
-        .replace(/\/[a-f0-9-]{24,}(?:\/|$)/g, "/:id/");
+        .split("?")[0]
+        .replace(/\/documents\/[a-z0-9_-]{20,}/gi, "/documents/:documentId")
+        .replace(/\/documents\/drafts\/[a-z0-9_-]{20,}/gi, "/documents/drafts/:documentId")
+        .replace(/\/documents\/versions\/[a-z0-9_-]{20,}/gi, "/documents/versions/:versionId")
+        .replace(/\/organizations\/[a-z0-9_-]{20,}/gi, "/organizations/:organizationId")
+        .replace(/\/units\/[a-z0-9_-]{20,}/gi, "/units/:unitId")
+        .replace(/\/permissions\/[a-z0-9_-]{20,}/gi, "/permissions/:permissionId")
+        .replace(/\/invitations\/[a-z0-9_-]{20,}/gi, "/invitations/:invitationId")
+        .replace(/\/access\/[a-z0-9_-]{20,}/gi, "/access/:policyId")
+        .replace(/\/query\/history\/[a-z0-9_-]{20,}/gi, "/query/history/:historyId")
+        .replace(/\/[a-z0-9_-]{20,}(?:\/|$)/gi, "/:id/");
 }
 
 function getOutcomeFromStatus(statusCode) {
@@ -45,6 +46,8 @@ export function createApiRequestMetric({
     path,
     statusCode,
     durationMs,
+    rawCacheOutcome = null,
+    authorizedCacheOutcome = null,
     authenticated = false,
     userId = null,
     organizationId = null,
@@ -58,6 +61,8 @@ export function createApiRequestMetric({
         statusCode,
         durationMs,
         outcome: getOutcomeFromStatus(statusCode),
+        rawCacheOutcome,
+        authorizedCacheOutcome,
         authenticated,
         userId,
         organizationId,

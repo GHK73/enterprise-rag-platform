@@ -98,6 +98,24 @@ test("POST /query returns exactly the documented response fields", async () => {
     assert.equal(res.body.data.outputGuardPassed, true);
 });
 
+test("POST /query stores cache outcomes on request metrics", async () => {
+    const req = {
+        body: { query: "What is the revenue target?", topK: 5 },
+        user: { id: "user-1" },
+        metrics: {},
+    };
+    const handler = makeQueryDocumentsHandler(async (_user, _query, _topK, dependencies) => {
+        dependencies.onCacheOutcome("raw", "MISS");
+        dependencies.onCacheOutcome("authorized", "HIT");
+        return orchestrationResult();
+    });
+
+    await handler(req, makeRes());
+
+    assert.equal(req.metrics.rawCacheOutcome, "MISS");
+    assert.equal(req.metrics.authorizedCacheOutcome, "HIT");
+});
+
 test("POST /query maps the insufficient-evidence fallback identically", async () => {
     const res = makeRes();
     const fallbackOrchestrator = async () => ({

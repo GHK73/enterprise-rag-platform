@@ -2,7 +2,6 @@ import ApiError from "../utils/ApiError.js";
 
 import {
     checkRegistrationRateLimit,
-    recordRegistrationAttempt,
 } from "../services/authRateLimit.service.js";
 import {
     createRateLimitMetric,
@@ -30,8 +29,12 @@ export const registrationRateLimiter = async (
             recordRateLimit(createRateLimitMetric({
                 route: req.originalUrl || req.url,
                 category: "registration",
-                outcome: "ALLOWED",
-                redisAvailable: true,
+                outcome: result?.bypassed
+                    ? "BYPASS"
+                    : result?.redisAvailable
+                        ? "ALLOWED"
+                        : "ERROR",
+                redisAvailable: result?.redisAvailable ?? false,
                 userId: null,
                 organizationId: null,
             }));
@@ -48,7 +51,7 @@ export const registrationRateLimiter = async (
             limitConfig: { ipMaxAttempts: 5, windowSeconds: 900 },
             rejectionReason: result.reason || "RATE_LIMIT_EXCEEDED",
             statusCode: 429,
-            redisAvailable: true,
+            redisAvailable: result.redisAvailable ?? true,
             userId: null,
             organizationId: null,
         }));

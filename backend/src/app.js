@@ -39,8 +39,8 @@ app.use(helmet({
 }));
 
 app.use(cors(config.app.cors));
-app.use(express.json());
 app.use(requestMetricsMiddleware);
+app.use(express.json());
 
 app.use("/api/v1", routes);
 

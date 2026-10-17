@@ -1,192 +1,276 @@
-# AI Service Handoff
+# AI Service
 
-Copy this document into a new AI chat when working on the AI service.
+The AI service is the document-ingestion and vector-retrieval component of this
+repository's RAG platform. It is a FastAPI application that extracts searchable
+content from documents, creates embeddings, stores chunks in Qdrant, and returns
+retrieval candidates to the backend.
 
-The AI service lives in `ai-service/`. It converts documents into Qdrant vectors and provides candidate retrieval. It does **not** perform authorization or RAG generation — the backend applies document-access policies after retrieval and before any LLM use.
+> **Security boundary:** This service filters vector searches by organization,
+> but it does not authorize access to individual documents and does not generate
+> answers. The backend must authorize each candidate and check its current
+> document version before using its text in an LLM prompt.
 
-```text
-frontend/    React + Vite user interface
-backend/     Node.js + Express API, Prisma, S3, Redis/BullMQ
-ai-service/  FastAPI document-processing and vector-indexing service
+## Start the service
+
+### Windows PowerShell
+
+From the repository root:
+
+```powershell
+cd ai-service
+py -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-## Architecture
+If PowerShell blocks virtual-environment activation, use the Python executable
+directly instead:
 
-**Processing flow**
-
-```text
-Backend → POST /api/v1/process-document
-            { document_id, version_id, organization_id, file_url, file_name }
-  → validate URL (SSRF protection: block private IPs, metadata endpoints, non-HTTP schemes)
-  → reject unsupported extensions before download (.pdf, .docx, .txt only)
-  → download from presigned URL (httpx, 60s timeout)
-  → extract (primary extractor → Docling fallback)
-  → normalize blocks (text, table, image)
-  → chunk (page-by-page, character-based; tables/images indexed as text)
-  → embed (Sentence Transformer, EMBEDDING_MODEL from .env)
-  → delete previous version vectors (avoid stale points)
-  → ensure Qdrant collection exists
-  → upsert (version-aware deterministic point IDs)
-  → cleanup temporary workspace
-← ProcessDocumentResponse { success, message, document_id, version_id }
+```powershell
+.\venv\Scripts\python.exe -m pip install --upgrade pip
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-**Retrieval flow**
+Create `ai-service/.env` with your Qdrant connection settings (see
+[Configuration](#configuration)), then start the API from the `ai-service`
+directory:
 
-~~~text
-Backend POST /api/v1/query
-  → AI service POST /api/v1/retrieve { query, organization_id, top_k }
-      → ensure collection → embed query
-      → search Qdrant (candidate_limit = min(top_k * 5, 200))
-      ← RetrievalResponse { query, results[] }
-  → backend validates each result's document_id and version_id
-  → backend authorizes document_ids via policy checks
-  → backend filters candidates to authorized documents
-  → backend reranks and generates answer with LLM
-~~~
-
-The AI service intentionally retrieves **more** candidates than `top_k` (`CANDIDATE_MULTIPLIER = 5`, capped at `MAX_CANDIDATES = 200`) because backend authorization narrows the set. The AI service filters by `organization_id` only — it does not and cannot apply document-level access policies.
-
-**Chunk metadata contract.** Every Qdrant point stores a payload and every retrieval result returns the following fields:
-
-| Field | Stored in Qdrant | Returned by /retrieve | Used by backend for |
-| --- | --- | --- | --- |
-| `organization_id` | Yes (keyword index) | No | AI-service tenant filter only |
-| `document_id` | Yes (keyword index) | Yes | Document identity → authorization lookup |
-| `version_id` | Yes (keyword index) | Yes | Version freshness check against `Document.currentVersionId` |
-| `chunk_id` | Yes (keyword index) | Yes | Source citation in the LLM prompt |
-| `page_number` | Yes | Yes | Source citation |
-| `text` | Yes | Yes | Document content passed to LLM (after authorization) |
-| `block_ids` | Yes | Yes | Source traceability |
-| `metadata` | Yes | Yes | Diagnostic context + **chunk_type** + type-specific fields |
-| `score` | — | Yes | Reranking (score-based sort only) |
-
-**`metadata` fields by `chunk_type`:**
-- `text` — `{ chunk_index, page_number, block_count, character_count }`
-- `table` — adds `{ markdown, headers[], rows[][], chunk_type: "table" }`
-- `formula` — adds `{ latex, chunk_type: "formula" }`
-- `figure` / `image` — adds `{ caption, description, chunk_type: "figure"|"image" }`
-- `code` — adds `{ language, chunk_type: "code" }`
-
-**Authorization boundary.** Qdrant retrieval results are candidate evidence, not proof of authorization. The backend validates each `document_id` against a PostgreSQL `Document` row (organization match, `isDeleted = false`, `status = 'READY'`, `currentVersionId` not null) and then evaluates `DocumentAccessPolicy` rows for the `QUERY` action with deny-overrides-allow and deny-by-default semantics. Chunks whose `version_id` does not match the document's current version are discarded before reranking or generation. No document text from an unauthorized or stale candidate ever reaches a model.
-
-The AI service does contain `filter_authorized_candidates()` and `select_top_k()` helpers on `RetrievalService`, but these are **not called by the backend** — the backend performs authorization itself via `authorizeQueryDocuments` and `authorizeCandidates` in `query.service.js` and `documentAccess.service.js`. These helpers exist as unused utilities and must not be relied upon for authorization.
-
-## Routes
-
-```text
-GET  /
-GET  /api/v1/health
-POST /api/v1/process-document
-POST /api/v1/retrieve
+```powershell
+python -m uvicorn app.main:app --reload
 ```
 
-## Processing Details
+Uvicorn serves locally at `http://127.0.0.1:8000` by default. The first startup
+can take longer because the Sentence Transformers model is loaded when the
+application imports its embedding service; the model may also need to be
+downloaded the first time.
 
-**Extraction** — `.pdf`, `.docx`, `.txt` only; the suffix comes from the required `file_name` field (the S3 key does not reliably end in a recognizable extension). Primary extractor by type (PDF/DOCX/TXT); Docling is a fallback whose failure is a warning, not an error. PDF tables use camelot (primary) and pdfplumber (fallback).
-
-**Chunking** — page-by-page, character-based:
+Check that the service is running:
 
 ```text
-chunk size:    1000 characters   (ChunkingConfig)
-chunk overlap: 200 characters   (ChunkingConfig)
-min chunk:     100 characters   (MIN_CHUNK_SIZE not yet enforced)
-chunk ID:      chunk_000000, chunk_000001, ...
+http://127.0.0.1:8000/
+http://127.0.0.1:8000/api/v1/health
+http://127.0.0.1:8000/docs
 ```
 
-**Chunk types preserved in `metadata.chunk_type`:**
-- `text` — plain text
-- `table` — markdown representation in `metadata.markdown`, `headers[]`, `rows[][]`
-- `formula` — LaTeX in `metadata.latex`
-- `figure` / `image` — `metadata.caption`, `metadata.description`
-- `code` — `metadata.language`
+For a deployment that must accept connections from outside the local machine,
+pass an explicit host and port to Uvicorn, for example:
 
-Tables render as markdown-style text; images/figures use `caption` or `ocr_text`; formulas use `latex`.
+```powershell
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
 
-**Embeddings** — Sentence Transformers, `EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`, 384 dimensions), batch size 32, normalized, CUDA when available. The model loads at import, so startup can take time.
+The `HOST` and `PORT` environment settings are defined in the application
+configuration, but Uvicorn does not read them automatically in the command
+above. Use Uvicorn's `--host` and `--port` options to control its bind address.
 
-**Qdrant** — `AsyncQdrantClient`. Creates the collection if missing (cosine distance) with payload indexes on `document_id`, `version_id`, `chunk_id`, `organization_id`. Point IDs are deterministic UUIDv5 hashes of `document_id:version_id:chunk_id`, so reprocessing overwrites the same points while versions stay separate. `process_document()` calls `delete_version()` before `upsert_chunks()` so same-version reprocessing leaves no stale vectors.
+## What the service does
 
-**Retrieval service** — `retrieve_candidates(request)` ensures the collection, embeds the query, searches with `candidate_limit = min(top_k * 5, 200)` filtered by `organization_id`. Returns `chunk_type` and type-specific `metadata` for each result. Backend-side authorization is **not** performed here.
+```text
+Document processing
+Backend ── POST /api/v1/process-document ──> AI service
+                                                │
+                         validate + download file
+                                                │
+                         extract → normalize → chunk
+                                                │
+                         embed → index chunks in Qdrant
+                                                │
+Backend <──────────── processing result ────────┘
 
-## Backend Integration
+Question retrieval
+Backend ── POST /api/v1/retrieve ───────────> AI service
+                                                │
+                              embed the query
+                                                │
+                       search Qdrant by organization
+                                                │
+Backend <──── ranked candidate chunks + text ───┘
+   │
+   └── validate document/version and authorize candidates
+       before reranking, prompt construction, and answer generation
+```
 
-`backend/src/services/document/documentAI.service.js` creates a presigned S3 URL and sends `{ document_id, version_id, organization_id, file_url, file_name }` to `${config.ai.url}/api/v1/process-document`. `config.ai.url` must contain only the base URL, without a trailing `/api/v1`.
+The AI service does not connect directly to the frontend. The backend
+orchestrates document processing and query handling, applies access policies,
+and generates user-facing answers.
 
-The query flow lives in `backend/src/services/query/`:
+## Document-processing pipeline
 
-- `queryAI.service.js` — POSTs `/api/v1/retrieve` with `{ query, organization_id, top_k }`; a 30 s timeout applies.
-- `query.service.js` — orchestrates: cache → retrieve → validate document IDs → authorize → filter by version → rerank → evidence sufficiency → safe context → prompt → LLM → citation validation → output guardrail → save history.
-- `query.controller.js` — validates input (non-empty query, `topK` 1–20), invokes the orchestrator, returns `{ query, answer, sources, evidence, usedLLM, outputGuardPassed }`.
+The `POST /api/v1/process-document` route validates a
+`ProcessDocumentRequest`, then runs these stages:
 
-Two independent guardrails run after LLM generation: citation validation (`answerValidation.service.js`, rejects `[Source N]` references to unauthorized sources) and the output guardrail (`outputGuardrail.service.js`, rejects answers containing prompt-extraction or chain-of-thought patterns). History is saved even when evidence is insufficient or the guardrail blocks the answer — the record is marked `usedLLM: false` or `outputGuardPassed: false` accordingly.
+1. **Validate the file type.** The `file_name` suffix must be `.pdf`, `.docx`,
+   or `.txt`. The service uses this name to choose the extractor; it does not
+   infer the file type from the download URL.
+2. **Download to a temporary workspace.** The downloader accepts HTTP/HTTPS
+   URLs, checks the URL before requesting it, streams the response to disk, and
+   uses a 60-second HTTP timeout.
+3. **Extract document blocks.**
+   - PDF: PyMuPDF extracts text and image blocks; table extraction tries
+     Camelot first and pdfplumber if Camelot finds no tables.
+   - DOCX: python-docx extracts paragraphs, tables, and image references.
+     Physical page layout is not preserved; the extracted content is placed on
+     page 1.
+   - TXT: UTF-8 text is split into paragraphs and represented on page 1.
+   - Docling is attempted only when the primary extractor returns no blocks.
+     If Docling also returns no content or fails, the primary extractor's
+     result is returned. An error raised by the primary extractor is not
+     automatically retried with Docling.
+4. **Normalize blocks.** Text whitespace and line endings are cleaned; table
+   cells are flattened and trimmed; image captions and OCR text are trimmed
+   when present.
+5. **Create page-scoped chunks.** Text, table contents, and figure/image
+   captions or OCR text are converted to searchable text. Chunks target 1,000
+   characters with a 200-character overlap. Oversized blocks are split into
+   smaller chunks. Chunk IDs follow the form `chunk_000000`.
+6. **Generate embeddings.** The configured Sentence Transformers model encodes
+   chunks in batches of 32. Embeddings are normalized and use CUDA when it is
+   available; otherwise, the service uses CPU.
+7. **Index the version in Qdrant.** The service ensures the collection and
+   payload indexes exist, deletes existing points for the same document and
+   version, then upserts the new chunks.
+8. **Clean up.** The temporary workspace is removed whether processing
+   succeeds or fails.
+
+The processing endpoint returns success status, a message, and the document
+and version IDs. It does not return extracted text or chunks.
+
+### Current extraction and chunking scope
+
+The document schema defines additional block types, but the current chunker
+only turns text blocks, tables, and image/figure blocks with a caption or OCR
+text into searchable content. A PDF image with neither caption nor OCR text
+does not become a searchable chunk. Formula and code blocks are not currently
+produced by the primary extractors or converted into searchable chunks.
+
+Chunk metadata includes the chunk index, page number, block count, character
+count, and derived chunk type. Table chunks also carry table headers, rows, and
+a Markdown representation.
+
+## Retrieval pipeline
+
+The `POST /api/v1/retrieve` route accepts:
+
+| Field | Requirement |
+| --- | --- |
+| `query` | Required, non-empty, and not whitespace-only |
+| `organization_id` | Required |
+| `top_k` | Optional; defaults to `5`; must be between `1` and `50` |
+
+The service ensures the Qdrant collection exists, embeds the query, and searches
+only points whose `organization_id` matches the request. To leave room for
+backend authorization to filter out inaccessible documents, it requests
+`min(top_k * 5, 200)` candidates. The response includes candidate text, score,
+document and version IDs, page and chunk IDs, block IDs, and metadata.
+
+`top_k` is therefore used to calculate a candidate search limit; this endpoint
+does not authorize documents or guarantee that the response contains exactly
+`top_k` authorized chunks. Document-level authorization and any final selection
+belong to the backend.
+
+## API routes
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/` | Basic service name, version, and running status |
+| `GET` | `/api/v1/health` | Health response with service, version, and environment |
+| `POST` | `/api/v1/process-document` | Download, process, embed, and index one document version |
+| `POST` | `/api/v1/retrieve` | Return organization-scoped Qdrant candidates for a query |
+
+FastAPI's interactive API documentation is available at `/docs` while the
+service is running.
+
+Validation errors are returned with HTTP `422`. Unhandled exceptions are
+logged and returned as a generic HTTP `500` response.
+
+## Qdrant data model
+
+Each indexed point contains a vector and a payload with:
+
+| Payload field | Purpose |
+| --- | --- |
+| `organization_id` | Organization filter for vector search |
+| `document_id`, `version_id` | Backend document and freshness checks |
+| `chunk_id`, `page_number`, `block_ids` | Chunk identity and source traceability |
+| `text` | Candidate text returned to the backend |
+| `metadata` | Chunk type and type-specific processing details |
+
+The collection uses cosine distance and the embedding dimension reported by the
+configured model. Qdrant keyword payload indexes are ensured for
+`organization_id`, `document_id`, `version_id`, and `chunk_id`. Point IDs are
+deterministic UUIDv5 values derived from the document, version, and chunk IDs.
+
+## Backend integration and authorization
+
+The backend configures the AI service base URL with `AI_SERVICE_URL`. Set it to
+the service's base address, without appending `/api/v1`; the backend adds the
+route path for each request.
+
+- Document processing is called by
+  `backend/src/services/document/documentAI.service.js`.
+- Retrieval is called by `backend/src/services/query/queryAI.service.js`.
+- Query orchestration and access checks live under
+  `backend/src/services/query/`.
+
+Qdrant results are **candidates, not authorization decisions**. Before
+candidate text can be used for answer generation, the backend must verify that
+each document belongs to the requesting user's organization, is available and
+not deleted, and that the result's version is current. The backend then applies
+document access policies and filters unauthorized candidates. Do not expose
+direct Qdrant retrieval to end users or pass unapproved candidate text to an
+LLM.
 
 ## Configuration
 
-Create `ai-service/.env`:
+Create an `.env` file in the `ai-service` directory. At minimum, provide the
+Qdrant URL and API key; `app/config/settings.py` requires both when the service
+loads.
 
 ```dotenv
 APP_NAME="Enterprise RAG AI Service"
 APP_VERSION="1.0.0"
 ENVIRONMENT="development"
-HOST="0.0.0.0"
+HOST="127.0.0.1"
 PORT=8000
 LOG_LEVEL="INFO"
 EMBEDDING_MODEL="all-MiniLM-L6-v2"
-QDRANT_URL="https://your-cluster.qdrant.io"
-QDRANT_API_KEY="your-qdrant-api-key"
+QDRANT_URL="https://your-qdrant-cluster.example"
+QDRANT_API_KEY="replace-with-your-key"
 QDRANT_COLLECTION="enterprise_documents"
 ```
 
-Two settings modules exist, now aligned: `app/config/config.py` (main app + health) and `app/config/settings.py` (Qdrant vector store). Consolidating them remains a cleanup task. Error handling: `ProcessingException` plus global handlers (422 validation, 500 internal). Logging: `configure_logger()` called at startup.
+Keep real credentials out of source control. The main application settings are
+loaded in `app/config/config.py`; the embedding and Qdrant services use
+`app/config/settings.py`. Both read `.env` from the current working directory,
+so start Uvicorn from `ai-service`.
 
-## Local Development
+## Tests and developer scripts
 
-```powershell
-cd ai-service
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+The root-level Python scripts are manual developer utilities rather than a
+configured automated test suite:
 
-Main dependencies: FastAPI, httpx, PyMuPDF, python-docx, camelot-py, pdfplumber, docling, Sentence Transformers, PyTorch, qdrant-client.
-
-## Testing
-
-| Script | Purpose |
+| Command (from `ai-service`) | Purpose |
 | --- | --- |
-| `test_pdf_extractor.py` | Extracts sample.pdf and prints all blocks |
-| `test_chunking.py` | Full pipeline: extract → normalize → chunk |
-| `test_processing.py` | End-to-end processing dry-run |
-| `app/services/vectorstore/test_qdrant.py` | Qdrant: ensure → embed → upsert → read back → search → verify ID → delete → verify |
+| `python test_pdf_extractor.py` | Extract and print blocks from `test_files/sample.pdf` |
+| `python test_chunking.py` | Run extraction, normalization, and chunking on the sample PDF |
+| `python test_processing.py` | Exercise full processing; the script's current loopback URL is rejected by the SSRF guard, so replace it with an allowed reachable file URL first |
+| `python -m app.services.vectorstore.test_qdrant` | Exercise Qdrant create/index/read/search/delete behavior |
 
-## Current Status
+The end-to-end and Qdrant utilities require working external services and
+configuration. The Qdrant utility writes and deletes test points in the
+configured collection; use a development collection, not production.
 
-Implemented: FastAPI processing and retrieval routes; PDF/DOCX/TXT extraction with Docling fallback; block normalization and chunking (**chunk types preserved: text, table, formula, figure, image, code with type-specific metadata**); Sentence Transformer embeddings; Qdrant collection/index management, organization filtering, version-aware deterministic point IDs, upsert/search, paginated scroll; candidate retrieval with `top_k * 5` capped at 200 (returns `chunk_type` + metadata); backend integration for processing and authorization-safe retrieval; multi-tenant `organization_id` propagation; structured error responses (422/500); SSRF protection; graceful Qdrant shutdown.
+## Source map
 
-**2026-10-06 fixes:** stale vectors on same-version reprocessing; tables and images never indexed; SSRF in downloader; missing exception handlers; `/retrieve` before first upload; `get_version_points` silent truncation; `EMBEDDING_MODEL` ignored; whitespace-only queries; unsupported file downloads; Qdrant client not closing; aligned settings modules; `requirements.txt` gaps; dead code removed; missing package init; test script fixes.
-
-**2026-10-13 Phase 7:** chunking preserves `chunk_type` + type-specific metadata (markdown tables, LaTeX formulas, captions, code language); retrieval schema includes `chunk_type`; `/retrieve` returns typed chunks.
-
-## What we are going to do
-
-1. ~~End-to-end test with a local Qdrant collection and a real sample document~~ — backend integration is in place; the backend calls `/retrieve` and authorizes results. Full end-to-end with a live Qdrant cluster and real indexed documents is pending live verification.
-2. Processing status reporting, retries, and metrics — `processingError` column is planned; the backend exposes no failure reason, progress, or queue position today.
-3. ~~Multi-tenant isolation tests (verify `organization_id` filtering)~~ — the backend's `authorizeQueryDocuments` scopes every policy query to the user's organization; the AI service filters Qdrant by `organization_id`.
-4. ~~Backend `authorizeQueryDocuments` must verify the user belongs to the organization~~ — implemented: it queries `DocumentAccessPolicy` with `organizationId: user.unit.organizationId` and rejects users without a unit (403).
-5. Enforce `MIN_CHUNK_SIZE` in chunking — defined as 100 in `app/config/chunking.py` but not yet enforced in `ChunkingService.chunk()`.
-6. Hybrid search and reranking after filtered retrieval works — reranking is score-based only; model-based reranking is deferred.
-7. Grounded LLM generation, citations, and evaluation after authorization-safe retrieval is complete — the backend calls Bedrock Converse with a system prompt and validates citations and output guardrails. Evaluation framework is not started.
-8. Consolidate the two settings modules (`config.py` and `settings.py`) — still pending.
-9. Formula extraction (LaTeX) — pdfplumber/PDFMiner extraction exists but LaTeX not yet in chunks.
-10. Code block extraction (language detection) — heuristics needed for monospace/font detection.
-
-## Constraints for Future Changes
-
-- Do not expose Qdrant search directly to end users.
-- Do not treat Qdrant payload metadata as the source of truth for authorization.
-- Do not pass retrieved text to an LLM until backend-authorized document/version filtering is applied.
-- Preserve the separation between extraction, chunking, embedding, and vector-store services.
-- Docling failure must remain a warning, not an error.
-- The AI service's own `filter_authorized_candidates()` and `select_top_k()` methods are convenience utilities, not authorization boundaries. The backend must always independently authorize via PostgreSQL before any document text reaches a model.
+| Area | Location |
+| --- | --- |
+| FastAPI application and lifecycle | `app/main.py` |
+| HTTP routes | `app/api/` |
+| Request and response schemas | `app/schemas/` |
+| File download, extraction, normalization, chunking | `app/services/processing/` and `app/services/extractors/` |
+| Embedding generation | `app/services/embedding/` |
+| Candidate retrieval | `app/services/retrieval/` |
+| Qdrant collection and point operations | `app/services/vectorstore/` |
+| Runtime settings and logging | `app/config/` |

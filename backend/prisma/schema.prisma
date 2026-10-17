@@ -539,6 +539,8 @@ model ApiRequestMetric {
   durationMs Int
 
   outcome ApiRequestOutcome
+  rawCacheOutcome CacheOutcome?
+  authorizedCacheOutcome CacheOutcome?
 
   authenticated Boolean @default(false)
   userId String?
@@ -556,6 +558,8 @@ model ApiRequestMetric {
   @@index([userId])
   @@index([organizationId])
   @@index([benchmarkRunId])
+  @@index([rawCacheOutcome])
+  @@index([authorizedCacheOutcome])
 }
 
 model AuthSecurityEvent {

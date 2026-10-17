@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@api/axios";
 import ChunkRenderer from "./Query/components/ChunkRenderer";
 import "./Query.css";
@@ -18,13 +18,17 @@ const Query = () => {
     const [topK, setTopK] = useState(5);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-    const [result, setResult] = useState(null);
 
     const [history, setHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(true);
     const [historyError, setHistoryError] = useState("");
     const [historyOffset, setHistoryOffset] = useState(0);
     const [hasMoreHistory, setHasMoreHistory] = useState(false);
+    const [activeQuery, setActiveQuery] = useState("");
+    const [latestResult, setLatestResult] = useState(null);
+    const historyEndRef = useRef(null);
+    const queryInputRef = useRef(null);
+    const shouldScrollToLatestRef = useRef(true);
 
     const loadHistory = useCallback(async (offset = 0, prepend = false) => {
         try {
@@ -40,15 +44,34 @@ const Query = () => {
             );
             setHistoryOffset(data.offset);
             setHasMoreHistory(data.hasMore);
+            if (!prepend) {
+                shouldScrollToLatestRef.current = true;
+            }
+            return data;
         } catch (err) {
             setHistoryError(
                 err?.response?.data?.message ||
                     "Failed to load query history."
             );
+            return null;
         } finally {
             setHistoryLoading(false);
         }
     }, []);
+
+    useEffect(() => {
+        if (!shouldScrollToLatestRef.current) return undefined;
+
+        const frameId = window.requestAnimationFrame(() => {
+            historyEndRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "end",
+            });
+            shouldScrollToLatestRef.current = false;
+        });
+
+        return () => window.cancelAnimationFrame(frameId);
+    }, [history, activeQuery, historyLoading, loading]);
 
     useEffect(() => {
         let cancelled = false;
@@ -62,6 +85,7 @@ const Query = () => {
                 setHistory(loadedHistory);
                 setHistoryOffset(data.offset);
                 setHasMoreHistory(data.hasMore);
+                shouldScrollToLatestRef.current = true;
             } catch (err) {
                 if (!cancelled) {
                     setHistoryError(
@@ -92,18 +116,31 @@ const Query = () => {
         try {
             setLoading(true);
             setError("");
+            const submittedQuery = query.trim();
+            setActiveQuery(submittedQuery);
+            setLatestResult(null);
             const response = await api.post("/query", {
-                query: query.trim(),
+                query: submittedQuery,
                 topK,
             });
-            setResult(response.data.data);
-            await loadHistory();
+            const historyData = await loadHistory();
+            const latestHistoryItem = historyData?.history?.[0];
+            setLatestResult(
+                latestHistoryItem
+                    ? {
+                          historyId: latestHistoryItem.id,
+                          data: response.data.data,
+                      }
+                    : null
+            );
+            setActiveQuery("");
+            setQuery("");
         } catch (err) {
             setError(
                 err?.response?.data?.message ||
                     "Failed to execute query."
             );
-            setResult(null);
+            setActiveQuery("");
         } finally {
             setLoading(false);
         }
@@ -111,7 +148,7 @@ const Query = () => {
 
     const handleHistoryClick = (item) => {
         setQuery(item.query);
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        queryInputRef.current?.focus();
     };
 
     const renderEvidence = (evidence) => {
@@ -120,7 +157,7 @@ const Query = () => {
         return (
             <div className="query-evidence">
                 <h3>Evidence Assessment</h3>
-                <div className="evidence-badge evidence-badge-{evidence.sufficient ? 'sufficient' : 'insufficient'}">
+                <div className={`evidence-badge evidence-badge-${evidence.sufficient ? "sufficient" : "insufficient"}`}>
                     {evidence.sufficient ? "✓ Sufficient Evidence" : "✗ Insufficient Evidence"}
                 </div>
                 <p className="evidence-reason">{evidence.reason}</p>
@@ -140,67 +177,13 @@ const Query = () => {
                 </p>
             </header>
 
-            <form onSubmit={handleSubmit} className="query-form">
-                <textarea
-                    value={query}
-                    onChange={(event) =>
-                        setQuery(event.target.value)
-                    }
-                    placeholder="Type your question..."
-                    rows={3}
-                />
-
-                <div className="query-form-row">
-                    <label>
-                        Sources:
-                        <input
-                            type="number"
-                            min="1"
-                            max="20"
-                            value={topK}
-                            onChange={(event) =>
-                                setTopK(Number(event.target.value))
-                            }
-                        />
-                    </label>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="primary-button"
-                    >
-                        {loading ? "Searching..." : "Ask"}
-                    </button>
-                </div>
-            </form>
-
-            {error && (
-                <div className="query-error">{error}</div>
-            )}
-
-            {result && (
-                <div className="query-result">
-                    <h2>Answer</h2>
-                    <p className="query-answer">
-                        {result.answer || "No answer generated."}
-                    </p>
-
-                    {renderEvidence(result.evidence)}
-
-                    {result.sources && result.sources.length > 0 && (
-                        <div className="query-sources">
-                            <h3>Sources</h3>
-                            <div className="sources-list">
-                                {result.sources.map((source, index) => (
-                                    <ChunkRenderer key={source.chunkId || index} source={source} index={index + 1} />
-                                ))}
-                            </div>
-                        </div>
+            <section className="query-history">
+                <div className="query-history-header">
+                    <h2>Conversation</h2>
+                    {history.length > 0 && (
+                        <span>Latest messages appear at the bottom</span>
                     )}
                 </div>
-            )}
-
-            <section className="query-history">
-                <h2>Previous Queries</h2>
                 {historyError && (
                     <div className="query-error" role="alert">
                         <p>{historyError}</p>
@@ -214,29 +197,32 @@ const Query = () => {
                         </button>
                     </div>
                 )}
-                {historyLoading && history.length === 0 ? (
-                    <p>Loading history...</p>
-                ) : history.length === 0 ? (
-                    <p>No previous conversations.</p>
-                ) : (
-                    <>
-                        {hasMoreHistory && (
-                            <button
-                                type="button"
-                                className="secondary-button"
-                                onClick={() =>
-                                    loadHistory(
-                                        historyOffset + HISTORY_LIMIT,
-                                        true
-                                    )
-                                }
-                                disabled={historyLoading}
-                            >
-                                {historyLoading
-                                    ? "Loading..."
-                                    : "Load Older Messages"}
-                            </button>
-                        )}
+                <div className="query-history-scroll">
+                    {historyLoading && history.length === 0 ? (
+                        <p className="query-history-state">Loading conversation...</p>
+                    ) : history.length === 0 && !activeQuery ? (
+                        <p className="query-history-state">
+                            No previous conversations. Ask a question to get started.
+                        </p>
+                    ) : null}
+                    {hasMoreHistory && (
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() =>
+                                loadHistory(
+                                    historyOffset + HISTORY_LIMIT,
+                                    true
+                                )
+                            }
+                            disabled={historyLoading}
+                        >
+                            {historyLoading
+                                ? "Loading..."
+                                : "Load Older Messages"}
+                        </button>
+                    )}
+                    {(history.length > 0 || activeQuery) && (
                         <ul className="query-history-list">
                             {history.map((item) => (
                                 <li key={item.id}>
@@ -258,6 +244,25 @@ const Query = () => {
                                                 Assistant
                                             </span>
                                             {item.answer || "No answer was saved."}
+                                            {latestResult?.historyId === item.id && (
+                                                <div className="query-result-details">
+                                                    {renderEvidence(latestResult.data.evidence)}
+                                                    {latestResult.data.sources?.length > 0 && (
+                                                        <div className="query-sources">
+                                                            <h3>Sources</h3>
+                                                            <div className="sources-list">
+                                                                {latestResult.data.sources.map((source, index) => (
+                                                                    <ChunkRenderer
+                                                                        key={source.chunkId || index}
+                                                                        source={source}
+                                                                        index={index + 1}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                         {item.createdAt && (
                                             <small className="query-history-timestamp">
@@ -269,10 +274,58 @@ const Query = () => {
                                     </div>
                                 </li>
                             ))}
+                            {activeQuery && (
+                                <li className="query-history-turn">
+                                    <div className="query-history-message query-history-question">
+                                        <span className="query-history-label">You</span>
+                                        {activeQuery}
+                                    </div>
+                                    <div className="query-history-message query-history-answer query-thinking" role="status">
+                                        <span className="query-history-label">Assistant</span>
+                                        Thinking...
+                                    </div>
+                                </li>
+                            )}
                         </ul>
-                    </>
-                )}
+                    )}
+                    <div ref={historyEndRef} />
+                </div>
             </section>
+
+            {error && (
+                <div className="query-error" role="alert">{error}</div>
+            )}
+
+            <form onSubmit={handleSubmit} className="query-form">
+                <textarea
+                    ref={queryInputRef}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Ask a question..."
+                    rows={2}
+                    aria-label="Ask a question"
+                />
+
+                <div className="query-form-row">
+                    <label>
+                        Sources:
+                        <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            value={topK}
+                            onChange={(event) => setTopK(Number(event.target.value))}
+                        />
+                    </label>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="primary-button"
+                    >
+                        {loading ? "Searching..." : "Ask"}
+                    </button>
+                </div>
+            </form>
         </div>
     );
 };

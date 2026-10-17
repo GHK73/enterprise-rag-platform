@@ -190,6 +190,64 @@ test("query pipeline returns the documented response contract on a normal answer
     assert.deepEqual(calls.setCachedAuthorizedQuery[0].results, [candidate]);
 });
 
+test("query pipeline reports cache outcomes for API request metrics", async () => {
+    const outcomes = [];
+    const candidate = makeCandidate();
+    const { deps } = makeDeps({
+        getCachedQuery: async () => ({
+            data: [candidate],
+            outcome: "HIT",
+            lookupMs: 0,
+        }),
+        getCachedAuthorizedQuery: async () => ({
+            data: null,
+            outcome: "MISS",
+            lookupMs: 0,
+        }),
+    });
+
+    await retrieveAuthorizedCandidates(
+        makeUser(),
+        "What is the revenue target?",
+        5,
+        {
+            ...deps,
+            onCacheOutcome: (cache, outcome) => outcomes.push([cache, outcome]),
+        }
+    );
+
+    assert.deepEqual(outcomes, [
+        ["raw", "HIT"],
+        ["authorized", "MISS"],
+    ]);
+});
+
+test("query pipeline reports both cache layers as bypassed when Redis is disabled", async () => {
+    const outcomes = [];
+    const { deps } = makeDeps({
+        getCachedQuery: async () => ({
+            data: null,
+            outcome: "BYPASS",
+            lookupMs: 0,
+        }),
+    });
+
+    await retrieveAuthorizedCandidates(
+        makeUser(),
+        "What is the revenue target?",
+        5,
+        {
+            ...deps,
+            onCacheOutcome: (cache, outcome) => outcomes.push([cache, outcome]),
+        }
+    );
+
+    assert.deepEqual(outcomes, [
+        ["raw", "BYPASS"],
+        ["authorized", "BYPASS"],
+    ]);
+});
+
 test("query pipeline falls back safely when no authorized evidence exists", async () => {
     const candidate = makeCandidate();
     const { deps, calls } = makeDeps({

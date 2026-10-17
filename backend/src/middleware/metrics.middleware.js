@@ -14,6 +14,8 @@ export const requestMetricsMiddleware = (req, res, next) => {
     req.metrics = {
         requestId,
         startTime,
+        rawCacheOutcome: null,
+        authorizedCacheOutcome: null,
     };
 
     const originalSend = res.send;
@@ -45,7 +47,9 @@ export const requestMetricsMiddleware = (req, res, next) => {
             method: req.method,
             path: req.originalUrl || req.url,
             statusCode: res.statusCode,
-            durationMs: Math.round(durationMs),
+            durationMs: Math.max(1, Math.round(durationMs)),
+            rawCacheOutcome: req.metrics.rawCacheOutcome,
+            authorizedCacheOutcome: req.metrics.authorizedCacheOutcome,
             authenticated,
             userId,
             organizationId,

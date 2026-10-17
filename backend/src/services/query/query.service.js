@@ -197,6 +197,11 @@ export const retrieveAuthorizedCandidates = async (
         topK
     );
 
+    dependencies.onCacheOutcome?.(
+        "raw",
+        rawCacheResult?.outcome || "ERROR"
+    );
+
     const rawCacheHit =
         rawCacheResult?.outcome === "HIT" &&
         Array.isArray(rawCacheResult.data);
@@ -242,6 +247,11 @@ export const retrieveAuthorizedCandidates = async (
                 topK
             );
 
+        dependencies.onCacheOutcome?.(
+            "authorized",
+            authCacheResult?.outcome || "ERROR"
+        );
+
         if (
             authCacheResult?.outcome === "HIT" &&
             Array.isArray(authCacheResult.data)
@@ -253,6 +263,8 @@ export const retrieveAuthorizedCandidates = async (
                     dependencies.prisma
                 );
         }
+    } else if (rawCacheResult?.outcome === "BYPASS") {
+        dependencies.onCacheOutcome?.("authorized", "BYPASS");
     }
 
     if (!Array.isArray(authorizedCandidates)) {

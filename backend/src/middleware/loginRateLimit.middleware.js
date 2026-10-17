@@ -37,8 +37,12 @@ export const loginRateLimiter = async (
             recordRateLimit(createRateLimitMetric({
                 route: req.originalUrl || req.url,
                 category: "login",
-                outcome: "ALLOWED",
-                redisAvailable: true,
+                outcome: result?.bypassed
+                    ? "BYPASS"
+                    : result?.redisAvailable
+                        ? "ALLOWED"
+                        : "ERROR",
+                redisAvailable: result?.redisAvailable ?? false,
                 userId: null,
                 organizationId: null,
             }));
@@ -55,7 +59,7 @@ export const loginRateLimiter = async (
             limitConfig: { emailMaxAttempts: 5, ipMaxAttempts: 20, windowSeconds: 900 },
             rejectionReason: result.reason || "RATE_LIMIT_EXCEEDED",
             statusCode: 429,
-            redisAvailable: true,
+            redisAvailable: result.redisAvailable ?? true,
             userId: null,
             organizationId: null,
         }));

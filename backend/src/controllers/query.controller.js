@@ -43,12 +43,22 @@ export const createQueryDocumentsHandler = (
         );
     }
 
-    const result =
-        await orchestrate(
-            req.user,
-            query.trim(),
-            parsedTopK
-        );
+    req.metrics ??= {};
+
+    const result = await orchestrate(
+        req.user,
+        query.trim(),
+        parsedTopK,
+        {
+            onCacheOutcome: (cache, outcome) => {
+                if (cache === "raw") {
+                    req.metrics.rawCacheOutcome = outcome;
+                } else if (cache === "authorized") {
+                    req.metrics.authorizedCacheOutcome = outcome;
+                }
+            },
+        }
+    );
 
     return res.status(200).json(
         new ApiResponse(
