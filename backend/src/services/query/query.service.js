@@ -208,6 +208,7 @@ export const retrieveAuthorizedCandidates = async (
 
     let candidates;
     let retrievalResponse;
+    let accessScopeHash;
 
     if (rawCacheHit) {
         candidates = rawCacheResult.data;
@@ -216,25 +217,28 @@ export const retrieveAuthorizedCandidates = async (
             query,
             results: candidates,
         };
+
+        accessScopeHash =
+            await dependencies.getQueryAccessScopeFingerprint(user);
     } else {
-        retrievalResponse = await dependencies.retrieveFromAI(
-            query,
-            topK,
-            organizationId
-        );
+        // These remote operations are independent, so overlap them on cache
+        // misses instead of paying both latencies one after the other.
+        [retrievalResponse, accessScopeHash] = await Promise.all([
+            dependencies.retrieveFromAI(query, topK, organizationId),
+            dependencies.getQueryAccessScopeFingerprint(user),
+        ]);
 
         candidates = retrievalResponse.results || [];
 
-        await dependencies.setCachedQuery(
+        // Cache fills are best effort and must not hold the user response
+        // behind a Redis write.
+        void Promise.resolve(dependencies.setCachedQuery(
             organizationId,
             query,
             topK,
             candidates
-        );
+        )).catch(() => {});
     }
-
-    const accessScopeHash =
-        await dependencies.getQueryAccessScopeFingerprint(user);
 
     let authorizedCandidates = null;
 
@@ -275,13 +279,14 @@ export const retrieveAuthorizedCandidates = async (
                 dependencies.authorizeQueryDocuments
             );
 
-        await dependencies.setCachedAuthorizedQuery(
+        // As above, this cache write only benefits a later request.
+        void Promise.resolve(dependencies.setCachedAuthorizedQuery(
             organizationId,
             accessScopeHash,
             query,
             topK,
             authorizedCandidates
-        );
+        )).catch(() => {});
     }
 
     const rerankedCandidates = rerankCandidates(

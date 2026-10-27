@@ -74,7 +74,7 @@ Two design decisions are worth calling out because they are the reason the proje
 
 ## Query Pipeline & Security Contract
 
-Every query request passes through a fixed pipeline. The backend is the sole authority for authorization; the AI service and Qdrant are retrieval infrastructure only. The contract is enforced in code at `backend/src/services/query/query.service.js` and `backend/src/services/document/documentAccess.service.js`.
+Every query request passes through a fixed pipeline. The backend is the sole authority for authorization; the AI service and Supabase pgvector are retrieval infrastructure only. The contract is enforced in code at `backend/src/services/query/query.service.js` and `backend/src/services/document/documentAccess.service.js`.
 
 ### Critical RAG security invariant
 
@@ -82,13 +82,13 @@ Every query request passes through a fixed pipeline. The backend is the sole aut
 
 1. **Validate document identity.** The candidate's `document_id` and `version_id` must be traceable to a PostgreSQL `Document` and `DocumentVersion` row. Candidates with missing, malformed, or unverifiable metadata are dropped.
 2. **Verify version freshness.** The candidate's `version_id` must equal the document's current `Document.currentVersionId`. A matching `document_id` alone does not establish authorization or version freshness.
-3. **Authorize the requesting user.** `authorizeQueryDocuments` evaluates `DocumentAccessPolicy` rows for the `QUERY` action with deny-overrides-allow and deny-by-default semantics. The AI service's `organization_id` filter and Qdrant retrieval scores cannot grant access.
+3. **Authorize the requesting user.** `authorizeQueryDocuments` evaluates `DocumentAccessPolicy` rows for the `QUERY` action with deny-overrides-allow and deny-by-default semantics. The AI service's `organization_id` filter and pgvector retrieval scores cannot grant access.
 4. **Reject unauthorized, invalid, mismatched, or unverifiable candidates.** Candidates that fail any check are removed before their text is consumed by any downstream component.
 5. **Never pass unauthorized chunk text to the LLM.** Candidate ordering uses retrieval scores only; there is no model-based reranker. The LLM is invoked only after authorization and evidence sufficiency are confirmed.
 6. **Build the final prompt exclusively from authorized evidence.** `buildSafeContext` sanitizes each chunk's text and attaches traceable source metadata. The system prompt instructs the model to treat all retrieved content as untrusted data and to refuse prompt-injection attempts.
 7. **Use the safe fallback when evidence is insufficient.** If no authorized, usable evidence remains, the pipeline returns the fallback answer without calling the LLM.
 
-A matching document ID alone does not establish authorization. Qdrant results, retrieval scores, cached content, and AI-service responses cannot grant access.
+A matching document ID alone does not establish authorization. Vector results, retrieval scores, cached content, and AI-service responses cannot grant access.
 
 ### Authoritative policy evaluator
 
@@ -120,14 +120,14 @@ Every query request passes through a fixed pipeline (full detail in `docs/DEVELO
 2. **Resolve identity** — the user's `unit.organizationId` and `unitId` are extracted; a user without an organization unit is rejected (403).
 3. **Validate query & rate limit** — `query.controller.js` rejects empty or whitespace-only queries and `topK` values outside 1–20 (400). A per-user Redis token-bucket rate limiter caps query throughput; on a Redis outage the limit fails open (allow) or closed (503) per `RATE_LIMIT_UNAVAILABLE_POLICY`.
 4. **Check the raw retrieval cache** — the query cache (`rag:retrieval:{orgId}:{topK}:{queryHash}`, 300 s TTL) stores the AI service's raw candidate list keyed by organization plus query, **not** by user or access scope. A cache hit is candidate evidence, not authorized content.
-5. **Retrieve candidates** — on a cache miss, `queryAI.service.js` POSTs to the AI service `/api/v1/retrieve` endpoint. The AI service searches Qdrant filtered by `organization_id` only, returning up to `min(top_k * 5, 200)` candidates.
+5. **Retrieve candidates** — on a cache miss, `queryAI.service.js` POSTs to the AI service `/api/v1/retrieve` endpoint. The AI service searches Supabase pgvector filtered by `organization_id` only, returning up to `min(top_k * 5, 200)` candidates.
 6. **Authorize each candidate** — `authorizeQueryDocuments` evaluates `DocumentAccessPolicy` rows for the `QUERY` action with deny-overrides-allow and deny-by-default semantics. Candidates whose document the user cannot `QUERY`, or whose `version_id` does not match the document's current version, are discarded before score ordering and before their text reaches the LLM.
 7. **Order, check evidence, and generate** — authorized candidates are sorted by retrieval score and limited to `topK`; evidence sufficiency is checked; the prompt is built exclusively from authorized, sanitized context; the LLM is invoked only when evidence is sufficient.
 8. **Validate the answer & save history** — answer validation and the output guard run; PostgreSQL stores the query/answer history pair. The API response's `data` contains `{query, answer, sources, evidence, usedLLM, outputGuardPassed}`.
 
 **Authorization-aware caching.** When the authorized-cache path yields a hit, the stored candidates are re-validated against the current `Document.currentVersionId` before reuse — stale versions are excluded. When any access policy is granted, updated, or revoked, `invalidateOrganizationAuthorizedQueryCache` deletes the entire authorized-retrieval namespace for the organization. The access-scope fingerprint (a SHA-256 over all matching `QUERY` policies, the user's unit hierarchy, role, and unit) is used as the authorized-cache key component so that a cache hit is only served under the same fingerprint. **Verified with stubs:** the fingerprint is recomputed per request and the authorized cache is invalidated on every policy mutation. **Not yet verified against live infrastructure:** that expiry, revocation, and invalidation behavior keep the cache authorization-safe under concurrent policy changes — a concurrent revocation could still race with a query, and time-dependent policy expiry has not been tested. Live-verification status remains pending.
 
-**Never trusted:** Qdrant retrieval scores, AI-service payload metadata, and model outputs. These can never grant or expand access.
+**Never trusted:** pgvector retrieval scores, AI-service payload metadata, and model outputs. These can never grant or expand access.
 
 ---
 
@@ -150,7 +150,7 @@ Every query request passes through a fixed pipeline (full detail in `docs/DEVELO
 | Extraction | PyMuPDF, python-docx, camelot, pdfplumber, Docling | PDF, DOCX, and TXT extraction with a Docling fallback |
 | Chunking | Custom service | Page-aware, character-based chunks with overlap |
 | Embeddings | Sentence Transformers (`all-MiniLM-L6-v2`) | Normalized vectors generated in batches |
-| Vector database | Qdrant | Filtered similarity search with payload indexes |
+| Vector database | Supabase PostgreSQL + pgvector | Organization-filtered similarity search |
 | LLM | Amazon Bedrock Converse API (`amazon.nova-pro-v1:0`) | Grounded answer generation from retrieved context |
 
 ---
@@ -171,13 +171,13 @@ RAG/
 
 This is a multi-service project. For a complete local run, configure PostgreSQL
 and the backend's required settings, provide S3 and Bedrock access for full
-document/query workflows, and configure the AI service with Qdrant. Redis is
+document/query workflows, and configure the AI service with Supabase pgvector. Redis is
 optional; see the component guides for exact settings and Windows setup.
 
 | Component | Guide |
 | --- | --- |
 | Backend API, database migrations, and backend tests | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) |
-| AI service setup, Qdrant configuration, and processing behavior | [`docs/ai-service.md`](docs/ai-service.md) |
+| AI service setup, pgvector configuration, and processing behavior | [`docs/ai-service.md`](docs/ai-service.md) |
 | Frontend architecture and development workflow | [`docs/frontendDevelopment.md`](docs/frontendDevelopment.md) |
 | Frontend implementation status and known limitations | [`docs/frontendDevelopmentLog.md`](docs/frontendDevelopmentLog.md) |
 
@@ -237,7 +237,7 @@ ai-service/app/
     ├── processing/   Download, extract, normalize, chunk pipeline
     ├── extractors/   Per-format extractors plus Docling fallback
     ├── embedding/    Sentence Transformer embeddings
-    ├── vectorstore/  Qdrant collection management and search
+    ├── vectorstore/  Supabase pgvector persistence and search
     └── retrieval/    Candidate retrieval
 ~~~
 

@@ -23,7 +23,7 @@ if (missingEnvVars.length > 0) {
 const startServer = async () => {
     try {
         await prisma.$connect();
-        console.log("Connected to Neon Database");
+        console.log("Connected to PostgreSQL Database");
 
         const server = app.listen(config.app.port, async () => {
             console.log(

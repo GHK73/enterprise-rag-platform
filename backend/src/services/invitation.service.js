@@ -150,11 +150,43 @@ export const createInvitation = async(user,invitationData)=>{
 export const getInvitations = async(user)=>{
     validateOrganizationMembership(user);
 
+    const rootUnit = await prisma.organizationUnit.findFirst({
+        where:{
+            organizationId:user.unit.organizationId,
+            type:"COMPANY"
+        },
+        select:{id:true}
+    });
+
+    if(!rootUnit){
+        throw new ApiError(404,"Organization unit not Found");
+    }
+
+    const canViewInvitations = await hasPermission(
+        user.id,
+        "INVITE_MEMBER",
+        rootUnit.id
+    );
+
+    if(!canViewInvitations){
+        throw new ApiError(403,"You do not have permission to view organization invitations");
+    }
+
     return prisma.invitation.findMany({
         where:{
             organizationId:user.unit.organizationId
         },
-        include:{
+        select:{
+            id:true,
+            email:true,
+            organizationId:true,
+            unitId:true,
+            role:true,
+            invitedById:true,
+            status:true,
+            expiresAt:true,
+            createdAt:true,
+            updatedAt:true,
             unit:{
                 select:{
                     id:true,
@@ -204,6 +236,13 @@ export const acceptInvitation = async(user,token)=>{
 
         if(!currentUser){
             throw new ApiError(404,"User not Found");
+        }
+
+        if(!currentUser.isVerified){
+            throw new ApiError(
+                403,
+                "Verify your email before accepting an invitation"
+            );
         }
 
         if(currentUser.unitId){
@@ -356,4 +395,3 @@ export const getReceivedInvitations = async(user)=>{
         }
     });
 };
-

@@ -16,7 +16,7 @@ critical flows: **document ingestion** and **question answering**.
 | Relational source of truth | PostgreSQL through Prisma |
 | Original files | Private Amazon S3 bucket; downloads use presigned URLs |
 | Background processing | BullMQ on Redis when enabled; direct processing when Redis is disabled |
-| Extraction, embeddings, vector search | FastAPI AI service and Qdrant |
+| Extraction, embeddings, vector search | FastAPI AI service and Supabase pgvector |
 | Answer generation | Amazon Bedrock Converse API |
 | Tests | Node.js built-in test runner with injected external dependencies |
 
@@ -28,7 +28,7 @@ Express backend ─────── PostgreSQL (Prisma)
    │   │   │
    │   │   └────────── Amazon S3 (private files)
    │   ├────────────── Redis (optional cache, rate limits, BullMQ)
-   │   ├────────────── FastAPI AI service ───── Qdrant
+   │   ├────────────── FastAPI AI service ───── Supabase pgvector
    │   └────────────── Amazon Bedrock (answers)
    │
    └── Authorization and lifecycle decisions stay in the backend
@@ -61,7 +61,7 @@ Guard document state and dispatch work
                                                    │
                                                    ▼
                                   AI service: extract → normalize → chunk
-                                            → embed → index in Qdrant
+                                            → embed → index in Supabase pgvector
                                                    │
                                                    ▼
                                   Mark current version READY or FAILED
@@ -76,7 +76,7 @@ Guard document state and dispatch work
 3. The worker (or direct path) claims the document, obtains a presigned S3
    download URL, and calls the AI service's `POST /api/v1/process-document`.
 4. The AI service extracts content, creates chunks and embeddings, then indexes
-   them in Qdrant. The backend verifies the returned document and version IDs
+   them in Supabase pgvector. The backend verifies the returned document and version IDs
    before marking the current version ready.
 5. A successful processing run invalidates that organization's raw retrieval
    cache. Failures are recorded against the version and leave the document
@@ -118,7 +118,7 @@ Authenticate ── rate limit ── validate query and topK (1–20; default 5
        ▼
 Organization-scoped retrieval candidates
   ├── Redis raw-candidate cache, or
-  └── AI service POST /api/v1/retrieve → Qdrant
+  └── AI service POST /api/v1/retrieve → Supabase pgvector
        │
        ▼
 Backend authorization + tenant/status/current-version checks
@@ -141,7 +141,7 @@ Persist per-user query history and return response
 The query orchestrator in `services/query/query.service.js` owns this flow.
 Retrieval returns **candidates**, not authorization decisions:
 
-- AI retrieval is scoped to the user's organization, but Qdrant is not the
+- AI retrieval is scoped to the user's organization, but pgvector is not the
   document-access authority.
 - Before candidate text can enter an LLM prompt, the backend evaluates
   document-level `QUERY` access and checks that each document is active, ready,
@@ -200,7 +200,7 @@ substitute.
 - A PostgreSQL database reachable through `DATABASE_URL`.
 - `JWT_SECRET` for token signing.
 - For complete document/query flows: S3-compatible AWS access, the AI service,
-  Qdrant configured for that service, and Bedrock access.
+  Supabase pgvector configured for that service, and Bedrock access.
 - Redis is optional. Set `REDIS_ENABLED=true` only when a Redis instance is
   available; otherwise the backend bypasses Redis-backed features and processes
   documents in-process.
@@ -370,7 +370,7 @@ Coverage is organized by behavior:
 
 Local tests demonstrate behavior against controlled dependencies; they do not
 replace verification with a real PostgreSQL database, Redis, S3, Bedrock, AI
-service, and Qdrant.
+service, and Supabase pgvector.
 
 ## Operational notes
 

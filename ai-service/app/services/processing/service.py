@@ -15,7 +15,7 @@ from app.services.processing.chunking import chunking_service
 from app.services.processing.downloader import downloader_service
 from app.services.processing.temp_storage import temporary_storage
 from app.services.embedding import embedding_service
-from app.services.vectorstore import qdrant_vector_store
+from app.services.vectorstore import pgvector_store
 
 logger = logging.getLogger(__name__)
 
@@ -104,17 +104,17 @@ class DocumentProcessingService:
                 len(embedded_chunks),
             )
 
-            # 6. Ensure Qdrant collection exists
-            await qdrant_vector_store.ensure_collection()
+            # 6. Ensure the Supabase pgvector store is ready
+            await pgvector_store.ensure_collection()
 
             # 7. Delete previous version points to avoid stale vectors
-            await qdrant_vector_store.delete_version(
+            await pgvector_store.delete_version(
                 document_id=request.document_id,
                 version_id=request.version_id,
             )
 
             # 8. Index this document version.
-            await qdrant_vector_store.upsert_chunks(
+            await pgvector_store.upsert_chunks(
                 organization_id=request.organization_id,
                 document_id=request.document_id,
                 version_id=request.version_id,
@@ -122,7 +122,7 @@ class DocumentProcessingService:
             )
 
             logger.info(
-                "Indexed %d chunks into Qdrant Cloud: "
+                "Indexed %d chunks into Supabase pgvector: "
                 "document=%s version=%s",
                 len(embedded_chunks),
                 request.document_id,

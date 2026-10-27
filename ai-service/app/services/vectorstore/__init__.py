@@ -1,6 +1,6 @@
-from .qdrant import QdrantVectorStore, qdrant_vector_store
+from .pgvector import PgVectorStore, pgvector_store
 
 __all__ = [
-    "QdrantVectorStore",
-    "qdrant_vector_store",
+    "PgVectorStore",
+    "pgvector_store",
 ]

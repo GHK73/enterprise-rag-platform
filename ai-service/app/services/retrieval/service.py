@@ -5,7 +5,7 @@ import logging
 
 from app.schemas.retrieval import RetrievalRequest, RetrievalResult
 from app.services.embedding import embedding_service
-from app.services.vectorstore import qdrant_vector_store
+from app.services.vectorstore import pgvector_store
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,6 @@ class RetrievalService:
             request.top_k,
         )
 
-        await qdrant_vector_store.ensure_collection()
-
         query_embedding = embedding_service.embed_texts(
             [request.query]
         )[0]
@@ -42,7 +40,7 @@ class RetrievalService:
             self.MAX_CANDIDATES,
         )
 
-        candidates = await qdrant_vector_store.search(
+        candidates = await pgvector_store.search(
             query_vector=query_embedding,
             organization_id=request.organization_id,
             limit=candidate_limit,

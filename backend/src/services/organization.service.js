@@ -6,6 +6,9 @@ import{
     hasPermission,
     isUnitInsideScope
 } from "./permission.service.js";
+import {
+    invalidateOrganizationDocumentAccessCaches,
+} from "./document/documentAccess.service.js";
 
 const runSerializableTransaction = async(transactionFunction,maxRetries=3)=>{
     let attempt = 0;
@@ -868,7 +871,7 @@ export const moveOrganizationUnit = async(user,unitId,unitData)=>{
 
     const organizationId = user.unit.organizationId;
 
-    return runSerializableTransaction(async(tx)=>{
+    const updatedUnit = await runSerializableTransaction(async(tx)=>{
         const currentUnit = await tx.organizationUnit.findUnique({
             where:{id:unitId}
         });
@@ -976,6 +979,10 @@ export const moveOrganizationUnit = async(user,unitId,unitData)=>{
 
         return updatedUnit;
     });
+
+    await invalidateOrganizationDocumentAccessCaches(organizationId);
+
+    return updatedUnit;
 };
 
 export const getOrganizationRevision = async(user)=>{

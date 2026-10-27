@@ -20,5 +20,6 @@ sentence-transformers==5.0.0
 torch>=2.7.0
 
 qdrant-client==1.15.1
+asyncpg==0.30.0
 
 orjson==3.11.0

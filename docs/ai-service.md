@@ -2,7 +2,7 @@
 
 The AI service is the document-ingestion and vector-retrieval component of this
 repository's RAG platform. It is a FastAPI application that extracts searchable
-content from documents, creates embeddings, stores chunks in Qdrant, and returns
+content from documents, creates embeddings, stores chunks in Supabase pgvector, and returns
 retrieval candidates to the backend.
 
 > **Security boundary:** This service filters vector searches by organization,
@@ -33,7 +33,7 @@ directly instead:
 .\venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
-Create `ai-service/.env` with your Qdrant connection settings (see
+Create `ai-service/.env` with your Supabase PostgreSQL connection setting (see
 [Configuration](#configuration)), then start the API from the `ai-service`
 directory:
 
@@ -75,7 +75,7 @@ Backend ── POST /api/v1/process-document ──> AI service
                                                 │
                          extract → normalize → chunk
                                                 │
-                         embed → index chunks in Qdrant
+                         embed → index chunks in Supabase pgvector
                                                 │
 Backend <──────────── processing result ────────┘
 
@@ -84,7 +84,7 @@ Backend ── POST /api/v1/retrieve ───────────> AI servi
                                                 │
                               embed the query
                                                 │
-                       search Qdrant by organization
+                       search pgvector by organization
                                                 │
 Backend <──── ranked candidate chunks + text ───┘
    │
@@ -128,9 +128,8 @@ The `POST /api/v1/process-document` route validates a
 6. **Generate embeddings.** The configured Sentence Transformers model encodes
    chunks in batches of 32. Embeddings are normalized and use CUDA when it is
    available; otherwise, the service uses CPU.
-7. **Index the version in Qdrant.** The service ensures the collection and
-   payload indexes exist, deletes existing points for the same document and
-   version, then upserts the new chunks.
+7. **Index the version in pgvector.** The service deletes existing rows for the
+   same document and version, then upserts the new chunks.
 8. **Clean up.** The temporary workspace is removed whether processing
    succeeds or fails.
 
@@ -159,8 +158,8 @@ The `POST /api/v1/retrieve` route accepts:
 | `organization_id` | Required |
 | `top_k` | Optional; defaults to `5`; must be between `1` and `50` |
 
-The service ensures the Qdrant collection exists, embeds the query, and searches
-only points whose `organization_id` matches the request. To leave room for
+The service connects to the Supabase pgvector table, embeds the query, and searches
+only rows whose `organization_id` matches the request. To leave room for
 backend authorization to filter out inaccessible documents, it requests
 `min(top_k * 5, 200)` candidates. The response includes candidate text, score,
 document and version IDs, page and chunk IDs, block IDs, and metadata.
@@ -177,7 +176,7 @@ belong to the backend.
 | `GET` | `/` | Basic service name, version, and running status |
 | `GET` | `/api/v1/health` | Health response with service, version, and environment |
 | `POST` | `/api/v1/process-document` | Download, process, embed, and index one document version |
-| `POST` | `/api/v1/retrieve` | Return organization-scoped Qdrant candidates for a query |
+| `POST` | `/api/v1/retrieve` | Return organization-scoped pgvector candidates for a query |
 
 FastAPI's interactive API documentation is available at `/docs` while the
 service is running.
@@ -185,9 +184,10 @@ service is running.
 Validation errors are returned with HTTP `422`. Unhandled exceptions are
 logged and returned as a generic HTTP `500` response.
 
-## Qdrant data model
+## pgvector data model
 
-Each indexed point contains a vector and a payload with:
+Each indexed row in `public.ai_document_chunks` contains a 384-dimensional
+embedding and the chunk fields below:
 
 | Payload field | Purpose |
 | --- | --- |
@@ -197,10 +197,10 @@ Each indexed point contains a vector and a payload with:
 | `text` | Candidate text returned to the backend |
 | `metadata` | Chunk type and type-specific processing details |
 
-The collection uses cosine distance and the embedding dimension reported by the
-configured model. Qdrant keyword payload indexes are ensured for
-`organization_id`, `document_id`, `version_id`, and `chunk_id`. Point IDs are
-deterministic UUIDv5 values derived from the document, version, and chunk IDs.
+The HNSW index uses cosine distance. B-tree indexes support organization and
+document-version filtering. Row IDs remain deterministic UUIDv5 values derived
+from the document, version, and chunk IDs. The table and vector extension are
+created by the backend Prisma migration.
 
 ## Backend integration and authorization
 
@@ -214,19 +214,20 @@ route path for each request.
 - Query orchestration and access checks live under
   `backend/src/services/query/`.
 
-Qdrant results are **candidates, not authorization decisions**. Before
+pgvector results are **candidates, not authorization decisions**. Before
 candidate text can be used for answer generation, the backend must verify that
 each document belongs to the requesting user's organization, is available and
 not deleted, and that the result's version is current. The backend then applies
 document access policies and filters unauthorized candidates. Do not expose
-direct Qdrant retrieval to end users or pass unapproved candidate text to an
+direct vector retrieval to end users or pass unapproved candidate text to an
 LLM.
 
 ## Configuration
 
-Create an `.env` file in the `ai-service` directory. At minimum, provide the
-Qdrant URL and API key; `app/config/settings.py` requires both when the service
-loads.
+Create an `.env` file in the `ai-service` directory. Set
+`PGVECTOR_DATABASE_URL` to the Supabase session-pooler connection URL used for
+Prisma migrations (the `DIRECT_URL` from `backend/.env`). The AI service opens a
+small async connection pool and requires TLS.
 
 ```dotenv
 APP_NAME="Enterprise RAG AI Service"
@@ -236,15 +237,21 @@ HOST="127.0.0.1"
 PORT=8000
 LOG_LEVEL="INFO"
 EMBEDDING_MODEL="all-MiniLM-L6-v2"
-QDRANT_URL="https://your-qdrant-cluster.example"
-QDRANT_API_KEY="replace-with-your-key"
-QDRANT_COLLECTION="enterprise_documents"
+PGVECTOR_DATABASE_URL="postgresql://..."
+PGVECTOR_POOL_SIZE=5
 ```
 
-Keep real credentials out of source control. The main application settings are
-loaded in `app/config/config.py`; the embedding and Qdrant services use
-`app/config/settings.py`. Both read `.env` from the current working directory,
-so start Uvicorn from `ai-service`.
+Before starting the AI service, apply migrations from `backend` with
+`npx prisma migrate deploy`. Keep real credentials out of source control. The
+application and vector-store settings both read `.env` from the current working
+directory, so start Uvicorn from `ai-service`.
+
+Existing Qdrant points are not queried after this change. If the old Qdrant
+cluster is reachable, copy its points with
+`python -m scripts.migrate_qdrant_to_pgvector` from `ai-service`; the script
+needs the old `QDRANT_URL`, `QDRANT_API_KEY`, and `QDRANT_COLLECTION` values in
+the local environment. Otherwise, reprocess the existing documents to create
+their embeddings in Supabase.
 
 ## Tests and developer scripts
 
@@ -256,11 +263,11 @@ configured automated test suite:
 | `python test_pdf_extractor.py` | Extract and print blocks from `test_files/sample.pdf` |
 | `python test_chunking.py` | Run extraction, normalization, and chunking on the sample PDF |
 | `python test_processing.py` | Exercise full processing; the script's current loopback URL is rejected by the SSRF guard, so replace it with an allowed reachable file URL first |
-| `python -m app.services.vectorstore.test_qdrant` | Exercise Qdrant create/index/read/search/delete behavior |
+| `python -m scripts.migrate_qdrant_to_pgvector` | One-time copy of the old Qdrant points into pgvector |
 
-The end-to-end and Qdrant utilities require working external services and
-configuration. The Qdrant utility writes and deletes test points in the
-configured collection; use a development collection, not production.
+The end-to-end processing script requires working external services and
+configuration. The migration utility reads the configured Qdrant collection and
+writes its points to the Supabase pgvector table.
 
 ## Source map
 
@@ -272,5 +279,5 @@ configured collection; use a development collection, not production.
 | File download, extraction, normalization, chunking | `app/services/processing/` and `app/services/extractors/` |
 | Embedding generation | `app/services/embedding/` |
 | Candidate retrieval | `app/services/retrieval/` |
-| Qdrant collection and point operations | `app/services/vectorstore/` |
+| pgvector persistence and similarity search | `app/services/vectorstore/` |
 | Runtime settings and logging | `app/config/` |

@@ -5,6 +5,26 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model AiDocumentChunk {
+  id             String   @id @db.Uuid
+  organizationId String   @map("organization_id")
+  documentId     String   @map("document_id")
+  versionId      String   @map("version_id")
+  chunkId        String   @map("chunk_id")
+  pageNumber     Int      @default(0) @map("page_number")
+  text           String
+  blockIds       Json     @default("[]") @map("block_ids")
+  metadata       Json     @default("{}")
+  embedding      Unsupported("extensions.vector(384)")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([documentId, versionId, chunkId])
+  @@index([organizationId])
+  @@index([documentId, versionId])
+  @@map("ai_document_chunks")
 }
 
 enum Role {

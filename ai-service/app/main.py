@@ -9,7 +9,7 @@ from app.config.logger import (
     logger,
 )
 from app.core.exceptions import register_exception_handlers
-from app.services.vectorstore import qdrant_vector_store
+from app.services.vectorstore import pgvector_store
 
 configure_logger()
 
@@ -17,9 +17,10 @@ configure_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting AI Service...")
+    await pgvector_store.ensure_collection()
     yield
     logger.info("Stopping AI Service...")
-    await qdrant_vector_store.close()
+    await pgvector_store.close()
 
 
 app = FastAPI(

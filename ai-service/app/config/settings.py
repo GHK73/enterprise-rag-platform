@@ -12,9 +12,12 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
-    # Cloud Qdrant configuration
-    QDRANT_URL: str
-    QDRANT_API_KEY: str
+    PGVECTOR_DATABASE_URL: str = ""
+    PGVECTOR_POOL_SIZE: int = 5
+
+    # Retained for the one-time Qdrant-to-pgvector migration utility.
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
     QDRANT_COLLECTION: str = "enterprise_documents"
 
     model_config = SettingsConfigDict(

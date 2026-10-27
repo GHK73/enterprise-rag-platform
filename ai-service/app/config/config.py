@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
+    PGVECTOR_DATABASE_URL: str = ""
+    PGVECTOR_POOL_SIZE: int = 5
+
     QDRANT_URL: str = ""
     QDRANT_API_KEY: str = ""
 

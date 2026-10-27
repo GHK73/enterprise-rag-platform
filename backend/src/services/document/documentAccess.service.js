@@ -130,6 +130,14 @@ const invalidateUserUnitHierarchyCache = async (organizationId, userUnitId = nul
     }
 };
 
+export const invalidateOrganizationDocumentAccessCaches = async (organizationId) => {
+    await Promise.all([
+        invalidateOrganizationAuthorizedQueryCache(organizationId),
+        invalidateFingerprintCache(organizationId),
+        invalidateUserUnitHierarchyCache(organizationId),
+    ]);
+};
+
 const resolveAccessSubject = async(tx,organizationId,accessData)=>{
     const {
         subjectType,

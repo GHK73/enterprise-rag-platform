@@ -10,12 +10,12 @@ Prisma schema: `backend/prisma/schema.prisma` · Backend implementation: `docs/D
 | --- | --- |
 | PostgreSQL | Application and authorization source of truth |
 | Amazon S3 | Draft and versioned document files |
-| Qdrant | Embeddings and retrieval metadata |
+| Supabase pgvector | Embeddings and retrieval metadata |
 | Redis | Background jobs and caching |
 
 Large files and vectors are not stored in PostgreSQL.
 
-**Core security rule:** PostgreSQL is the authorization authority, Qdrant is retrieval infrastructure. Unauthorized content must never reach the LLM.
+**Core security rule:** PostgreSQL is the authorization authority and pgvector is retrieval infrastructure. Unauthorized content must never reach the LLM.
 
 ## Schema Overview
 
@@ -177,7 +177,7 @@ The single, shared authorization engine lives in `backend/src/services/document/
 - Unknown policy subject types must not accidentally grant access.
 - Single-document and batch authorization must apply consistent decision semantics.
 
-**Critical RAG security invariant:** unauthorized content must never reach the LLM. Retrieved chunks are candidates, not authorized evidence. Every candidate must pass document identity validation, version-freshness verification, and backend authorization before its text can reach a model. Qdrant retrieval scores, AI-service payload metadata, and cached content cannot grant access.
+**Critical RAG security invariant:** unauthorized content must never reach the LLM. Retrieved chunks are candidates, not authorized evidence. Every candidate must pass document identity validation, version-freshness verification, and backend authorization before its text can reach a model. pgvector retrieval scores, AI-service payload metadata, and cached content cannot grant access.
 
 **Uniqueness invariant:** at most one active policy per `(documentId, action, effect, subjectType, subject*)`, enforced by the partial unique index in migration `20261012100000_unique_active_document_access_policy` (pending apply). A `P2002` violation surfaces as 409; the application-level check in `validateDocumentAccessPolicy` is advisory.
 
